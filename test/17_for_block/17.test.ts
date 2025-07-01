@@ -1,6 +1,7 @@
 // tests/nested-blocks.spec.ts
 import { describe, it, expect } from "vitest";
 import NestedBlocks from "./17.lun"; // ★ adjust path
+import { pickWithSeed } from "../utils.js";
 
 /**
  * helper — mount component into a fresh container
@@ -160,32 +161,80 @@ describe("NestedBlocks component", () => {
     expect(container.querySelector("#if-4-0-0-0-0")).not.toBeNull();
   });
 
+  it("should handle random button clicks without errors", async () => {
+    const { container } = mountComponent();
+
+    const randomButtons = [
+      "toggle-if-0",
+      "toggle-if-1",
+      "toggle-if-2",
+      "toggle-if-3",
+      "toggle-if-4",
+      "toggle-if-5",
+      "dec-for-0",
+      "count-for-0",
+      "inc-for-0",
+      "dec-for-1",
+      "count-for-1",
+      "inc-for-1",
+      "dec-for-2",
+      "count-for-2",
+      "inc-for-2",
+      "dec-for-3",
+      "count-for-3",
+      "inc-for-3",
+      "dec-for-4",
+      "count-for-4",
+      "inc-for-4",
+      "dec-for-5",
+      "count-for-5",
+      "inc-for-5",
+    ];
+
+    const pickedRandomButtons = pickWithSeed(randomButtons, 500, "test-seed");
+
+    console.log("Picked random buttons:", pickedRandomButtons);
+
+    // click random buttons
+    for (let idx = 0; idx < pickedRandomButtons.length; idx++) {
+      const id = pickedRandomButtons[idx];
+      const button = container.querySelector<HTMLButtonElement>(`#${id}`);
+      if (button) button.click();
+      console.log(idx);
+      // await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 1));
+    }
+    console.log(500);
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    console.log(501);
+  });
+
   /* ------------------------------------------------------------------ *
    * 5. multiple quick operations should batch to a single micro-task
    * ------------------------------------------------------------------ */
-  // it("should batch updates within the same tick", async () => {
-  //   const { container } = mountComponent();
-  //   // // click 3 buttons synchronously
-  //   const incBtn0 = container.querySelector<HTMLButtonElement>("#inc-for-0")!;
-  //   const incBtn1 = container.querySelector<HTMLButtonElement>("#inc-for-1")!;
-  //   const toggle2 = container.querySelector<HTMLButtonElement>("#toggle-if-2")!;
-  //   incBtn0.click();
-  //   incBtn1.click();
-  //   console.log(toggle2.outerHTML);
-  //   toggle2.click();
+  it("should batch updates within the same tick", async () => {
+    const { container } = mountComponent();
+    // // click 3 buttons synchronously
+    const incBtn0 = container.querySelector<HTMLButtonElement>("#inc-for-0")!;
+    const incBtn1 = container.querySelector<HTMLButtonElement>("#inc-for-1")!;
+    const toggle2 = container.querySelector<HTMLButtonElement>("#toggle-if-2")!;
+    incBtn0.click();
+    await Promise.resolve();
+    incBtn1.click();
+    await Promise.resolve();
+    toggle2.click();
+    await Promise.resolve();
 
-  //   // wait 1 micro-task
-  //   await Promise.resolve();
-
-  //   // updated DOM reflects all actions exactly once
-  //   expect(container.querySelectorAll("#for-1-1").length).toBe(1);
-  //   expect(container.querySelectorAll("#for-2-0-1").length).toBe(1);
-  //   expect(container.querySelector("#if-2-0-0")).toBeNull();
-  // });
+    // updated DOM reflects all actions exactly once
+    expect(container.querySelectorAll("#for-1-1").length).toBe(1);
+    expect(container.querySelectorAll("#for-2-0-1").length).toBe(1);
+    expect(container.querySelector("#if-4-0-0-0-0")).toBeNull();
+  });
 
   /* ------------------------------------------------------------------ *
    * 6. unmount should fully clean the DOM and dependencies
    * ------------------------------------------------------------------ */
+
   it("should detach everything on __unmount()", () => {
     const { container, instance } = mountComponent();
     instance.__unmount();
