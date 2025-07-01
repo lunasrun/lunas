@@ -1,5 +1,5 @@
 import { beforeAll, beforeEach, expect } from "vitest";
-import { Biome, Distribution } from "@biomejs/js-api"; //  [oai_citation:0‡classic.yarnpkg.com](https://classic.yarnpkg.com/en/package/%40biomejs/js-api?utm_source=chatgpt.com)
+import { Biome, Distribution } from "@biomejs/js-api";
 import { diffLines } from "diff";
 import pc from "picocolors";
 import { minify as htmlMinify } from "html-minifier-terser";
