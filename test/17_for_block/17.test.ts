@@ -204,9 +204,6 @@ describe("NestedBlocks component", () => {
       // await Promise.resolve();
       await new Promise((resolve) => setTimeout(resolve, 1));
     }
-    console.log(500);
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    console.log(501);
   });
 
   /* ------------------------------------------------------------------ *

@@ -3,7 +3,7 @@ import { lunas } from "vite-plugin-lunas";
 export default defineConfig({
   plugins: [lunas()],
   test: {
-    environment: "jsdom",
+    environment: "happy-dom",
     setupFiles: ["./vitest.setup.ts"],
   },
 });

@@ -2,7 +2,6 @@ import { beforeAll, beforeEach, expect } from "vitest";
 import { Biome, Distribution } from "@biomejs/js-api";
 import { diffLines } from "diff";
 import pc from "picocolors";
-import { minify as htmlMinify } from "html-minifier-terser";
 
 let biome: Biome;
 

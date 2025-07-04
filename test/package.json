@@ -15,14 +15,11 @@
     "@biomejs/js-api": "^1.0.0",
     "@biomejs/wasm-nodejs": "^2.0.6",
     "diff": "^8.0.2",
-    "html-minifier-terser": "^7.2.0",
+    "happy-dom": "^18.0.1",
     "lunas": "../npm-pkgs/lunas",
     "prettier": "^3.6.2",
     "rand-seed": "^3.0.0",
     "vite-plugin-lunas": "^0.0.1-beta.1",
     "vitest": "^3.2.3"
-  },
-  "devDependencies": {
-    "jsdom": "^26.1.0"
   }
 }
