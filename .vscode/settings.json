@@ -1,0 +1,13 @@
+{
+  "rust-analyzer.linkedProjects": ["crates/lunas_generator/Cargo.toml"],
+  "workbench.settings.openDefaultSettings": true,
+  "rome.requireConfiguration": false,
+  "githubPullRequests.ignoredPullRequestBranches": ["main"],
+  "prettier.trailingComma": "all",
+  "prettier.semi": false,
+  "git.branchProtection": ["main"],
+  "todo-tree.tree.showCountsInTree": true,
+  "git.branchValidationRegex": "^(feature|fix|chore|refactor|version)/[a-z0-9._-]+$",
+  "biome.projects": ["npm-pkgs/lunas"]
+  // "rust-analyzer.checkOnSave.command": "clippy"
+}

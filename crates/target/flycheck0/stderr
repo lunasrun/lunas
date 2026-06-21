@@ -1,0 +1,9 @@
+error: failed to load manifest for workspace member `/Users/tatsuru/Documents/Program/lunas-proj/lunas/crates/lunas_parser`
+referenced by workspace at `/Users/tatsuru/Documents/Program/lunas-proj/lunas/crates/Cargo.toml`
+
+Caused by:
+  failed to parse manifest at `/Users/tatsuru/Documents/Program/lunas-proj/lunas/crates/lunas_parser/Cargo.toml`
+
+Caused by:
+  no targets specified in the manifest
+  either src/lib.rs, src/main.rs, a [lib] section, or [[bin]] section must be present

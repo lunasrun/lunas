@@ -1,0 +1,8 @@
+/Users/tatsuru/Documents/Program/lunas-proj/lunas/crates/target/debug/deps/libswc_ecma_compat_es2018-10ad884827c4bb45.rmeta: /Users/tatsuru/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/swc_ecma_compat_es2018-12.0.1/src/lib.rs /Users/tatsuru/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/swc_ecma_compat_es2018-12.0.1/src/object_rest.rs /Users/tatsuru/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/swc_ecma_compat_es2018-12.0.1/src/object_rest_spread.rs /Users/tatsuru/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/swc_ecma_compat_es2018-12.0.1/src/object_spread.rs
+
+/Users/tatsuru/Documents/Program/lunas-proj/lunas/crates/target/debug/deps/swc_ecma_compat_es2018-10ad884827c4bb45.d: /Users/tatsuru/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/swc_ecma_compat_es2018-12.0.1/src/lib.rs /Users/tatsuru/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/swc_ecma_compat_es2018-12.0.1/src/object_rest.rs /Users/tatsuru/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/swc_ecma_compat_es2018-12.0.1/src/object_rest_spread.rs /Users/tatsuru/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/swc_ecma_compat_es2018-12.0.1/src/object_spread.rs
+
+/Users/tatsuru/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/swc_ecma_compat_es2018-12.0.1/src/lib.rs:
+/Users/tatsuru/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/swc_ecma_compat_es2018-12.0.1/src/object_rest.rs:
+/Users/tatsuru/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/swc_ecma_compat_es2018-12.0.1/src/object_rest_spread.rs:
+/Users/tatsuru/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/swc_ecma_compat_es2018-12.0.1/src/object_spread.rs:

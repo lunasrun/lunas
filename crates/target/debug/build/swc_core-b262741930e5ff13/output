@@ -1,0 +1,8 @@
+cargo:rustc-env=VERGEN_CARGO_DEBUG=true
+cargo:rustc-env=VERGEN_CARGO_FEATURES=
+cargo:rustc-env=VERGEN_CARGO_OPT_LEVEL=0
+cargo:rustc-env=VERGEN_CARGO_TARGET_TRIPLE=aarch64-apple-darwin
+cargo:rustc-env=VERGEN_CARGO_DEPENDENCIES=anyhow 1.0.98,swc_allocator 4.0.0,testing 9.0.0,vergen 9.0.6
+cargo:rerun-if-changed=build.rs
+cargo:rerun-if-env-changed=VERGEN_IDEMPOTENT
+cargo:rerun-if-env-changed=SOURCE_DATE_EPOCH
