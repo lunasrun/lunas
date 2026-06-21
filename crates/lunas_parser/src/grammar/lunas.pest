@@ -1,0 +1,6 @@
+// Pest grammar for the .lunas single-file-component outer format.
+// Filled in by the lunas-parser agent.
+
+WHITESPACE = _{ " " | "\t" }
+
+file = { SOI ~ ANY* ~ EOI }

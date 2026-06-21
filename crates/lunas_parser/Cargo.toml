@@ -4,3 +4,18 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+lunas_span = { path = "../lunas_span" }
+lunas_html_parser = { path = "../lunas_html_parser" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "=2.0.12"
+pest = "=2.8.0"
+pest_derive = "=2.8.0"
+swc_core = "=22.5.2"
+swc_common = { version = "=8.1.1", features = ["tty-emitter"] }
+swc_ecma_ast = { version = "=8.1.2", features = ["serde-impl"] }
+swc_ecma_parser = "=11.1.3"
+swc_ecma_codegen = "=10.0.0"
+swc_ecma_transforms_typescript = "=13.0.0"
+swc_ecma_transforms_base = "=12.2.0"
+swc_ecma_visit = "=8.0.0"
