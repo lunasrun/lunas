@@ -3,3 +3,6 @@ Cargo.lock
 **/*.rs.bk
 *.pdb
 .env
+node_modules/
+dist/
+npm-pkgs/
