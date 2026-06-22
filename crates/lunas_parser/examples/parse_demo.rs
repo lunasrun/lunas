@@ -40,8 +40,7 @@ script:
     }
 
     if let Some(script) = &file.script {
-        println!("script js: {:?}", script.js);
-        println!("script ast type: {}", script.ast["type"]);
+        println!("script text: {:?}", script.source.text);
     }
 
     println!("diagnostics: {}", diagnostics.len());

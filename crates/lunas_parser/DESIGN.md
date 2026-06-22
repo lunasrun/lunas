@@ -191,19 +191,56 @@ pub struct Attr {
 
 ---
 
-## JS/TS sub-parser
+## Script handling: parser vs. AST parser
 
-Script block content is passed to SWC. TypeScript is first stripped to JavaScript (`ts_to_js`), then parsed to an AST (`swc_parser`). SWC provides its own span model (byte offsets relative to the start of its input); spans exposed to callers carry the raw SWC `lo`/`hi` so they can be correlated.
+The `.lunas` syntax parser does **not** parse or transform script contents. It
+locates the `script:` block and extracts its raw text + range into
+`ScriptBlock`. That is the full extent of the parser's responsibility for
+scripts. As a result `lunas_parser` has **no SWC / JS-toolchain dependency**.
+
+All JavaScript/TypeScript work lives in a separate crate, `lunas_script` (the
+"AST parser"):
+
+- `parse_to_ast_json` — parses a script into an AST.
+- `transform_ts_to_js` — lowers TypeScript to JavaScript.
+- `parse_for` — parses a `for` loop header's JS binding/iterable.
+
+### TypeScript is parsed natively — no pre-conversion
+
+A common misconception is that TypeScript must be converted to JavaScript before
+it can be parsed into an AST. It does not: SWC parses TypeScript directly. The
+old pipeline (`ts_to_js` *then* parse) parsed twice and stringified in between:
+
+```
+  TS text → [parse TS, strip types, codegen] → JS text → [parse JS] → AST   ✗ two parses
+  TS text → [parse TS] → AST                                                ✓ one parse
+```
+
+So `lunas_script::parse_to_ast_json` parses with TS syntax in a single pass.
+Type stripping (`transform_ts_to_js`) is an independent downstream transform
+that operates after parsing, not a prerequisite for it.
 
 ### AST representation
 
-`ScriptBlock.ast` holds a **span-annotated JSON projection** of the top-level statements (`{ "type": "Module", "body": [{ "type": …, "span": { lo, hi } }] }`), not the full SWC AST tree.
+`parse_to_ast_json` returns a **span-annotated JSON projection** of the
+top-level statements (`{ "type": "Module", "body": [{ "type": …, "span": { lo, hi } }] }`),
+not the full SWC AST tree.
 
-The full tree would require SWC's `serde-impl` feature, whose `ast_node`-generated deserializer references `swc_common::private::content`, a path that does not resolve against the `serde`/`swc_common` versions currently published on crates.io — the original `main` tree no longer builds for the same reason. Rather than pin the entire dependency graph to a yanked/older `serde`, the projection captures what the code generator and language server actually need (statement kinds + locations). Consumers requiring the complete AST re-parse `ScriptBlock.js` with SWC directly. This is revisited if/when the upstream `serde-impl` alignment is fixed.
+The full tree would require SWC's `serde-impl` feature, whose `ast_node`-generated
+deserializer references `swc_common::private::content`, a path that does not
+resolve against the `serde`/`swc_common` versions currently published on
+crates.io — the original `main` tree no longer builds for the same reason.
+Rather than pin the entire dependency graph to a yanked/older `serde`, the
+projection captures what the code generator and language server actually need
+(statement kinds + locations). Consumers requiring the complete AST re-parse the
+script text with SWC directly. Revisited if/when the upstream `serde-impl`
+alignment is fixed.
 
 ### Reproducible builds
 
-Because the working `serde`/`swc` version set is narrow (see above), `Cargo.lock` is committed. A fresh clone must build against the frozen versions, not whatever the registry resolves to today.
+Because the working `serde`/`swc` version set is narrow (see above), `Cargo.lock`
+is committed. A fresh clone must build against the frozen versions, not whatever
+the registry resolves to today.
 
 ---
 
@@ -271,34 +308,35 @@ crates/
 │       ├── line_index.rs       LineIndex, LineCol
 │       └── diagnostic.rs       Diagnostic, Severity
 │
-├── lunas_parser/
+├── lunas_parser/                .lunas syntax only — no JS/TS toolchain
 │   ├── Cargo.toml
 │   ├── DESIGN.md
+│   ├── examples/parse_demo.rs
+│   ├── tests/integration.rs     black-box tests via the public `parse`
 │   └── src/
-│       ├── lib.rs              pub use parse; pub use types::*;
-│       ├── source.rs           SourceFile, TextSize, TextRange, LineIndex
-│       ├── lexer.rs            Lexer, Token, TokenKind
-│       ├── parser.rs           CST builder using token stream
-│       ├── ast/
-│       │   ├── mod.rs
-│       │   ├── generated.rs    typed CST wrappers (LunasFile, LanguageBlock, …)
-│       │   └── traits.rs       AstNode trait
-│       ├── lower.rs            AST → ParsedFile
-│       ├── js/
-│       │   ├── mod.rs
-│       │   ├── swc_parse.rs    invoke SWC, rebase spans
-│       │   └── ts_to_js.rs     strip TS types via SWC transforms
-│       ├── for_parser.rs       for..of / for..in expression parser
-│       └── error.rs            Diagnostic, Severity
+│       ├── lib.rs               public API: `parse`, `ParsedFile`, IR re-exports
+│       ├── grammar/lunas.pest   Pest grammar for the outer format
+│       ├── parser1.rs           Stage 1: Pest → Vec<RawItem>
+│       ├── lower.rs             Stage 2: RawItem → ParsedFile (+ HTML sub-parse)
+│       └── ir.rs               public output types (ScriptBlock = raw text only)
 │
-└── lunas_html_parser/
+├── lunas_script/                the JS/TS "AST parser", built on SWC
+│   ├── Cargo.toml
+│   ├── tests/{ast,transform,for_header}.rs
+│   └── src/
+│       ├── lib.rs               pub use parse_to_ast_json, transform_ts_to_js, parse_for
+│       ├── ast.rs               parse script (TS natively) → AST JSON projection
+│       ├── transform.rs         downstream TS → JS lowering
+│       └── for_header.rs        for..of / for..in header parser
+│
+└── lunas_html_parser/           hand-written HTML parser — no parser library
     ├── Cargo.toml
+    ├── tests/{lexer,parser,html5lib_tokenizer}.rs + html5lib/ (vendored)
     └── src/
-        ├── lib.rs              pub use parse_html; pub use dom::*;
-        ├── lexer.rs            state-machine tokenizer
-        ├── parser.rs           recursive descent tree builder
-        ├── dom.rs              Dom, Node, Element, Attr, DomKind, ElementKind
-        └── error.rs            Diagnostic (re-uses same shape)
+        ├── lib.rs               pub use parse_html; pub use dom::*; (+ hidden internals)
+        ├── lexer.rs             state-machine tokenizer
+        ├── parser.rs            recursive descent tree builder
+        └── dom.rs               Dom, Node, Element, Attribute, DomKind, ElementKind
 ```
 
 ---
@@ -308,7 +346,13 @@ crates/
 | crate | direct deps |
 |---|---|
 | `lunas_span` | `serde` |
-| `lunas_html_parser` | `lunas_span`, `thiserror` |
-| `lunas_parser` | `lunas_span`, `lunas_html_parser`, `swc_core`, `swc_ecma_*`, `thiserror`, `serde`, `serde_json` |
+| `lunas_html_parser` | `lunas_span`, `thiserror`, `serde` |
+| `lunas_parser` | `lunas_span`, `lunas_html_parser`, `pest`, `thiserror`, `serde` |
+| `lunas_script` | `lunas_span`, `swc_core`, `swc_ecma_*`, `thiserror`, `serde`, `serde_json` |
 
-No parser-combinator library (`nom`, `pest`, `chumsky`) in `lunas_html_parser` — the hand-written lexer+parser is simpler than the format warrants. `pest` is used only for the `.lunas` outer format in `lunas_parser` where the grammar is genuinely declarative and benefits from being readable as a specification.
+The SWC/JS-toolchain dependency is confined to `lunas_script`. `lunas_parser`
+depends only on `pest` (for the `.lunas` outer grammar) and the HTML parser, so
+the syntax parser builds without the heavy SWC graph. No parser-combinator
+library appears in `lunas_html_parser` — the hand-written lexer+parser is
+simpler than the format warrants. `pest` is used only for the `.lunas` outer
+format, where the grammar reads as a specification.

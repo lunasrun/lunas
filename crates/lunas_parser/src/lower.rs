@@ -1,7 +1,8 @@
 //! Stage 2: lower the raw Pest items into the public [`ParsedFile`].
 //!
 //! Validates block uniqueness, extracts indentation-stripped block bodies,
-//! invokes the HTML and JS sub-parsers, and parses directive bodies. Never
+//! invokes the HTML sub-parser, and parses directive bodies. The script block
+//! is only extracted as raw text; JS/TS parsing lives in `lunas_script`. Never
 //! panics; all problems are accumulated as [`Diagnostic`]s.
 
 use lunas_html_parser::parse_html;
@@ -11,8 +12,6 @@ use crate::ir::{
     BlockSource, Directive, HtmlBlock, PropInput, ScriptBlock, StyleBlock, UseComponent,
 };
 use crate::parser1::{parse1, RawDirective, RawItem, RawLanguageBlock};
-use crate::swc_parser::parse_to_ast_json;
-use crate::ts_to_js::transform_ts_to_js;
 use crate::ParsedFile;
 
 pub(crate) fn lower(source: &str) -> (ParsedFile, Vec<Diagnostic>) {
@@ -89,23 +88,8 @@ pub(crate) fn lower(source: &str) -> (ParsedFile, Vec<Diagnostic>) {
         source: extract_block_source(source, block.body_range),
     });
 
-    let script = script_raw.map(|block| {
-        let source = extract_block_source(source, block.body_range);
-        let js = match transform_ts_to_js(&source.text) {
-            Ok(js) => js,
-            Err(e) => {
-                diagnostics.push(Diagnostic::error(block.body_range, e.to_string()));
-                source.text.clone()
-            }
-        };
-        let ast = match parse_to_ast_json(&js) {
-            Ok(ast) => ast,
-            Err(e) => {
-                diagnostics.push(Diagnostic::error(block.body_range, e.to_string()));
-                serde_json::Value::Null
-            }
-        };
-        ScriptBlock { source, js, ast }
+    let script = script_raw.map(|block| ScriptBlock {
+        source: extract_block_source(source, block.body_range),
     });
 
     let mut directives = Vec::new();

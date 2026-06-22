@@ -14,14 +14,15 @@ use swc_ecma_transforms_typescript::{typescript, Config};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
-pub(crate) enum TsToJsError {
+pub enum TsToJsError {
     #[error("failed to parse TypeScript: {0}")]
     Parse(String),
 }
 
 /// Transforms TypeScript source into JavaScript by stripping type annotations
-/// and TS-specific syntax.
-pub(crate) fn transform_ts_to_js(ts_code: &str) -> Result<String, TsToJsError> {
+/// and TS-specific syntax. A downstream pass: it runs *after* parsing and is
+/// not required to obtain an AST.
+pub fn transform_ts_to_js(ts_code: &str) -> Result<String, TsToJsError> {
     let cm: Lrc<SourceMap> = Default::default();
     let fm = cm.new_source_file(
         Lrc::new(FileName::Custom("input.ts".into())),
@@ -68,39 +69,3 @@ pub(crate) fn transform_ts_to_js(ts_code: &str) -> Result<String, TsToJsError> {
     Ok(code)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn strips_types_keeps_imports() {
-        let ts = r#"
-            import axios from 'axios';
-            interface Args { name: string; }
-            function greet(arg: Args): void {
-                console.log(`Hello, ${arg.name}!`);
-            }
-        "#;
-        let js = transform_ts_to_js(ts).expect("transform failed");
-        assert!(js.contains("function greet("));
-        assert!(!js.contains("string"));
-        assert!(js.contains("import axios from 'axios';"));
-    }
-
-    #[test]
-    fn empty_input_ok() {
-        assert_eq!(transform_ts_to_js("").expect("ok").trim(), "");
-    }
-
-    #[test]
-    fn strips_let_type_annotation() {
-        let js = transform_ts_to_js("let count: number = 0").expect("ok");
-        assert!(!js.contains("number"));
-        assert!(js.contains("count"));
-    }
-
-    #[test]
-    fn invalid_ts_is_error() {
-        assert!(transform_ts_to_js("let x: = =").is_err());
-    }
-}

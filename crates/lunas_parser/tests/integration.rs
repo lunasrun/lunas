@@ -45,10 +45,10 @@ fn full_realistic_file() {
         other => panic!("expected use, got {:?}", other),
     }
 
-    // TS types stripped in produced JS.
+    // The parser extracts the script's raw text; JS/TS parsing is a separate
+    // concern (lunas_script), so the original source is preserved verbatim.
     let script = file.script.as_ref().expect("script");
-    assert!(!script.js.contains("number"), "js still has types: {}", script.js);
-    assert_eq!(script.ast["type"], "Module");
+    assert!(script.source.text.contains("let count: number = 0"));
 }
 
 #[test]
@@ -158,13 +158,15 @@ fn empty_script_block() {
 }
 
 #[test]
-fn script_typescript_stripped() {
+fn script_text_preserved_verbatim() {
+    // The parser does not transform the script; TS is kept as-is for the
+    // downstream lunas_script stage.
     let src = "html:\n    <p/>\nscript:\n    interface A { x: number }\n    let y: A = { x: 1 }\n";
     let (file, diags) = parse(src);
     assert!(no_errors(&diags));
-    let js = &file.script.as_ref().unwrap().js;
-    assert!(!js.contains("interface"));
-    assert!(!js.contains(": A"));
+    let text = &file.script.as_ref().unwrap().source.text;
+    assert!(text.contains("interface A { x: number }"));
+    assert!(text.contains("let y: A = { x: 1 }"));
 }
 
 #[test]

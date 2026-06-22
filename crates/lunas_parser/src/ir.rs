@@ -27,15 +27,15 @@ pub struct StyleBlock {
     pub source: BlockSource,
 }
 
-/// The parsed `script:` block. Holds both the JavaScript source (after any
-/// TypeScript stripping) and its SWC AST serialized as JSON.
+/// The parsed `script:` block.
+///
+/// The parser only locates and extracts the raw script text; parsing it to an
+/// AST and any TypeScript-to-JavaScript lowering are separate concerns handled
+/// by the `lunas_script` crate, so the `.lunas` syntax parser stays free of any
+/// JS/TS toolchain dependency.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ScriptBlock {
     pub source: BlockSource,
-    /// JavaScript text after TS-to-JS transformation.
-    pub js: String,
-    /// SWC AST as JSON, with spans rebased to the `.lunas` file.
-    pub ast: serde_json::Value,
 }
 
 /// A metadata directive.

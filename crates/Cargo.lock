@@ -657,6 +657,15 @@ dependencies = [
  "pest",
  "pest_derive",
  "serde",
+ "thiserror",
+]
+
+[[package]]
+name = "lunas_script"
+version = "0.1.0"
+dependencies = [
+ "lunas_span",
+ "serde",
  "serde_json",
  "swc_common",
  "swc_core",

@@ -2,18 +2,18 @@
 //!
 //! Parsing is layered (see `DESIGN.md`): a Pest grammar splits the `.lunas`
 //! file into language blocks and directives (`parser1`), then semantic
-//! lowering (`lower`) validates them and invokes the HTML and JS sub-parsers
-//! to produce a [`ParsedFile`]. The parser never panics and reports problems
-//! as [`Diagnostic`]s rather than failing hard.
+//! lowering (`lower`) validates them and invokes the HTML sub-parser to produce
+//! a [`ParsedFile`]. The parser never panics and reports problems as
+//! [`Diagnostic`]s rather than failing hard.
+//!
+//! Script blocks are extracted as raw text only; parsing them to an AST and any
+//! TypeScript lowering live in the separate `lunas_script` crate, so this crate
+//! carries no JS/TS toolchain dependency.
 
-mod for_parser;
 mod ir;
 mod lower;
 mod parser1;
-mod swc_parser;
-mod ts_to_js;
 
-pub use for_parser::{parse_for, ForKind, ParsedFor};
 pub use ir::{
     BlockSource, Directive, HtmlBlock, PropInput, ScriptBlock, StyleBlock, UseComponent,
 };
