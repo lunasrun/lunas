@@ -18,6 +18,18 @@ pub struct Template {
     pub nodes: Vec<TemplateNode>,
 }
 
+impl Template {
+    /// Visits every node in the tree in pre-order (parents before children),
+    /// descending through element/component children, `:if` branch bodies, and
+    /// `:for` bodies. Saves consumers (the orchestrator, language server) from
+    /// re-implementing the recursive walk.
+    pub fn visit<F: FnMut(&TemplateNode)>(&self, f: &mut F) {
+        for node in &self.nodes {
+            node.visit(f);
+        }
+    }
+}
+
 /// A node in the template tree.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum TemplateNode {
@@ -29,6 +41,20 @@ pub enum TemplateNode {
     If(IfChain),
     /// A `:for` loop wrapping a single body node.
     For(ForBlock),
+}
+
+impl TemplateNode {
+    /// Visits this node and its descendants in pre-order.
+    pub fn visit<F: FnMut(&TemplateNode)>(&self, f: &mut F) {
+        f(self);
+        match self {
+            TemplateNode::Element(e) => e.children.iter().for_each(|c| c.visit(f)),
+            TemplateNode::Component(c) => c.children.iter().for_each(|n| n.visit(f)),
+            TemplateNode::If(chain) => chain.branches.iter().for_each(|b| b.body.visit(f)),
+            TemplateNode::For(block) => block.body.visit(f),
+            TemplateNode::Text(_) | TemplateNode::Comment(_) => {}
+        }
+    }
 }
 
 /// A run of text that interleaves static literals and `${…}` interpolations.

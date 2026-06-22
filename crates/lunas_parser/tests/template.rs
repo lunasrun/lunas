@@ -636,3 +636,32 @@ fn whitespace_only_text_keeps_cascade() {
         .expect("if chain");
     assert_eq!(chain.branches.len(), 2);
 }
+
+// --- Template::visit traversal helper ---
+
+#[test]
+fn visit_reaches_all_nested_nodes() {
+    use lunas_parser::Template;
+    let src = "html:\n    <ul :for=\"x of xs\"><li :if=\"x\">${a}</li><li :else>${b}</li></ul>\n";
+    let (file, _) = parse(src);
+    let template: Template = file.html.unwrap().template;
+
+    let mut interpolations = 0;
+    let mut elements = 0;
+    template.visit(&mut |n| match n {
+        TemplateNode::Element(_) => elements += 1,
+        TemplateNode::Text(t) => {
+            interpolations += t
+                .segments
+                .iter()
+                .filter(|s| matches!(s, TextSegment::Interpolation(_)))
+                .count();
+        }
+        _ => {}
+    });
+
+    // ul + two li elements are all reached through For -> If -> branch bodies.
+    assert_eq!(elements, 3);
+    // ${a} and ${b} inside the two branches.
+    assert_eq!(interpolations, 2);
+}
