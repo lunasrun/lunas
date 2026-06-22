@@ -553,3 +553,47 @@ fn deeply_nested_elements_preserve_interpolation() {
     }
     assert!(find_interp(&div.children));
 }
+
+// --- Components: children, multiple @use, quoting (hardening) ---
+
+#[test]
+fn component_with_children() {
+    let src = "@use()\nCard from \"./Card\"\n\nhtml:\n    <Card><p>slot ${x}</p></Card>\n";
+    let ns = nodes(src);
+    let comp = ns
+        .iter()
+        .find_map(|n| match n {
+            TemplateNode::Component(c) => Some(c),
+            _ => None,
+        })
+        .expect("component");
+    // The <p> child (and its interpolation) are preserved under the component.
+    let has_p = comp
+        .children
+        .iter()
+        .any(|n| matches!(n, TemplateNode::Element(e) if e.name == "p"));
+    assert!(has_p, "expected <p> child under the component");
+}
+
+#[test]
+fn multiple_use_components_both_resolve() {
+    let src = "@use A from \"./A\"\n@use B from './B'\n\nhtml:\n    <A /><B />\n";
+    let (file, diags) = parse(src);
+    assert!(
+        !diags.iter().any(|d| d.severity == Severity::Error),
+        "{:?}",
+        diags
+    );
+    let html = file.html.unwrap();
+    let comps: Vec<&str> = html
+        .template
+        .nodes
+        .iter()
+        .filter_map(|n| match n {
+            TemplateNode::Component(c) => Some(c.name.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert!(comps.contains(&"A"));
+    assert!(comps.contains(&"B"));
+}
