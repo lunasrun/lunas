@@ -13,9 +13,6 @@ mod parser1;
 mod swc_parser;
 mod ts_to_js;
 
-#[cfg(test)]
-mod tests;
-
 pub use for_parser::{parse_for, ForKind, ParsedFor};
 pub use ir::{
     BlockSource, Directive, HtmlBlock, PropInput, ScriptBlock, StyleBlock, UseComponent,

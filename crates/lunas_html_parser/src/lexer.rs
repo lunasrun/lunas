@@ -1,11 +1,16 @@
-//! State-machine tokenizer. Implemented by the html-parser agent.
+//! State-machine tokenizer.
+//!
+//! `tokenize`, [`Token`], and [`TokenKind`] are `pub` so the integration test
+//! suite in `tests/` can exercise the lexer directly; they are re-exported
+//! under the hidden `crate::internals` facade and are not part of the stable
+//! public API.
 
 use lunas_span::{TextRange, TextSize};
 
 /// A lexical token. String content is kept as ranges into the source; callers
 /// slice the original `&str` rather than copying during lexing.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum TokenKind {
+pub enum TokenKind {
     Doctype,
     /// `<name` — the start of an open tag, before any attributes.
     OpenTagStart { name: TextRange },
@@ -31,14 +36,14 @@ pub(crate) enum TokenKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Token {
+pub struct Token {
     pub kind: TokenKind,
     pub range: TextRange,
 }
 
 /// Tokenizes `source` into a flat token stream. Never panics; unexpected input
 /// is surfaced as `Text` or `Error` tokens so the tree builder can recover.
-pub(crate) fn tokenize(source: &str) -> Vec<Token> {
+pub fn tokenize(source: &str) -> Vec<Token> {
     Lexer::new(source).run()
 }
 
@@ -348,229 +353,3 @@ impl<'a> Lexer<'a> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn slice<'a>(source: &'a str, r: TextRange) -> &'a str {
-        r.slice(source).unwrap()
-    }
-
-    #[test]
-    fn empty_input() {
-        assert!(tokenize("").is_empty());
-    }
-
-    #[test]
-    fn plain_text() {
-        let toks = tokenize("hello");
-        assert_eq!(toks.len(), 1);
-        assert_eq!(toks[0].kind, TokenKind::Text);
-        assert_eq!(slice("hello", toks[0].range), "hello");
-    }
-
-    #[test]
-    fn simple_open_close() {
-        let toks = tokenize("<div></div>");
-        assert!(matches!(toks[0].kind, TokenKind::OpenTagStart { .. }));
-        assert_eq!(toks[1].kind, TokenKind::OpenTagEnd);
-        assert!(matches!(toks[2].kind, TokenKind::CloseTag { .. }));
-    }
-
-    #[test]
-    fn open_tag_name_range() {
-        let src = "<div>";
-        let toks = tokenize(src);
-        if let TokenKind::OpenTagStart { name } = toks[0].kind {
-            assert_eq!(slice(src, name), "div");
-        } else {
-            panic!("expected open tag start");
-        }
-    }
-
-    #[test]
-    fn self_closing() {
-        let toks = tokenize("<br/>");
-        assert!(matches!(toks[0].kind, TokenKind::OpenTagStart { .. }));
-        assert_eq!(toks[1].kind, TokenKind::SelfCloseTagEnd);
-    }
-
-    #[test]
-    fn self_closing_with_space() {
-        let toks = tokenize("<Foo />");
-        assert_eq!(toks.last().unwrap().kind, TokenKind::SelfCloseTagEnd);
-    }
-
-    #[test]
-    fn attribute_boolean() {
-        let src = "<input disabled>";
-        let toks = tokenize(src);
-        if let TokenKind::Attribute { name, value } = toks[1].kind {
-            assert_eq!(slice(src, name), "disabled");
-            assert!(value.is_none());
-        } else {
-            panic!("expected attribute");
-        }
-    }
-
-    #[test]
-    fn attribute_double_quoted() {
-        let src = "<a href=\"x\">";
-        let toks = tokenize(src);
-        if let TokenKind::Attribute { name, value } = toks[1].kind {
-            assert_eq!(slice(src, name), "href");
-            assert_eq!(slice(src, value.unwrap()), "x");
-        } else {
-            panic!();
-        }
-    }
-
-    #[test]
-    fn attribute_single_quoted() {
-        let src = "<a href='x'>";
-        let toks = tokenize(src);
-        if let TokenKind::Attribute { value, .. } = toks[1].kind {
-            assert_eq!(slice(src, value.unwrap()), "x");
-        } else {
-            panic!();
-        }
-    }
-
-    #[test]
-    fn attribute_unquoted() {
-        let src = "<a href=x>";
-        let toks = tokenize(src);
-        if let TokenKind::Attribute { value, .. } = toks[1].kind {
-            assert_eq!(slice(src, value.unwrap()), "x");
-        } else {
-            panic!();
-        }
-    }
-
-    #[test]
-    fn attribute_whitespace_around_eq() {
-        let src = "<a href = \"x\">";
-        let toks = tokenize(src);
-        if let TokenKind::Attribute { value, .. } = toks[1].kind {
-            assert_eq!(slice(src, value.unwrap()), "x");
-        } else {
-            panic!();
-        }
-    }
-
-    #[test]
-    fn attribute_value_with_gt() {
-        let src = "<a t=\"a>b\">";
-        let toks = tokenize(src);
-        if let TokenKind::Attribute { value, .. } = toks[1].kind {
-            assert_eq!(slice(src, value.unwrap()), "a>b");
-        } else {
-            panic!();
-        }
-    }
-
-    #[test]
-    fn empty_attribute_value() {
-        let src = "<a x=\"\">";
-        let toks = tokenize(src);
-        if let TokenKind::Attribute { value, .. } = toks[1].kind {
-            assert_eq!(slice(src, value.unwrap()), "");
-        } else {
-            panic!();
-        }
-    }
-
-    #[test]
-    fn close_tag_with_whitespace() {
-        let src = "</ div >";
-        let toks = tokenize(src);
-        if let TokenKind::CloseTag { name } = toks[0].kind {
-            assert_eq!(slice(src, name), "div");
-        } else {
-            panic!();
-        }
-    }
-
-    #[test]
-    fn comment_content() {
-        let src = "<!-- hi -->";
-        let toks = tokenize(src);
-        if let TokenKind::Comment { content } = toks[0].kind {
-            assert_eq!(slice(src, content), " hi ");
-        } else {
-            panic!();
-        }
-    }
-
-    #[test]
-    fn empty_comment() {
-        let src = "<!---->";
-        let toks = tokenize(src);
-        if let TokenKind::Comment { content } = toks[0].kind {
-            assert_eq!(slice(src, content), "");
-        } else {
-            panic!();
-        }
-    }
-
-    #[test]
-    fn unterminated_comment() {
-        let src = "<!-- oops";
-        let toks = tokenize(src);
-        if let TokenKind::Comment { content } = toks[0].kind {
-            assert_eq!(slice(src, content), " oops");
-        } else {
-            panic!();
-        }
-    }
-
-    #[test]
-    fn doctype() {
-        let toks = tokenize("<!DOCTYPE html>");
-        assert_eq!(toks[0].kind, TokenKind::Doctype);
-    }
-
-    #[test]
-    fn doctype_lowercase() {
-        let toks = tokenize("<!doctype html>");
-        assert_eq!(toks[0].kind, TokenKind::Doctype);
-    }
-
-    #[test]
-    fn raw_text_script() {
-        let src = "<script>if (a < b) {}</script>";
-        let toks = tokenize(src);
-        let raw = toks.iter().find(|t| t.kind == TokenKind::RawText).unwrap();
-        assert_eq!(slice(src, raw.range), "if (a < b) {}");
-    }
-
-    #[test]
-    fn raw_text_with_fake_close() {
-        let src = "<script></div></script>";
-        let toks = tokenize(src);
-        let raw = toks.iter().find(|t| t.kind == TokenKind::RawText).unwrap();
-        assert_eq!(slice(src, raw.range), "</div>");
-    }
-
-    #[test]
-    fn raw_text_no_premature_match() {
-        let src = "<script>x</scriptable>y</script>";
-        let toks = tokenize(src);
-        let raw = toks.iter().find(|t| t.kind == TokenKind::RawText).unwrap();
-        assert_eq!(slice(src, raw.range), "x</scriptable>y");
-    }
-
-    #[test]
-    fn stray_lt_is_text() {
-        let toks = tokenize("a < b");
-        assert!(toks.iter().all(|t| t.kind == TokenKind::Text));
-    }
-
-    #[test]
-    fn unicode_text_boundaries() {
-        let src = "<p>あいう</p>";
-        let toks = tokenize(src);
-        let text = toks.iter().find(|t| t.kind == TokenKind::Text).unwrap();
-        assert_eq!(slice(src, text.range), "あいう");
-    }
-}

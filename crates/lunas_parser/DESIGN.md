@@ -231,6 +231,26 @@ No `Result` — the parser never panics and always returns something useful.
 
 ---
 
+## Testing
+
+Tests live in independent `tests/` directories (Rust integration tests), driven
+through the public APIs; only genuinely white-box unit tests (e.g. the Pest
+stage, SWC glue) remain inline in `src/`.
+
+The HTML tokenizer is additionally validated against **html5lib-tests**, the
+standard cross-implementation conformance suite, vendored under
+`lunas_html_parser/tests/html5lib/`. Because our parser is a pragmatic
+tokenizer for `.lunas` templates rather than a spec-complete HTML5 engine, the
+harness runs the in-scope subset (~400 cases) and asserts an exact match,
+counts and reports the out-of-scope categories it deliberately does not
+implement (character references, DOCTYPE internals, alternate tokenizer states,
+NUL/CR normalization, adversarial mid-tag EOF recovery), and pins a short,
+explicit list of known per-character recovery divergences as a regression
+guard. Running the full ~1800-case suite keeps the coverage picture honest:
+new divergences outside the known list fail the build.
+
+---
+
 ## Crate layout
 
 The span model and diagnostic types are shared by both parser crates, so they

@@ -1,8 +1,8 @@
 //! Integration tests for the full parse pipeline.
 
-use crate::{parse, Directive, LineCol, Severity};
+use lunas_parser::{parse, Directive, LineCol, Severity};
 
-fn no_errors(diags: &[crate::Diagnostic]) -> bool {
+fn no_errors(diags: &[lunas_parser::Diagnostic]) -> bool {
     !diags.iter().any(|d| d.severity == Severity::Error)
 }
 

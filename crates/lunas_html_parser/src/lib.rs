@@ -12,6 +12,13 @@ mod parser;
 
 pub use dom::{Attribute, Comment, Dom, DomKind, Element, ElementKind, Node, Text};
 
+/// Internal lexer surface exposed only for the integration test suite in
+/// `tests/`. Not part of the stable public API; may change without notice.
+#[doc(hidden)]
+pub mod internals {
+    pub use crate::lexer::{tokenize, Token, TokenKind};
+}
+
 use lunas_span::Diagnostic;
 
 /// The result of parsing an HTML source string.
