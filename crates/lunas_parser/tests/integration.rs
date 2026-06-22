@@ -340,3 +340,47 @@ fn block_at_routes_positions() {
     // The `@input` directive line is not inside any block.
     assert_eq!(file.block_at_line_col(LineCol::new(0, 0)), None);
 }
+
+#[test]
+fn input_inline_variants() {
+    use lunas_parser::Directive;
+    let check = |src: &str| {
+        let (file, diags) = parse(src);
+        assert!(
+            !diags.iter().any(|d| d.severity == Severity::Error),
+            "{src:?} -> {:?}",
+            diags
+        );
+        match &file.directives[0] {
+            Directive::Input(p) => p.clone(),
+            other => panic!("expected input, got {other:?}"),
+        }
+    };
+
+    let p = check("@input name:string\nhtml:\n    <p/>\n");
+    assert_eq!(p.name, "name");
+    assert_eq!(p.type_annotation.as_deref(), Some("string"));
+    assert!(!p.nullable);
+    assert_eq!(p.default_value, None);
+
+    let p = check("@input name:string?\nhtml:\n    <p/>\n");
+    assert!(p.nullable);
+    assert_eq!(p.default_value, None);
+
+    let p = check("@input name:string? = \"x\"\nhtml:\n    <p/>\n");
+    assert!(p.nullable);
+    assert_eq!(p.default_value.as_deref(), Some("\"x\""));
+
+    let p = check("@input  name : number = 42 \nhtml:\n    <p/>\n");
+    assert_eq!(p.name, "name");
+    assert_eq!(p.type_annotation.as_deref(), Some("number"));
+    assert_eq!(p.default_value.as_deref(), Some("42"));
+}
+
+#[test]
+fn input_without_type_is_error() {
+    let (_file, diags) = parse("@input name\nhtml:\n    <p/>\n");
+    assert!(diags
+        .iter()
+        .any(|d| d.is_error() && d.message.contains("@input")));
+}
