@@ -32,18 +32,13 @@ script:
 
 ## Guiding principles
 
-These are adopted from how production-quality parsers (SWC, rust-analyzer, Go `go/parser`) are structured:
+These borrow from how production-quality parsers (SWC, rust-analyzer, Go `go/parser`) are structured:
 
-1. **Lossless representation first** — the CST/AST retains every byte of the input, including whitespace and offsets. Analyses discard what they don't need; the parser never decides for them.
-2. **Error recovery over hard failure** — the parser always produces a tree. Errors are attached to nodes, not thrown. A broken `script:` block does not prevent the HTML from being accessible.
-3. **Strict layering** — each layer has one job and no knowledge of the layer above it:
-   - `source` → raw text with a `SourceFile` wrapper
-   - `lexer` → flat token stream
-   - `parser` → CST (lossless)
-   - `ast` → semantic tree (lossy, typed)
-   - `lower` → domain-specific output structs consumed by the code generator
-4. **Spans everywhere** — every node carries a `TextRange(start: TextSize, end: TextSize)` in byte offsets. Line/column is derived on demand via a `LineIndex`. This is the approach used by rust-analyzer and SWC.
-5. **Immutable input** — the parser borrows `&str`. It never copies the source except when building owned AST string values.
+1. **Verbatim extraction** — every block's `source.text` equals its slice of the input (no indentation stripping), so any position inside a block maps to the extracted text by a constant shift. The parser preserves bytes; analyses decide what to discard.
+2. **Error recovery over hard failure** — the parser always produces output. Problems are attached as `Diagnostic`s, never thrown. A broken `script:` block does not prevent the HTML from being accessible. The public `parse` returns `(ParsedFile, Vec<Diagnostic>)` — no `Result`, no panics.
+3. **Strict layering** — each stage has one job: the Pest grammar (`grammar/lunas.pest`) recognizes line structure, `parser1` produces raw items, `lower` does semantics and calls the HTML/template sub-parsers, and `lunas_script` (a separate crate) owns all JS/TS work.
+4. **Spans everywhere** — every output node carries a `TextRange(start: TextSize, end: TextSize)` in byte offsets, file-absolute. Line/column is derived on demand via a `LineIndex` (the rust-analyzer / SWC approach). This — not a trivia-preserving CST — is how losslessness is achieved.
+5. **Immutable input** — the parser borrows `&str` and copies the source only into the owned strings it returns.
 
 ---
 
@@ -51,34 +46,41 @@ These are adopted from how production-quality parsers (SWC, rust-analyzer, Go `g
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│  source.rs    SourceFile { text: &str, path: Option }   │
+│  source &str                                            │
 └──────────────────────────┬──────────────────────────────┘
-                           │ &str
+                           │ Pest grammar (grammar/lunas.pest)
 ┌──────────────────────────▼──────────────────────────────┐
-│  lexer.rs     Lexer → Iterator<Item = Token>            │
-│               Token { kind: TokenKind, range: TextRange }│
+│  parser1.rs   parse1 → Vec<RawItem>                     │
+│               raw language blocks + directives, each     │
+│               carrying a byte-offset TextRange. Pure     │
+│               line structure; no semantics.              │
 └──────────────────────────┬──────────────────────────────┘
-                           │ Vec<Token>
+                           │ Vec<RawItem>
 ┌──────────────────────────▼──────────────────────────────┐
-│  parser.rs    Parser → GreenNode (lossless CST)         │
-│               Every trivia (whitespace, newlines)        │
-│               is preserved as a trivia token.            │
+│  lower.rs     lower → ParsedFile                        │
+│   · validate block uniqueness / presence                │
+│   · extract each block verbatim (BlockSource)           │
+│   · html: parse_html → Dom, rebased file-absolute,      │
+│           then template::build → Template (binding IR)  │
+│   · directives → Directive (inline @input/@use/…)       │
 └──────────────────────────┬──────────────────────────────┘
-                           │ GreenNode
-┌──────────────────────────▼──────────────────────────────┐
-│  ast/         Typed wrappers over CST nodes             │
-│  ast/file.rs  LunasFile, LanguageBlock, Directive       │
-└──────────────────────────┬──────────────────────────────┘
-                           │ ast::LunasFile
-┌──────────────────────────▼──────────────────────────────┐
-│  lower.rs     Lowers AST → ParsedFile                   │
-│               Validates, extracts spans, calls HTML/JS   │
-│               sub-parsers.                               │
-└──────────────────────────┬──────────────────────────────┘
-                           │ ParsedFile (public output)
+                           │ ParsedFile + Vec<Diagnostic>
+                           ▼  (public output)
 ```
 
-The **public entry point** (`parse`) returns a `ParsedFile` plus a `Vec<Diagnostic>`. Callers that only need the final output never touch the CST. Callers that need IDE features (hover, go-to-definition) can walk the CST directly.
+The **public entry point** (`parse`) returns a `ParsedFile` plus a
+`Vec<Diagnostic>`; it never returns `Err` and never panics. The outer `.lunas`
+structure is described declaratively by the Pest grammar (which reads as a
+specification of the line format), while the bespoke logic — HTML parsing, the
+template binding pass, directive parsing — lives in hand-written Rust in
+`lower.rs` and the `template/` module. JS/TS is not parsed here at all; the
+`script:` block is extracted as raw text for the `lunas_script` crate
+downstream.
+
+> Note: this is a pragmatic two-stage design (Pest → semantic lowering), not a
+> full lossless green-node CST. The lossless/spans-everywhere property is
+> achieved by attaching a file-absolute `TextRange` to every output node rather
+> than by retaining a trivia-preserving syntax tree.
 
 ---
 
@@ -96,8 +98,9 @@ pub struct TextRange { start: TextSize, end: TextSize }
 /// Maps byte offsets to (line, col) on demand.
 /// Built once per file; O(log n) per query.
 pub struct LineIndex {
-    /// Sorted byte offsets of every '\n'.
-    newlines: Vec<TextSize>,
+    /// Byte offset of the start of each line (line_starts[0] == 0).
+    line_starts: Vec<TextSize>,
+    len: TextSize,
 }
 
 pub struct LineCol { pub line: u32, pub col: u32 }  // 0-based
@@ -108,7 +111,7 @@ impl LineIndex {
 }
 ```
 
-`TextRange` is attached to every CST node, every AST node, and every `Diagnostic`. The `LineIndex` is constructed from the source text and stored in `ParsedFile`. The LS proxy calls `line_col` / `offset` to convert between `.lunas` positions and extracted-block positions without any re-parsing.
+`TextRange` is attached to every output node (HTML `Dom`, template IR, directives) and every `Diagnostic`. The `LineIndex` is constructed from the source text and stored in `ParsedFile`. The LS proxy calls `line_col` / `offset` to convert between `.lunas` positions and extracted-block positions without any re-parsing.
 
 ### LSP position mapping
 
