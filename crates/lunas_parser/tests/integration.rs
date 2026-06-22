@@ -282,3 +282,26 @@ fn varying_indent_depth() {
     let (file, _) = parse("html:\n    <p/>\nscript:\n        let x = 1\n");
     assert_eq!(file.script.as_ref().unwrap().source.text, "let x = 1");
 }
+
+#[test]
+fn block_at_routes_positions() {
+    use lunas_parser::{BlockKind, LineCol};
+    let src =
+        "@input x:string\nhtml:\n    <div></div>\nstyle:\n    .a {}\nscript:\n    let y = 1\n";
+    let (file, _) = parse(src);
+    // line 2 = html body, line 4 = style body, line 6 = script body.
+    assert_eq!(
+        file.block_at_line_col(LineCol::new(2, 5)),
+        Some(BlockKind::Html)
+    );
+    assert_eq!(
+        file.block_at_line_col(LineCol::new(4, 5)),
+        Some(BlockKind::Style)
+    );
+    assert_eq!(
+        file.block_at_line_col(LineCol::new(6, 5)),
+        Some(BlockKind::Script)
+    );
+    // The `@input` directive line is not inside any block.
+    assert_eq!(file.block_at_line_col(LineCol::new(0, 0)), None);
+}

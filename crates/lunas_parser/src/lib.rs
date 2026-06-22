@@ -55,6 +55,41 @@ impl ParsedFile {
         let start = self.line_index.line_col(script.source.range.start());
         Some(LineCol::new(pos.line + start.line, pos.col))
     }
+
+    /// Returns which language block a byte offset falls in, if any. A language
+    /// server uses this to route a request to the right backend (e.g. proxy
+    /// into the TypeScript LS when the cursor is in the `script:` block).
+    pub fn block_at(&self, offset: TextSize) -> Option<BlockKind> {
+        if let Some(s) = &self.script {
+            if s.source.range.contains_inclusive(offset) {
+                return Some(BlockKind::Script);
+            }
+        }
+        if let Some(h) = &self.html {
+            if h.source.range.contains_inclusive(offset) {
+                return Some(BlockKind::Html);
+            }
+        }
+        if let Some(s) = &self.style {
+            if s.source.range.contains_inclusive(offset) {
+                return Some(BlockKind::Style);
+            }
+        }
+        None
+    }
+
+    /// Like [`block_at`](Self::block_at) but takes a line/column position.
+    pub fn block_at_line_col(&self, pos: LineCol) -> Option<BlockKind> {
+        self.block_at(self.line_index.offset(pos))
+    }
+}
+
+/// A language block in a `.lunas` file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlockKind {
+    Html,
+    Style,
+    Script,
 }
 
 /// Parses a `.lunas` source string. Always returns a [`ParsedFile`]; any
