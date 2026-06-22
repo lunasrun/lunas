@@ -125,6 +125,13 @@ impl ParsedFile {
 
 Both functions use `LineIndex` arithmetic only — no re-parsing.
 
+The `script:` block needs this mapping because its text is *extracted* (and
+indentation-stripped) before downstream parsing, so script-local positions
+differ from file positions. The `html:` block needs no such mapping: its body
+is parsed verbatim and every `Dom` node range is rebased onto the file by a
+single constant offset (`Dom::shift_ranges`) during lowering, so HTML node
+positions are already `.lunas`-absolute and feed straight into `LineIndex`.
+
 ---
 
 ## HTML sub-parser

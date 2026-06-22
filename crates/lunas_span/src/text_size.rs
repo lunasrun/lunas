@@ -119,6 +119,15 @@ impl TextRange {
     pub fn slice(self, text: &str) -> Option<&str> {
         text.get(self.start.as_usize()..self.end.as_usize())
     }
+
+    /// Returns this range translated forward by `by` bytes. Used to rebase a
+    /// range parsed against a substring back onto the enclosing source.
+    pub fn shifted(self, by: TextSize) -> TextRange {
+        TextRange {
+            start: self.start + by,
+            end: self.end + by,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -169,6 +178,12 @@ mod tests {
         let b = TextRange::at(7, 9);
         assert_eq!(a.cover(b), TextRange::at(2, 9));
         assert_eq!(b.cover(a), TextRange::at(2, 9));
+    }
+
+    #[test]
+    fn range_shifted() {
+        assert_eq!(TextRange::at(2, 5).shifted(TextSize::new(10)), TextRange::at(12, 15));
+        assert_eq!(TextRange::at(0, 3).shifted(TextSize::new(0)), TextRange::at(0, 3));
     }
 
     #[test]

@@ -69,17 +69,28 @@ pub(crate) fn lower(source: &str) -> (ParsedFile, Vec<Diagnostic>) {
         ));
     }
 
-    // HTML: pass the indentation-stripped body to the HTML parser. The frozen
-    // Dom ranges are therefore relative to the stripped body, not the file; we
-    // keep `BlockSource.range` for the block's location in the original source
-    // and store the Dom as-is. Rebasing every Dom node would be invasive and is
-    // deferred to consumers that need file-absolute HTML positions.
+    // HTML: parse the *raw* (un-stripped) block body so that every Dom node
+    // range can be rebased onto the `.lunas` file by a single constant offset.
+    // (Indentation stripping would shift each line by a different amount, which
+    // a constant rebase could not undo.) Keeping the body verbatim also means
+    // `range.slice(file)` round-trips to a node's text — useful for the LS.
+    // `style:`/`script:` still strip, since they hand clean text downstream.
     let html = html_raw.map(|block| {
-        let source = extract_block_source(source, block.body_range);
-        let result = parse_html(&source.text);
-        diagnostics.extend(result.diagnostics);
+        let text = block.body_range.slice(source).unwrap_or("").to_string();
+        let mut result = parse_html(&text);
+
+        let offset = block.body_range.start();
+        result.dom.shift_ranges(offset);
+        diagnostics.extend(result.diagnostics.into_iter().map(|mut d| {
+            d.range = d.range.shifted(offset);
+            d
+        }));
+
         HtmlBlock {
-            source,
+            source: BlockSource {
+                text,
+                range: block.body_range,
+            },
             dom: result.dom,
         }
     });

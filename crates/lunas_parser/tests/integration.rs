@@ -116,17 +116,51 @@ fn duplicate_block_errors() {
 
 #[test]
 fn tab_indentation() {
-    let (file, diags) = parse("html:\n\t<div></div>\n");
+    // style/script blocks strip common indentation (HTML keeps it verbatim).
+    let (file, diags) = parse("html:\n    <p/>\nscript:\n\tlet x = 1\n");
     assert!(no_errors(&diags));
-    assert_eq!(file.html.as_ref().unwrap().source.text, "<div></div>");
+    assert_eq!(file.script.as_ref().unwrap().source.text, "let x = 1");
 }
 
 #[test]
 fn deeper_relative_indent_preserved() {
+    let src = "html:\n    <p/>\nscript:\n    if (x) {\n        y()\n    }\n";
+    let (file, _) = parse(src);
+    let text = &file.script.as_ref().unwrap().source.text;
+    assert_eq!(text, "if (x) {\n    y()\n}");
+}
+
+#[test]
+fn html_block_keeps_raw_indentation() {
+    // HTML is not stripped, so its source.text equals the original body region.
     let src = "html:\n    <ul>\n        <li/>\n    </ul>\n";
     let (file, _) = parse(src);
-    let text = &file.html.as_ref().unwrap().source.text;
-    assert_eq!(text, "<ul>\n    <li/>\n</ul>");
+    let block = file.html.as_ref().unwrap();
+    assert_eq!(block.source.range.slice(src), Some(block.source.text.as_str()));
+    assert!(block.source.text.contains("    <ul>"));
+}
+
+#[test]
+fn html_dom_ranges_are_file_absolute() {
+    // Regression guard: Dom node ranges must address the .lunas file, not the
+    // extracted block, so the language server can map HTML positions.
+    use lunas_html_parser::Node;
+    let src = "html:\n    <div id=\"a\">hi</div>\n";
+    let (file, _) = parse(src);
+    let dom = &file.html.as_ref().unwrap().dom;
+    // Raw HTML keeps the leading indentation as a whitespace text node, so find
+    // the first element child.
+    let div = dom
+        .children
+        .iter()
+        .find_map(|n| match n {
+            Node::Element(e) => Some(e),
+            _ => None,
+        })
+        .expect("element");
+    assert_eq!(div.range.slice(src), Some("<div id=\"a\">hi</div>"));
+    assert_eq!(div.open_tag_range.slice(src), Some("<div id=\"a\">"));
+    assert_eq!(div.attributes[0].range.slice(src), Some("id=\"a\""));
 }
 
 #[test]
@@ -241,6 +275,7 @@ fn use_integration_calls_html_parser() {
 
 #[test]
 fn varying_indent_depth() {
-    let (file, _) = parse("html:\n        <p/>\n");
-    assert_eq!(file.html.as_ref().unwrap().source.text, "<p/>");
+    // Stripping (now exercised via script) handles any indent depth.
+    let (file, _) = parse("html:\n    <p/>\nscript:\n        let x = 1\n");
+    assert_eq!(file.script.as_ref().unwrap().source.text, "let x = 1");
 }

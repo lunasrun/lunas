@@ -5,7 +5,7 @@
 //! every node so downstream tooling (the Lunas compiler and language server)
 //! can map any node back to its source location.
 
-use lunas_span::TextRange;
+use lunas_span::{TextRange, TextSize};
 use serde::{Deserialize, Serialize};
 
 /// The kind of document a parsed tree represents.
@@ -24,6 +24,42 @@ pub enum DomKind {
 pub struct Dom {
     pub kind: DomKind,
     pub children: Vec<Node>,
+}
+
+impl Dom {
+    /// Translates every node range forward by `by` bytes.
+    ///
+    /// [`crate::parse_html`] produces ranges relative to the start of its
+    /// input. When the HTML was a slice of a larger file, the caller rebases
+    /// the whole tree onto the file's coordinate space with this method.
+    pub fn shift_ranges(&mut self, by: TextSize) {
+        for child in &mut self.children {
+            child.shift_ranges(by);
+        }
+    }
+}
+
+impl Node {
+    fn shift_ranges(&mut self, by: TextSize) {
+        match self {
+            Node::Element(e) => e.shift_ranges(by),
+            Node::Text(t) => t.range = t.range.shifted(by),
+            Node::Comment(c) => c.range = c.range.shifted(by),
+        }
+    }
+}
+
+impl Element {
+    fn shift_ranges(&mut self, by: TextSize) {
+        self.range = self.range.shifted(by);
+        self.open_tag_range = self.open_tag_range.shifted(by);
+        for attr in &mut self.attributes {
+            attr.range = attr.range.shifted(by);
+        }
+        for child in &mut self.children {
+            child.shift_ranges(by);
+        }
+    }
 }
 
 /// A node in the DOM tree.
