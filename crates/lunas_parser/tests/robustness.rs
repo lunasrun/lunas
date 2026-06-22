@@ -115,3 +115,57 @@ fn pseudo_random_fuzz_does_not_panic() {
         assert_no_panic(&s);
     }
 }
+
+#[test]
+fn large_input_parses_without_blowup() {
+    // Guard against accidental super-linear behavior: a big template must parse
+    // and produce the expected structure. (A quadratic regression would make
+    // the test harness time out rather than pass.)
+    let n = 5000;
+    let mut html = String::from("html:\n    <div>");
+    for i in 0..n {
+        html.push_str(&format!("<span class=\"c\">${{v{i}}}</span>"));
+    }
+    html.push_str("</div>\n");
+
+    let (file, diags) = parse(&html);
+    assert!(!diags
+        .iter()
+        .any(|d| d.severity == lunas_parser::Severity::Error));
+    let block = file.html.expect("html");
+    // The outer <div> holds n <span> children.
+    let div = block
+        .template
+        .nodes
+        .iter()
+        .find_map(|node| match node {
+            lunas_parser::TemplateNode::Element(e) if e.name == "div" => Some(e),
+            _ => None,
+        })
+        .expect("div");
+    let spans = div
+        .children
+        .iter()
+        .filter(|c| matches!(c, lunas_parser::TemplateNode::Element(e) if e.name == "span"))
+        .count();
+    assert_eq!(spans, n);
+}
+
+#[test]
+fn deeply_nested_input_parses() {
+    // Deep nesting must not overflow the stack at a realistic depth.
+    let depth = 300;
+    let mut html = String::from("html:\n    ");
+    for _ in 0..depth {
+        html.push_str("<div>");
+    }
+    for _ in 0..depth {
+        html.push_str("</div>");
+    }
+    html.push('\n');
+    let (file, diags) = parse(&html);
+    assert!(!diags
+        .iter()
+        .any(|d| d.severity == lunas_parser::Severity::Error));
+    assert!(file.html.is_some());
+}
