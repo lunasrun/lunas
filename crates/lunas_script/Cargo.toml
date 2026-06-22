@@ -2,6 +2,9 @@
 name = "lunas_script"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
+description = "JavaScript/TypeScript AST parsing and TS-to-JS transform (SWC) for Lunas"
+repository = "https://github.com/lunasrun/lunas"
 
 [dependencies]
 lunas_span = { path = "../lunas_span" }

@@ -2,6 +2,9 @@
 name = "lunas_parser"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
+description = "Parser for the Lunas single-file-component (.lunas) format"
+repository = "https://github.com/lunasrun/lunas"
 
 [dependencies]
 lunas_span = { path = "../lunas_span" }
