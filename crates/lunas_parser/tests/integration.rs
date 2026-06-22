@@ -8,14 +8,12 @@ fn no_errors(diags: &[lunas_parser::Diagnostic]) -> bool {
 
 #[test]
 fn full_realistic_file() {
-    let src = "@input(optional)\n\
-               count: number = 0\n\
-               \n\
-               @use()\n\
-               Button from \"./Button\"\n\
+    // Canonical Lunas syntax: inline `@input`/`@use`, `${}` interpolation.
+    let src = "@input count:number = 0\n\
+               @use Button from \"./Button\"\n\
                \n\
                html:\n\
-               \x20   <div>{{ count }}</div>\n\
+               \x20   <div>${count}</div>\n\
                \n\
                style:\n\
                \x20   div { color: red; }\n\
@@ -44,6 +42,22 @@ fn full_realistic_file() {
         }
         other => panic!("expected use, got {:?}", other),
     }
+
+    // The `${count}` interpolation made it into the template IR.
+    use lunas_parser::{TemplateNode, TextSegment};
+    fn has_interpolation(nodes: &[TemplateNode]) -> bool {
+        nodes.iter().any(|n| match n {
+            TemplateNode::Text(t) => t
+                .segments
+                .iter()
+                .any(|s| matches!(s, TextSegment::Interpolation(i) if i.expr == "count")),
+            TemplateNode::Element(e) => has_interpolation(&e.children),
+            _ => false,
+        })
+    }
+    assert!(has_interpolation(
+        &file.html.as_ref().unwrap().template.nodes
+    ));
 
     // The parser extracts the script's raw text; JS/TS parsing is a separate
     // concern (lunas_script), so the original source is preserved verbatim.
