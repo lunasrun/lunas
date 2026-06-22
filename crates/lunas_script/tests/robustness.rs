@@ -20,6 +20,9 @@ fn exercise(input: &str) {
     no_panic("parse_to_ast_json", input, |s| {
         let _ = parse_to_ast_json(s);
     });
+    no_panic("declared_bindings", input, |s| {
+        let _ = lunas_script::declared_bindings(s);
+    });
 }
 
 #[test]
