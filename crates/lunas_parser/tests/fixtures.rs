@@ -93,3 +93,22 @@ fn pass_value_parses() {
     assert_eq!(inputs[0].type_annotation.as_deref(), Some("string"));
     assert_eq!(inputs[1].name, "message2");
 }
+
+#[test]
+fn fixture_template_serde_round_trips() {
+    // Lock the full template IR for a real file: it must survive a JSON
+    // round-trip unchanged, guarding every node/segment/span type.
+    for name in ["counter-game.lun", "pass-value.lun"] {
+        let file = parse_fixture(name);
+        if let Some(html) = &file.html {
+            let json = serde_json::to_string(&html.template).expect("serialize");
+            let back: lunas_parser::Template = serde_json::from_str(&json).expect("deserialize");
+            assert_eq!(html.template, back, "{name} template did not round-trip");
+
+            let dom_json = serde_json::to_string(&html.dom).expect("serialize dom");
+            let dom_back: lunas_html_parser::Dom =
+                serde_json::from_str(&dom_json).expect("deserialize dom");
+            assert_eq!(html.dom, dom_back, "{name} dom did not round-trip");
+        }
+    }
+}
