@@ -597,3 +597,42 @@ fn multiple_use_components_both_resolve() {
     assert!(comps.contains(&"A"));
     assert!(comps.contains(&"B"));
 }
+
+// --- Cascade boundary behavior (documented decisions) ---
+
+#[test]
+fn non_whitespace_text_breaks_cascade() {
+    let src = "html:\n    <div :if=\"a\">1</div>\n    sep\n    <div :else>2</div>\n";
+    let (ns, diags) = parse_template(src);
+    let chains = ns
+        .iter()
+        .filter(|n| matches!(n, TemplateNode::If(_)))
+        .count();
+    assert_eq!(chains, 1);
+    assert!(diags
+        .iter()
+        .any(|d| d.is_error() && d.message.contains("without a matching")));
+}
+
+#[test]
+fn comment_breaks_cascade() {
+    let src = "html:\n    <div :if=\"a\">1</div>\n    <!-- c -->\n    <div :else>2</div>\n";
+    let (_ns, diags) = parse_template(src);
+    assert!(diags
+        .iter()
+        .any(|d| d.is_error() && d.message.contains("without a matching")));
+}
+
+#[test]
+fn whitespace_only_text_keeps_cascade() {
+    let src = "html:\n    <div :if=\"a\">1</div>\n\n\n    <div :else>2</div>\n";
+    let ns = nodes(src);
+    let chain = ns
+        .iter()
+        .find_map(|n| match n {
+            TemplateNode::If(c) => Some(c),
+            _ => None,
+        })
+        .expect("if chain");
+    assert_eq!(chain.branches.len(), 2);
+}
