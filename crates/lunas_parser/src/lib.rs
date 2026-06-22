@@ -93,7 +93,23 @@ pub enum BlockKind {
 }
 
 /// Parses a `.lunas` source string. Always returns a [`ParsedFile`]; any
-/// problems are reported in the diagnostics vector.
+/// problems are reported in the diagnostics vector (never `Err`, never panics).
+///
+/// ```
+/// use lunas_parser::{parse, Directive};
+///
+/// let src = "\
+/// @input count:number = 0
+/// html:
+///     <div>${count}</div>
+/// script:
+///     let count = 0
+/// ";
+/// let (file, diagnostics) = parse(src);
+/// assert!(diagnostics.is_empty());
+/// assert!(file.html.is_some() && file.script.is_some());
+/// assert!(matches!(file.directives[0], Directive::Input(_)));
+/// ```
 pub fn parse(source: &str) -> (ParsedFile, Vec<Diagnostic>) {
     lower::lower(source)
 }

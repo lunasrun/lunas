@@ -33,6 +33,16 @@ pub struct ParsedFor {
 /// Parses a `for` loop header such as `item of items` or `[i, v] in obj`.
 /// Returns `None` if the input is not a recognizable `for..of` / `for..in`
 /// header.
+///
+/// ```
+/// use lunas_script::{parse_for, ForKind};
+///
+/// let parsed = parse_for("[i, v] of arr").unwrap();
+/// assert_eq!(parsed.kind, ForKind::Of);
+/// assert_eq!(parsed.binding, "[i, v]");
+/// assert_eq!(parsed.iterable, "arr");
+/// assert!(parse_for("not a loop header at all").is_none());
+/// ```
 // The `.entries()` detection walks several SWC AST layers; without let-chains
 // (unavailable on edition 2021) these reads stay nested.
 #[allow(clippy::collapsible_if, clippy::collapsible_match)]

@@ -32,7 +32,22 @@ pub struct ParseResult {
 ///
 /// All node ranges are relative to the start of `source`. When the HTML is
 /// embedded in a larger file, the caller rebases ranges by adding the byte
-/// offset of `source` within that file.
+/// offset of `source` within that file (see [`Dom::shift_ranges`]).
+///
+/// ```
+/// use lunas_html_parser::{parse_html, DomKind, Node};
+///
+/// let result = parse_html("<div class=\"x\">hi</div>");
+/// assert!(result.diagnostics.is_empty());
+/// assert_eq!(result.dom.kind, DomKind::Fragment);
+/// match &result.dom.children[0] {
+///     Node::Element(e) => {
+///         assert_eq!(e.name, "div");
+///         assert_eq!(e.attributes[0].value.as_deref(), Some("x"));
+///     }
+///     _ => panic!("expected an element"),
+/// }
+/// ```
 pub fn parse_html(source: &str) -> ParseResult {
     parser::parse(source)
 }
