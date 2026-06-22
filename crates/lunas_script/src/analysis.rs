@@ -81,8 +81,16 @@ pub fn declared_bindings(code: &str) -> Result<Vec<String>, ScriptParseError> {
 /// assert_eq!(ids, ["a", "f", "c", "d", "e"]);
 /// ```
 pub fn referenced_identifiers(code: &str) -> Result<Vec<String>, ScriptParseError> {
+    let module = parse_expr_module(code)?;
+    let mut collector = RefCollector { names: Vec::new() };
+    module.visit_with(&mut collector);
+    Ok(collector.names)
+}
+
+/// Parses `code` as an expression by wrapping it in `(…);` so a bare expression
+/// (an interpolation / attribute value) parses as a module.
+fn parse_expr_module(code: &str) -> Result<swc_ecma_ast::Module, ScriptParseError> {
     let cm: Lrc<SourceMap> = Default::default();
-    // Wrap as a parenthesized expression statement so a bare expression parses.
     let fm = cm.new_source_file(Lrc::new(FileName::Anon), format!("({});", code));
     let lexer = Lexer::new(
         Syntax::Typescript(TsSyntax {
@@ -94,13 +102,9 @@ pub fn referenced_identifiers(code: &str) -> Result<Vec<String>, ScriptParseErro
         None,
     );
     let mut parser = Parser::new_from(lexer);
-    let module = parser
+    parser
         .parse_module()
-        .map_err(|e| ScriptParseError::Parse(format!("{:?}", e)))?;
-
-    let mut collector = RefCollector { names: Vec::new() };
-    module.visit_with(&mut collector);
-    Ok(collector.names)
+        .map_err(|e| ScriptParseError::Parse(format!("{:?}", e)))
 }
 
 struct RefCollector {
@@ -113,6 +117,65 @@ impl Visit for RefCollector {
         // intersect with the binding set anyway.
         self.names.push(n.sym.to_string());
     }
+}
+
+/// Like [`referenced_identifiers`] but excludes names bound *locally* within the
+/// expression — function/arrow parameters and local declarations. So
+/// `items.map(x => x.active)` reports `items`, not `x`. This is the accurate
+/// input for reactivity: the free variables an expression actually depends on.
+///
+/// ```
+/// use lunas_script::free_identifiers;
+///
+/// assert_eq!(free_identifiers("items.map(x => x.active)").unwrap(), ["items"]);
+/// assert_eq!(free_identifiers("() => count + 1").unwrap(), ["count"]);
+/// ```
+pub fn free_identifiers(code: &str) -> Result<Vec<String>, ScriptParseError> {
+    let module = parse_expr_module(code)?;
+    let mut refs = RefCollector { names: Vec::new() };
+    module.visit_with(&mut refs);
+    let mut bound = BoundCollector {
+        names: Default::default(),
+    };
+    module.visit_with(&mut bound);
+    Ok(refs
+        .names
+        .into_iter()
+        .filter(|n| !bound.names.contains(n))
+        .collect())
+}
+
+/// Collects names bound locally inside an expression: function/arrow params and
+/// nested local declarations.
+struct BoundCollector {
+    names: std::collections::HashSet<String>,
+}
+
+impl Visit for BoundCollector {
+    fn visit_arrow_expr(&mut self, n: &swc_ecma_ast::ArrowExpr) {
+        for p in &n.params {
+            collect_pat_names(p, &mut self.names);
+        }
+        n.visit_children_with(self);
+    }
+
+    fn visit_function(&mut self, n: &swc_ecma_ast::Function) {
+        for p in &n.params {
+            collect_pat_names(&p.pat, &mut self.names);
+        }
+        n.visit_children_with(self);
+    }
+
+    fn visit_var_declarator(&mut self, n: &swc_ecma_ast::VarDeclarator) {
+        collect_pat_names(&n.name, &mut self.names);
+        n.visit_children_with(self);
+    }
+}
+
+fn collect_pat_names(pat: &Pat, out: &mut std::collections::HashSet<String>) {
+    let mut v = Vec::new();
+    collect_pat(pat, &mut v);
+    out.extend(v);
 }
 
 /// Returns the identifiers *assigned to* (mutated) by `code`: targets of `=`

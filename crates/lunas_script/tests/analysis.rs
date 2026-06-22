@@ -189,3 +189,41 @@ fn assign_not_triggered_by_equality() {
 fn assign_invalid_is_error() {
     assert!(assigned_identifiers("= = =").is_err());
 }
+
+// --- free_identifiers (scope-aware) ---
+
+use lunas_script::free_identifiers;
+
+fn free(code: &str) -> Vec<String> {
+    free_identifiers(code).expect("parse ok")
+}
+
+#[test]
+fn free_excludes_arrow_params() {
+    assert_eq!(free("items.map(x => x.active)"), ["items"]);
+    assert_eq!(free("() => count + 1"), ["count"]);
+}
+
+#[test]
+fn free_excludes_function_params_and_locals() {
+    assert_eq!(free("(function(a){ let b = a; return b + c; })"), ["c"]);
+}
+
+#[test]
+fn free_keeps_outer_references() {
+    // `total` is free; `n` is the arrow param (bound).
+    assert_eq!(free("list.reduce((total, n) => total + n)"), ["list"]);
+}
+
+#[test]
+fn free_destructured_params_excluded() {
+    assert_eq!(
+        free("data.map(({ id }) => id + suffix)"),
+        ["data", "suffix"]
+    );
+}
+
+#[test]
+fn free_invalid_is_error() {
+    assert!(free_identifiers("=>").is_err());
+}
