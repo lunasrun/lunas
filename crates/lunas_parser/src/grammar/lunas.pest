@@ -32,10 +32,16 @@ body = ${ body_line* }
 // `( ... )` parameter list of a directive, contents captured verbatim.
 params = @{ (!")" ~ !NL ~ ANY)* }
 
-// Trailing characters on the header line after the keyword / param list.
+HSPACE = _{ " " | "\t" }
+
+// Inline directive content: the rest of the header line after the keyword. The
+// real Lunas form puts the declaration here (e.g. `@input message1:string`).
+inline = @{ (!NL ~ ANY)* }
+
+// Trailing characters on a language-block header line after the keyword.
 rest_of_line = _{ (!NL ~ ANY)* ~ (NL | EOI) }
 
-directive = ${ "@" ~ ident ~ ("(" ~ params ~ ")")? ~ rest_of_line ~ body }
+directive = ${ "@" ~ ident ~ ("(" ~ params ~ ")")? ~ HSPACE* ~ inline ~ (NL | EOI) ~ body }
 
 language_block = ${ block_name ~ ":" ~ rest_of_line ~ body }
 

@@ -27,8 +27,10 @@ pub(crate) struct RawLanguageBlock {
 pub(crate) struct RawDirective {
     pub keyword: String,
     pub params: Option<String>,
-    /// Range of the directive body line(s), if any.
-    pub body_range: Option<TextRange>,
+    /// Range of the directive's content: the inline text after the keyword
+    /// (e.g. `message1:string` in `@input message1:string`) when present,
+    /// otherwise the indented body line(s). `None` for bare directives.
+    pub content_range: Option<TextRange>,
 }
 
 fn span_range(span: pest::Span) -> TextRange {
@@ -54,11 +56,18 @@ pub(crate) fn parse1(source: &str) -> Result<Vec<RawItem>, Diagnostic> {
             Rule::directive => {
                 let mut keyword = String::new();
                 let mut params = None;
+                let mut inline_range = None;
                 let mut body_range = None;
                 for inner in pair.into_inner() {
                     match inner.as_rule() {
                         Rule::ident => keyword = inner.as_str().to_string(),
                         Rule::params => params = Some(inner.as_str().to_string()),
+                        Rule::inline => {
+                            let span = inner.as_span();
+                            if !inner.as_str().trim().is_empty() {
+                                inline_range = Some(span_range(span));
+                            }
+                        }
                         Rule::body => {
                             let span = inner.as_span();
                             if span.start() != span.end() {
@@ -68,10 +77,12 @@ pub(crate) fn parse1(source: &str) -> Result<Vec<RawItem>, Diagnostic> {
                         _ => {}
                     }
                 }
+                // Inline content (same line) takes precedence over an indented
+                // body, matching the canonical `@input name:type` form.
                 items.push(RawItem::Directive(RawDirective {
                     keyword,
                     params,
-                    body_range,
+                    content_range: inline_range.or(body_range),
                 }));
             }
             Rule::language_block => {
@@ -129,15 +140,23 @@ mod tests {
     }
 
     #[test]
-    fn parses_directive_with_params_and_body() {
-        let src = "@input(optional)\nname: string = \"a\"\n";
+    fn parses_directive_with_inline_content() {
+        let src = "@input message1:string\n";
         let items = parse1(src).expect("parse ok");
         let d = directives(&items);
         assert_eq!(d.len(), 1);
         assert_eq!(d[0].keyword, "input");
-        assert_eq!(d[0].params.as_deref(), Some("optional"));
-        let body = d[0].body_range.expect("body").slice(src).expect("slice");
-        assert!(body.contains("name: string = \"a\""));
+        let content = d[0].content_range.expect("content").slice(src).expect("slice");
+        assert_eq!(content.trim(), "message1:string");
+    }
+
+    #[test]
+    fn parses_directive_with_indented_body() {
+        let src = "@input\nname: string = \"a\"\n";
+        let items = parse1(src).expect("parse ok");
+        let d = directives(&items);
+        let content = d[0].content_range.expect("content").slice(src).expect("slice");
+        assert!(content.contains("name: string = \"a\""));
     }
 
     #[test]
@@ -155,7 +174,7 @@ mod tests {
         let d = directives(&items);
         assert_eq!(d[0].keyword, "useAutoRouting");
         assert_eq!(d[0].params, None);
-        assert_eq!(d[0].body_range, None);
+        assert_eq!(d[0].content_range, None);
     }
 
     #[test]

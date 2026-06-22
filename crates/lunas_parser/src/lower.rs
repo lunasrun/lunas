@@ -179,35 +179,35 @@ fn lower_directive(
     raw: &RawDirective,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Option<Directive> {
-    let body = raw
-        .body_range
+    let content = raw
+        .content_range
         .and_then(|r| r.slice(source))
         .map(str::trim)
         .unwrap_or("");
-    let body_range = raw.body_range.unwrap_or(TextRange::empty(0u32.into()));
+    let content_range = raw.content_range.unwrap_or(TextRange::empty(0u32.into()));
 
     match raw.keyword.as_str() {
-        "input" => match parse_input(body) {
+        "input" => match parse_input(content) {
             Some(mut prop) => {
-                prop.range = body_range;
+                prop.range = content_range;
                 Some(Directive::Input(prop))
             }
             None => {
                 diagnostics.push(Diagnostic::error(
-                    body_range,
+                    content_range,
                     "invalid `@input` declaration; expected `name: Type = default`",
                 ));
                 None
             }
         },
-        "use" => match parse_use(body) {
+        "use" => match parse_use(content) {
             Some(mut comp) => {
-                comp.range = body_range;
+                comp.range = content_range;
                 Some(Directive::UseComponent(comp))
             }
             None => {
                 diagnostics.push(Diagnostic::error(
-                    body_range,
+                    content_range,
                     "invalid `@use` declaration; expected `Name from \"path\"`",
                 ));
                 None
@@ -217,7 +217,7 @@ fn lower_directive(
         "useRouting" => Some(Directive::UseRouting),
         other => {
             diagnostics.push(Diagnostic::warning(
-                body_range,
+                content_range,
                 format!("unknown directive `@{}`", other),
             ));
             None

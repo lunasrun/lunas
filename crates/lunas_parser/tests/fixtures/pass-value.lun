@@ -1,0 +1,13 @@
+@input message1:string
+@input message2:string
+html:
+  <div class="child">
+          This is child component
+      <div      >Message from parent: ${message1}</div>
+       <div      >Message from parent: ${message2}</div>
+  </div>
+style:
+  .child {
+    border: dashed blue;
+    padding: 5px;
+  }

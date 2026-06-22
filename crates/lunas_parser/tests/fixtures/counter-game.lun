@@ -1,0 +1,39 @@
+html:
+  <div>
+  <h1 id='abc'>Stopgame</h1>
+  <div >${count}</div>
+  <button @click="toggle">${interval==null?"Game Start":"Stop"}</button>
+  <div :if="(!interval&&count==100)">
+  Success
+  </div>
+  <div :if="(!interval&&count!=100)">
+  Failure
+  </div>
+  </div>
+
+script:
+  let count = 0
+  function clear(){
+  count = 0
+  }
+  function increment(){
+  count++
+  console.log(count)
+  }
+  function toggle(){
+  if(interval){
+  clearInterval(interval)
+  interval = null
+  }else{
+  count = 0
+  interval = setInterval(increment, 10)
+  }
+  }
+  let interval = null
+style:
+  h1 {
+  color: blue;
+  }
+  * {
+  font-family: 'Noto Sans', sans-serif;
+  }
