@@ -4,9 +4,10 @@
 
 use swc_common::{sync::Lrc, FileName, SourceMap};
 use swc_ecma_ast::{
-    Decl, ImportSpecifier, ModuleDecl, ModuleItem, ObjectPatProp, Pat, Stmt, VarDecl,
+    Decl, Ident, ImportSpecifier, ModuleDecl, ModuleItem, ObjectPatProp, Pat, Stmt, VarDecl,
 };
 use swc_ecma_parser::{lexer::Lexer, Parser, StringInput, Syntax, TsSyntax};
+use swc_ecma_visit::{Visit, VisitWith};
 
 use crate::ast::ScriptParseError;
 
@@ -59,6 +60,57 @@ pub fn declared_bindings(code: &str) -> Result<Vec<String>, ScriptParseError> {
         }
     }
     Ok(names)
+}
+
+/// Returns the identifiers *referenced* (read) by a JS expression or program,
+/// in source order. Static member properties (`a.b` → only `a`) and object
+/// literal keys are excluded; computed members (`a[k]` → `a`, `k`) and shorthand
+/// properties (`{x}` → `x`) are included.
+///
+/// This does **not** perform scope analysis: a name bound locally inside the
+/// expression (e.g. an arrow parameter) is still reported. Callers typically
+/// intersect the result with [`declared_bindings`] of the `script:` block to
+/// find which component bindings an expression depends on.
+///
+/// ```
+/// use lunas_script::referenced_identifiers;
+///
+/// let ids = referenced_identifiers("a.b ? f(c) : d[e]").unwrap();
+/// assert_eq!(ids, ["a", "f", "c", "d", "e"]);
+/// ```
+pub fn referenced_identifiers(code: &str) -> Result<Vec<String>, ScriptParseError> {
+    let cm: Lrc<SourceMap> = Default::default();
+    // Wrap as a parenthesized expression statement so a bare expression parses.
+    let fm = cm.new_source_file(Lrc::new(FileName::Anon), format!("({});", code));
+    let lexer = Lexer::new(
+        Syntax::Typescript(TsSyntax {
+            tsx: false,
+            ..Default::default()
+        }),
+        Default::default(),
+        StringInput::from(&*fm),
+        None,
+    );
+    let mut parser = Parser::new_from(lexer);
+    let module = parser
+        .parse_module()
+        .map_err(|e| ScriptParseError::Parse(format!("{:?}", e)))?;
+
+    let mut collector = RefCollector { names: Vec::new() };
+    module.visit_with(&mut collector);
+    Ok(collector.names)
+}
+
+struct RefCollector {
+    names: Vec<String>,
+}
+
+impl Visit for RefCollector {
+    fn visit_ident(&mut self, n: &Ident) {
+        // `undefined`/`NaN`/etc. are idents too, but harmless to report; callers
+        // intersect with the binding set anyway.
+        self.names.push(n.sym.to_string());
+    }
 }
 
 fn collect_decl(decl: &Decl, out: &mut Vec<String>) {

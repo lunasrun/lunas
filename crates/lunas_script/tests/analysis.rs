@@ -82,3 +82,56 @@ fn nested_blocks_are_not_top_level() {
 fn invalid_is_error() {
     assert!(declared_bindings("let = = =").is_err());
 }
+
+// --- referenced_identifiers ---
+
+use lunas_script::referenced_identifiers;
+
+fn refs(code: &str) -> Vec<String> {
+    referenced_identifiers(code).expect("parse ok")
+}
+
+#[test]
+fn refs_simple() {
+    assert_eq!(refs("a + b"), ["a", "b"]);
+}
+
+#[test]
+fn refs_static_member_excludes_property() {
+    assert_eq!(refs("a.b.c"), ["a"]);
+}
+
+#[test]
+fn refs_computed_member_includes_key() {
+    assert_eq!(refs("obj[key]"), ["obj", "key"]);
+}
+
+#[test]
+fn refs_object_literal_keys_excluded_shorthand_included() {
+    // {x, y: z} -> x (shorthand read) and z (value), not the key y.
+    assert_eq!(refs("({ x, y: z })"), ["x", "z"]);
+}
+
+#[test]
+fn refs_call_and_args() {
+    assert_eq!(refs("f(a, b.c)"), ["f", "a", "b"]);
+}
+
+#[test]
+fn refs_ternary() {
+    assert_eq!(refs("cond ? yes : no"), ["cond", "yes", "no"]);
+}
+
+#[test]
+fn refs_intersect_with_bindings_for_reactivity() {
+    // The orchestrator's pattern: which component bindings does an expr depend on?
+    let bound = bindings("let count = 0\nlet other = 1");
+    let used = refs("count + helper(other)");
+    let reactive: Vec<&String> = used.iter().filter(|u| bound.contains(u)).collect();
+    assert_eq!(reactive, [&"count".to_string(), &"other".to_string()]);
+}
+
+#[test]
+fn refs_invalid_is_error() {
+    assert!(referenced_identifiers("= = =").is_err());
+}
