@@ -37,6 +37,7 @@ script:
     if let Some(html) = &file.html {
         println!("html dom kind: {:?}", html.dom.kind);
         println!("html top-level nodes: {}", html.dom.children.len());
+        println!("template top-level nodes: {}", html.template.nodes.len());
     }
 
     if let Some(script) = &file.script {

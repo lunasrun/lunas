@@ -1,0 +1,156 @@
+//! The binding-aware template IR — the analogue of `lunas_html_parser`'s plain
+//! `Dom`, enriched with interpolations, bound/event attributes, components, and
+//! grouped control flow.
+//!
+//! This layer is **purely syntactic**: every embedded JS expression is stored
+//! as raw text plus a `.lunas`-file-absolute span. Parsing those expressions
+//! (and all reactivity work) is left to the downstream orchestrator, keeping
+//! this crate free of any JS/TS toolchain — exactly how the `script:` block is
+//! handled.
+
+use lunas_html_parser::{Comment, ElementKind};
+use lunas_span::TextRange;
+use serde::{Deserialize, Serialize};
+
+/// The binding-aware template tree for an `html:` block.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Template {
+    pub nodes: Vec<TemplateNode>,
+}
+
+/// A node in the template tree.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum TemplateNode {
+    Element(TemplateElement),
+    Component(ComponentUse),
+    Text(TemplateText),
+    Comment(Comment),
+    /// A grouped `:if` / `:elseif` / `:else` cascade.
+    If(IfChain),
+    /// A `:for` loop wrapping a single body node.
+    For(ForBlock),
+}
+
+/// A run of text that interleaves static literals and `${…}` interpolations.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TemplateText {
+    pub segments: Vec<TextSegment>,
+    pub range: TextRange,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum TextSegment {
+    Literal { text: String, range: TextRange },
+    Interpolation(Interpolation),
+}
+
+/// `${ expr }`. `range` covers the whole `${…}`; `expr_range` covers only the
+/// inner expression text (for diagnostics / hand-off into JS tooling).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Interpolation {
+    pub expr: String,
+    pub range: TextRange,
+    pub expr_range: TextRange,
+}
+
+/// A raw JS expression: opaque text plus its file-absolute span.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Expr {
+    pub text: String,
+    pub range: TextRange,
+}
+
+/// An ordinary HTML element with classified attributes.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TemplateElement {
+    pub name: String,
+    pub kind: ElementKind,
+    pub attrs: Vec<TemplateAttr>,
+    pub children: Vec<TemplateNode>,
+    pub range: TextRange,
+    pub open_tag_range: TextRange,
+}
+
+/// A component use: a tag whose name is in the `@use` table.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ComponentUse {
+    pub name: String,
+    pub props: Vec<TemplateAttr>,
+    pub children: Vec<TemplateNode>,
+    pub range: TextRange,
+    pub open_tag_range: TextRange,
+}
+
+/// An element/component attribute after binding classification.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum TemplateAttr {
+    /// A plain attribute; its value may still contain `${…}` interpolations.
+    Static {
+        name: String,
+        value: Option<StaticValue>,
+        range: TextRange,
+    },
+    /// `:name="expr"` — a reactively bound attribute/prop.
+    Bound {
+        name: String,
+        expr: Expr,
+        range: TextRange,
+    },
+    /// `::name="lvalue"` — two-way binding (sugar for `:name` + writeback).
+    TwoWay {
+        name: String,
+        lvalue: Expr,
+        range: TextRange,
+    },
+    /// `@event="handler"` — an event handler.
+    Event {
+        event: String,
+        handler: Expr,
+        range: TextRange,
+    },
+}
+
+/// A static attribute value, which may interleave literals and interpolations.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct StaticValue {
+    pub segments: Vec<TextSegment>,
+    pub range: TextRange,
+}
+
+/// A complete `:if` / `:elseif` / `:else` cascade, grouped at parse time.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct IfChain {
+    pub branches: Vec<IfBranch>,
+    pub range: TextRange,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum BranchKind {
+    If,
+    ElseIf,
+    Else,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct IfBranch {
+    pub kind: BranchKind,
+    /// `None` only for the `:else` branch.
+    pub condition: Option<Expr>,
+    pub body: Box<TemplateNode>,
+    pub range: TextRange,
+}
+
+/// A `:for` loop. The header is stored raw; `lunas_script::parse_for` is run
+/// downstream by the orchestrator.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ForBlock {
+    pub header: ForHeader,
+    pub body: Box<TemplateNode>,
+    pub range: TextRange,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ForHeader {
+    pub text: String,
+    pub range: TextRange,
+}

@@ -55,6 +55,7 @@ impl Element {
         self.open_tag_range = self.open_tag_range.shifted(by);
         for attr in &mut self.attributes {
             attr.range = attr.range.shifted(by);
+            attr.value_range = attr.value_range.map(|r| r.shifted(by));
         }
         for child in &mut self.children {
             child.shift_ranges(by);
@@ -93,7 +94,12 @@ pub enum ElementKind {
 /// An HTML element.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Element {
+    /// The tag name lowercased, for HTML-semantic comparisons.
     pub name: String,
+    /// The tag name exactly as written in the source. HTML lowercases tag
+    /// names, but Lunas component resolution is case-sensitive (`<Button>` vs
+    /// `<button>`), so the original casing is preserved here.
+    pub raw_name: String,
     pub kind: ElementKind,
     pub attributes: Vec<Attribute>,
     pub children: Vec<Node>,
@@ -110,6 +116,11 @@ pub struct Attribute {
     pub name: String,
     /// `None` for boolean attributes like `disabled`.
     pub value: Option<String>,
+    /// The range of just the value (excluding any quotes), when present. Lets
+    /// callers locate content inside the value — e.g. `${…}` interpolations —
+    /// in file-absolute coordinates.
+    pub value_range: Option<TextRange>,
+    /// The range of the whole `name="value"` attribute.
     pub range: TextRange,
 }
 

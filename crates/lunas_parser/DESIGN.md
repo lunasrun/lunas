@@ -198,6 +198,20 @@ pub struct Attr {
 
 ---
 
+## Template layer (binding overlay)
+
+The plain `Dom` is post-processed into a binding-aware **template IR** by a pass
+in `template/`. It splits `${…}` interpolations out of text and attribute
+values (a brace/string-balanced scan), classifies `:`/`::`/`@` attributes,
+resolves components against the `@use` table (case-sensitive, via
+`Element::raw_name`), and groups `:if`/`:elseif`/`:else` cascades and `:for`
+loops at parse time. It is purely syntactic — embedded JS is stored as raw text
+plus a file-absolute span and parsed downstream — so this crate stays SWC-free.
+`HtmlBlock` carries both `dom` (raw HTML) and `template` (the IR). The full
+rationale, IR types, and phasing are in [`docs/template-design.md`](docs/template-design.md).
+
+---
+
 ## Script handling: parser vs. AST parser
 
 The `.lunas` syntax parser does **not** parse or transform script contents. It
@@ -368,7 +382,11 @@ crates/
 │       ├── grammar/lunas.pest   Pest grammar for the outer format
 │       ├── parser1.rs           Stage 1: Pest → Vec<RawItem>
 │       ├── lower.rs             Stage 2: RawItem → ParsedFile (+ HTML sub-parse)
-│       └── ir.rs               public output types (ScriptBlock = raw text only)
+│       ├── ir.rs               public output types (ScriptBlock = raw text only)
+│       └── template/           binding-aware template IR over the HTML Dom
+│           ├── mod.rs           Dom → Template pass (interpolation, :if/:for, …)
+│           ├── ir.rs            template node types (see docs/template-design.md)
+│           └── scan.rs          balanced ${…} interpolation scanner
 │
 ├── lunas_script/                the JS/TS "AST parser", built on SWC
 │   ├── Cargo.toml

@@ -18,7 +18,10 @@ pub struct BlockSource {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HtmlBlock {
     pub source: BlockSource,
+    /// The raw HTML tree, with file-absolute node ranges.
     pub dom: Dom,
+    /// The binding-aware template IR derived from `dom`.
+    pub template: crate::template::Template,
 }
 
 /// The parsed `style:` block (kept as raw CSS text for now).

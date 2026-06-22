@@ -69,6 +69,22 @@ pub(crate) fn lower(source: &str) -> (ParsedFile, Vec<Diagnostic>) {
         ));
     }
 
+    // Lower directives first: the template pass needs the `@use` component
+    // name set to tell components apart from HTML elements.
+    let mut directives = Vec::new();
+    for raw in raw_directives {
+        if let Some(directive) = lower_directive(source, raw, &mut diagnostics) {
+            directives.push(directive);
+        }
+    }
+    let component_names: std::collections::HashSet<String> = directives
+        .iter()
+        .filter_map(|d| match d {
+            Directive::UseComponent(u) => Some(u.component_name.clone()),
+            _ => None,
+        })
+        .collect();
+
     // HTML: parse the *raw* (un-stripped) block body so that every Dom node
     // range can be rebased onto the `.lunas` file by a single constant offset.
     // (Indentation stripping would shift each line by a different amount, which
@@ -86,12 +102,16 @@ pub(crate) fn lower(source: &str) -> (ParsedFile, Vec<Diagnostic>) {
             d
         }));
 
+        let template =
+            crate::template::build(source, &result.dom, &component_names, &mut diagnostics);
+
         HtmlBlock {
             source: BlockSource {
                 text,
                 range: block.body_range,
             },
             dom: result.dom,
+            template,
         }
     });
 
@@ -102,13 +122,6 @@ pub(crate) fn lower(source: &str) -> (ParsedFile, Vec<Diagnostic>) {
     let script = script_raw.map(|block| ScriptBlock {
         source: extract_block_source(source, block.body_range),
     });
-
-    let mut directives = Vec::new();
-    for raw in raw_directives {
-        if let Some(directive) = lower_directive(source, raw, &mut diagnostics) {
-            directives.push(directive);
-        }
-    }
 
     (
         ParsedFile {

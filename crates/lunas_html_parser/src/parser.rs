@@ -122,6 +122,7 @@ impl<'a> Builder<'a> {
         if crate::is_void_element(&name) {
             let element = Element {
                 name,
+                raw_name,
                 kind: ElementKind::Void,
                 attributes,
                 children: Vec::new(),
@@ -135,6 +136,7 @@ impl<'a> Builder<'a> {
         if self_closed {
             let element = Element {
                 name,
+                raw_name,
                 kind: ElementKind::Normal,
                 attributes,
                 children: Vec::new(),
@@ -183,6 +185,7 @@ impl<'a> Builder<'a> {
                     attributes.push(Attribute {
                         name: attr_name,
                         value: value.map(|v| slice_owned(self.source, v)),
+                        value_range: value,
                         range: token.range,
                     });
                 }
@@ -253,6 +256,7 @@ impl<'a> Builder<'a> {
         let range = TextRange::new(open.start, end);
         let element = Element {
             name: open.name,
+            raw_name: open.raw_name.clone(),
             kind: ElementKind::Normal,
             attributes: open.attributes,
             children: open.children,
