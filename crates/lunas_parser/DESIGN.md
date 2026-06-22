@@ -125,12 +125,16 @@ impl ParsedFile {
 
 Both functions use `LineIndex` arithmetic only — no re-parsing.
 
-The `script:` block needs this mapping because its text is *extracted* (and
-indentation-stripped) before downstream parsing, so script-local positions
-differ from file positions. The `html:` block needs no such mapping: its body
-is parsed verbatim and every `Dom` node range is rebased onto the file by a
-single constant offset (`Dom::shift_ranges`) during lowering, so HTML node
-positions are already `.lunas`-absolute and feed straight into `LineIndex`.
+No block is indentation-stripped: each block's `source.text` is exactly
+`range.slice(file)`. The `script:` block still needs `lunas_to_script` because
+its text is *extracted* (starts at a non-zero file line), but since extraction
+is verbatim the mapping is a pure line shift with the **column unchanged** —
+which would not hold if indentation were stripped. The `html:` block's `Dom`
+node ranges are rebased onto the file by a single constant offset
+(`Dom::shift_ranges`) during lowering, so HTML positions are already
+`.lunas`-absolute and feed straight into `LineIndex`. `ParsedFile::block_at`
+reports which block an offset falls in, so the language server can route a
+request to the right backend.
 
 ---
 

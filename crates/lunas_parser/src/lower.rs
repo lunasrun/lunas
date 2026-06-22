@@ -85,15 +85,16 @@ pub(crate) fn lower(source: &str) -> (ParsedFile, Vec<Diagnostic>) {
         })
         .collect();
 
-    // HTML: parse the *raw* (un-stripped) block body so that every Dom node
-    // range can be rebased onto the `.lunas` file by a single constant offset.
-    // (Indentation stripping would shift each line by a different amount, which
-    // a constant rebase could not undo.) Keeping the body verbatim also means
-    // `range.slice(file)` round-trips to a node's text — useful for the LS.
-    // `style:`/`script:` still strip, since they hand clean text downstream.
+    // Every block keeps its body verbatim (no indentation stripping). This is
+    // what makes position mapping exact: each block's text equals
+    // `range.slice(file)`, so an offset within a block maps to the extracted
+    // text by a constant byte/line shift with the column unchanged — the
+    // property the language server relies on (and the HTML Dom relies on for a
+    // single-offset rebase). SWC is happy to parse indented script, so there is
+    // no reason to strip.
     let html = html_raw.map(|block| {
-        let text = block.body_range.slice(source).unwrap_or("").to_string();
-        let mut result = parse_html(&text);
+        let source_block = extract_block_source(source, block.body_range);
+        let mut result = parse_html(&source_block.text);
 
         let offset = block.body_range.start();
         result.dom.shift_ranges(offset);
@@ -106,10 +107,7 @@ pub(crate) fn lower(source: &str) -> (ParsedFile, Vec<Diagnostic>) {
             crate::template::build(source, &result.dom, &component_names, &mut diagnostics);
 
         HtmlBlock {
-            source: BlockSource {
-                text,
-                range: block.body_range,
-            },
+            source: source_block,
             dom: result.dom,
             template,
         }
@@ -135,43 +133,12 @@ pub(crate) fn lower(source: &str) -> (ParsedFile, Vec<Diagnostic>) {
     )
 }
 
-/// Extracts a block body: strips the common leading indentation but keeps the
-/// `range` pointing at the original (un-stripped) region of the source.
+/// Extracts a block body verbatim: `text` is exactly `range.slice(source)`.
 fn extract_block_source(source: &str, range: TextRange) -> BlockSource {
-    let raw = range.slice(source).unwrap_or("");
     BlockSource {
-        text: strip_common_indent(raw),
+        text: range.slice(source).unwrap_or("").to_string(),
         range,
     }
-}
-
-/// Removes the longest whitespace prefix common to all non-blank lines.
-/// Blank lines are preserved as empty lines. Surrounding blank lines are
-/// trimmed.
-fn strip_common_indent(text: &str) -> String {
-    let common = text
-        .lines()
-        .filter(|line| !line.trim().is_empty())
-        .map(leading_ws_len)
-        .min()
-        .unwrap_or(0);
-
-    let mut out = String::new();
-    for (i, line) in text.lines().enumerate() {
-        if i > 0 {
-            out.push('\n');
-        }
-        if !line.trim().is_empty() {
-            out.push_str(&line[common..]);
-        }
-    }
-    out.trim_matches('\n').to_string()
-}
-
-fn leading_ws_len(line: &str) -> usize {
-    line.bytes()
-        .take_while(|b| *b == b' ' || *b == b'\t')
-        .count()
 }
 
 fn lower_directive(
@@ -298,29 +265,6 @@ fn is_ident(s: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn strip_common_indent_basic() {
-        assert_eq!(strip_common_indent("    a\n    b"), "a\nb");
-    }
-
-    #[test]
-    fn strip_preserves_relative_indent() {
-        assert_eq!(
-            strip_common_indent("    a\n        b\n    c"),
-            "a\n    b\nc"
-        );
-    }
-
-    #[test]
-    fn strip_blank_lines() {
-        assert_eq!(strip_common_indent("    a\n\n    b"), "a\n\nb");
-    }
-
-    #[test]
-    fn strip_tabs() {
-        assert_eq!(strip_common_indent("\t\ta\n\t\tb"), "a\nb");
-    }
 
     #[test]
     fn input_full() {

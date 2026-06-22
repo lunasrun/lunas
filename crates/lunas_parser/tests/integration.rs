@@ -115,19 +115,34 @@ fn duplicate_block_errors() {
 }
 
 #[test]
-fn tab_indentation() {
-    // style/script blocks strip common indentation (HTML keeps it verbatim).
-    let (file, diags) = parse("html:\n    <p/>\nscript:\n\tlet x = 1\n");
-    assert!(no_errors(&diags));
-    assert_eq!(file.script.as_ref().unwrap().source.text, "let x = 1");
+fn script_block_kept_verbatim() {
+    // No block is indentation-stripped: source.text == range.slice(file), so
+    // positions map exactly. SWC handles indented script fine.
+    let src = "html:\n    <p/>\nscript:\n    if (x) {\n        y()\n    }\n";
+    let (file, _) = parse(src);
+    let block = file.script.as_ref().unwrap();
+    assert_eq!(
+        block.source.range.slice(src),
+        Some(block.source.text.as_str())
+    );
+    assert!(block.source.text.contains("    if (x) {"));
 }
 
 #[test]
-fn deeper_relative_indent_preserved() {
-    let src = "html:\n    <p/>\nscript:\n    if (x) {\n        y()\n    }\n";
+fn lunas_to_script_preserves_column() {
+    // A position inside the script maps to the extracted text with the column
+    // unchanged (verbatim extraction). `if` starts at column 4 on the first
+    // script line in both the file and the extracted script.
+    use lunas_parser::LineCol;
+    let src = "html:\n    <p/>\nscript:\n    if (x) {}\n";
     let (file, _) = parse(src);
-    let text = &file.script.as_ref().unwrap().source.text;
-    assert_eq!(text, "if (x) {\n    y()\n}");
+    let script = file.script.as_ref().unwrap();
+    let first_line = file.line_index.line_col(script.source.range.start()).line;
+    let mapped = file.lunas_to_script(LineCol::new(first_line, 4)).unwrap();
+    assert_eq!(mapped, LineCol::new(0, 4));
+    // And that column indexes `if` in the extracted text's first line.
+    let first = script.source.text.lines().next().unwrap();
+    assert_eq!(&first[4..6], "if");
 }
 
 #[test]
@@ -277,10 +292,16 @@ fn use_integration_calls_html_parser() {
 }
 
 #[test]
-fn varying_indent_depth() {
-    // Stripping (now exercised via script) handles any indent depth.
-    let (file, _) = parse("html:\n    <p/>\nscript:\n        let x = 1\n");
-    assert_eq!(file.script.as_ref().unwrap().source.text, "let x = 1");
+fn varying_indent_depth_kept_verbatim() {
+    let src = "html:\n    <p/>\nscript:\n        let x = 1\n";
+    let (file, _) = parse(src);
+    let block = file.script.as_ref().unwrap();
+    // Verbatim: text equals the sliced body region (8-space indent preserved).
+    assert_eq!(
+        block.source.range.slice(src),
+        Some(block.source.text.as_str())
+    );
+    assert!(block.source.text.starts_with("        let x = 1"));
 }
 
 #[test]
