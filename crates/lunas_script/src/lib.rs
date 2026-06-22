@@ -19,7 +19,7 @@ mod ast;
 mod for_header;
 mod transform;
 
-pub use analysis::{declared_bindings, referenced_identifiers};
+pub use analysis::{assigned_identifiers, declared_bindings, referenced_identifiers};
 pub use ast::{parse_to_ast_json, ScriptParseError};
 pub use for_header::{parse_for, ForKind, ParsedFor};
 pub use transform::{transform_ts_to_js, TsToJsError};

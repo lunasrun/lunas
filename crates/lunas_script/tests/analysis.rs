@@ -135,3 +135,57 @@ fn refs_intersect_with_bindings_for_reactivity() {
 fn refs_invalid_is_error() {
     assert!(referenced_identifiers("= = =").is_err());
 }
+
+// --- assigned_identifiers ---
+
+use lunas_script::assigned_identifiers;
+
+fn assigns(code: &str) -> Vec<String> {
+    assigned_identifiers(code).expect("parse ok")
+}
+
+#[test]
+fn assign_simple() {
+    assert_eq!(assigns("x = 1"), ["x"]);
+}
+
+#[test]
+fn assign_compound_and_update() {
+    assert_eq!(assigns("x += 1; y -= 2; z++; --w"), ["x", "y", "z", "w"]);
+}
+
+#[test]
+fn assign_member_reports_root() {
+    assert_eq!(assigns("obj.a.b = 1"), ["obj"]);
+    assert_eq!(assigns("arr[i] = 1"), ["arr"]);
+}
+
+#[test]
+fn assign_destructuring() {
+    assert_eq!(assigns("[a, b] = pair"), ["a", "b"]);
+    assert_eq!(assigns("({ x, y: z } = obj)"), ["x", "z"]);
+}
+
+#[test]
+fn assign_nested_chain() {
+    // a = b = 1 mutates both a and b.
+    assert_eq!(assigns("a = b = 1"), ["a", "b"]);
+}
+
+#[test]
+fn assign_inside_function_body() {
+    // A handler that mutates component state.
+    let code = "function toggle(){ running = !running; count++ }";
+    assert_eq!(assigns(code), ["running", "count"]);
+}
+
+#[test]
+fn assign_not_triggered_by_equality() {
+    // `==`/`===` are comparisons, not assignments.
+    assert_eq!(assigns("a == b; c === d"), Vec::<String>::new());
+}
+
+#[test]
+fn assign_invalid_is_error() {
+    assert!(assigned_identifiers("= = =").is_err());
+}

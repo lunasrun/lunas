@@ -26,6 +26,9 @@ fn exercise(input: &str) {
     no_panic("referenced_identifiers", input, |s| {
         let _ = lunas_script::referenced_identifiers(s);
     });
+    no_panic("assigned_identifiers", input, |s| {
+        let _ = lunas_script::assigned_identifiers(s);
+    });
 }
 
 #[test]
