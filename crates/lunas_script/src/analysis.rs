@@ -124,6 +124,12 @@ impl Visit for RefCollector {
 /// `items.map(x => x.active)` reports `items`, not `x`. This is the accurate
 /// input for reactivity: the free variables an expression actually depends on.
 ///
+/// Limitation: bound names are treated as a flat set rather than with full
+/// lexical scoping, so a name that is *both* free in an outer scope and a
+/// parameter of an inner one (e.g. `a + (a => a)`) is over-excluded. This does
+/// not occur in practice for template expressions; full scope resolution can be
+/// added if it ever does.
+///
 /// ```
 /// use lunas_script::free_identifiers;
 ///
