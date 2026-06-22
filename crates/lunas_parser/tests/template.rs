@@ -439,3 +439,107 @@ fn template_serde_round_trip() {
     let back: Vec<TemplateNode> = serde_json::from_str(&json).expect("deserialize");
     assert_eq!(ns, back);
 }
+
+// --- Nesting & control flow on components (hardening) ---
+
+#[test]
+fn if_on_component() {
+    let src = "@use()\nCard from \"./Card\"\n\nhtml:\n    <Card :if=\"show\" />\n";
+    let ns = nodes(src);
+    let chain = ns
+        .iter()
+        .find_map(|n| match n {
+            TemplateNode::If(c) => Some(c),
+            _ => None,
+        })
+        .expect("if chain");
+    assert!(matches!(*chain.branches[0].body, TemplateNode::Component(_)));
+}
+
+#[test]
+fn for_on_component() {
+    let src = "@use()\nRow from \"./Row\"\n\nhtml:\n    <Row :for=\"r of rows\" :data=\"r\" />\n";
+    let ns = nodes(src);
+    let f = ns
+        .iter()
+        .find_map(|n| match n {
+            TemplateNode::For(f) => Some(f),
+            _ => None,
+        })
+        .expect("for block");
+    assert_eq!(f.header.text, "r of rows");
+    assert!(matches!(*f.body, TemplateNode::Component(_)));
+}
+
+#[test]
+fn nested_for_then_if_child() {
+    let src = "html:\n    <ul :for=\"x of xs\"><li :if=\"x\">${x}</li></ul>\n";
+    let ns = nodes(src);
+    let f = ns
+        .iter()
+        .find_map(|n| match n {
+            TemplateNode::For(f) => Some(f),
+            _ => None,
+        })
+        .expect("for block");
+    let ul = match &*f.body {
+        TemplateNode::Element(e) => e,
+        other => panic!("expected ul element, got {:?}", other),
+    };
+    assert_eq!(ul.name, "ul");
+    let inner_if = ul
+        .children
+        .iter()
+        .any(|n| matches!(n, TemplateNode::If(_)));
+    assert!(inner_if, "expected nested if inside the for body");
+}
+
+#[test]
+fn multiple_interpolations_in_static_attr() {
+    let ns = nodes(&html("<div class=\"${a} ${b}\"></div>"));
+    let el = first_element(&ns);
+    match &el.attrs[0] {
+        TemplateAttr::Static { value, .. } => {
+            let segs = &value.as_ref().unwrap().segments;
+            let interps = segs
+                .iter()
+                .filter(|s| matches!(s, TextSegment::Interpolation(_)))
+                .count();
+            assert_eq!(interps, 2);
+        }
+        _ => panic!(),
+    }
+}
+
+#[test]
+fn cascade_of_components() {
+    let src = "@use()\nA from \"./A\"\n\nhtml:\n    <A :if=\"p\" />\n    <A :else />\n";
+    let ns = nodes(src);
+    let chain = ns
+        .iter()
+        .find_map(|n| match n {
+            TemplateNode::If(c) => Some(c),
+            _ => None,
+        })
+        .expect("if chain");
+    assert_eq!(chain.branches.len(), 2);
+    assert!(matches!(*chain.branches[0].body, TemplateNode::Component(_)));
+    assert!(matches!(*chain.branches[1].body, TemplateNode::Component(_)));
+}
+
+#[test]
+fn deeply_nested_elements_preserve_interpolation() {
+    let ns = nodes(&html("<div><section><p>${deep}</p></section></div>"));
+    let div = first_element(&ns);
+    fn find_interp(nodes: &[TemplateNode]) -> bool {
+        nodes.iter().any(|n| match n {
+            TemplateNode::Text(t) => t
+                .segments
+                .iter()
+                .any(|s| matches!(s, TextSegment::Interpolation(_))),
+            TemplateNode::Element(e) => find_interp(&e.children),
+            _ => false,
+        })
+    }
+    assert!(find_interp(&div.children));
+}
