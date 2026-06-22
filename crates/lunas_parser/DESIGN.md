@@ -193,7 +193,17 @@ pub struct Attr {
 
 ## JS/TS sub-parser
 
-Script block content is passed to SWC. SWC already provides its own span model (byte offsets relative to the start of its input). After parsing, all SWC spans are rebased by adding `script_block.range.start` so they refer to positions in the `.lunas` file.
+Script block content is passed to SWC. TypeScript is first stripped to JavaScript (`ts_to_js`), then parsed to an AST (`swc_parser`). SWC provides its own span model (byte offsets relative to the start of its input); spans exposed to callers carry the raw SWC `lo`/`hi` so they can be correlated.
+
+### AST representation
+
+`ScriptBlock.ast` holds a **span-annotated JSON projection** of the top-level statements (`{ "type": "Module", "body": [{ "type": …, "span": { lo, hi } }] }`), not the full SWC AST tree.
+
+The full tree would require SWC's `serde-impl` feature, whose `ast_node`-generated deserializer references `swc_common::private::content`, a path that does not resolve against the `serde`/`swc_common` versions currently published on crates.io — the original `main` tree no longer builds for the same reason. Rather than pin the entire dependency graph to a yanked/older `serde`, the projection captures what the code generator and language server actually need (statement kinds + locations). Consumers requiring the complete AST re-parse `ScriptBlock.js` with SWC directly. This is revisited if/when the upstream `serde-impl` alignment is fixed.
+
+### Reproducible builds
+
+Because the working `serde`/`swc` version set is narrow (see above), `Cargo.lock` is committed. A fresh clone must build against the frozen versions, not whatever the registry resolves to today.
 
 ---
 
