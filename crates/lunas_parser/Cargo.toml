@@ -16,3 +16,6 @@ pest_derive = "=2.8.0"
 
 [dev-dependencies]
 serde_json = "1"
+# Only for the cross-crate handoff test (parser stores raw JS, lunas_script
+# parses it downstream — mirroring what the orchestrator will do).
+lunas_script = { path = "../lunas_script" }

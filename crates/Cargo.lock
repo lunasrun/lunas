@@ -653,6 +653,7 @@ name = "lunas_parser"
 version = "0.1.0"
 dependencies = [
  "lunas_html_parser",
+ "lunas_script",
  "lunas_span",
  "pest",
  "pest_derive",
