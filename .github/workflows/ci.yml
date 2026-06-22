@@ -43,3 +43,27 @@ jobs:
 
       - name: Test
         run: cargo test --all
+
+  wasm:
+    name: wasm32 build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: crates
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain + wasm target
+        run: |
+          rustup show active-toolchain || rustup toolchain install
+          rustup target add wasm32-unknown-unknown
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            crates/target
+          key: ${{ runner.os }}-cargo-wasm-${{ hashFiles('crates/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-wasm-
+      # The whole front end must stay wasm-ready (browser compiler / LSP).
+      - name: Build for wasm32
+        run: cargo build --all --target wasm32-unknown-unknown

@@ -35,6 +35,9 @@ binding layer — are documented in
 - **Strict layering** — the `.lunas` syntax parser carries no SWC/JS dependency;
   all JS/TS work is isolated in `lunas_script`, invoked by the future
   orchestrator.
+- **wasm-ready** — every crate (including `lunas_script`'s SWC stack) builds for
+  `wasm32-unknown-unknown`, so the front end can run in the browser compiler and
+  language server. CI guards this.
 
 ## Building and testing
 
