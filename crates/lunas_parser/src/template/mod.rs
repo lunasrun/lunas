@@ -9,11 +9,11 @@
 mod ir;
 mod scan;
 
+pub use ir::Interpolation;
 pub use ir::{
     BranchKind, ComponentUse, Expr, ForBlock, ForHeader, IfBranch, IfChain, StaticValue, Template,
     TemplateAttr, TemplateElement, TemplateNode, TemplateText, TextSegment,
 };
-pub use ir::Interpolation;
 
 use lunas_html_parser::{Dom, Element, Node};
 use lunas_span::{Diagnostic, TextRange};

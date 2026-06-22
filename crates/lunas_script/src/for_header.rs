@@ -33,6 +33,9 @@ pub struct ParsedFor {
 /// Parses a `for` loop header such as `item of items` or `[i, v] in obj`.
 /// Returns `None` if the input is not a recognizable `for..of` / `for..in`
 /// header.
+// The `.entries()` detection walks several SWC AST layers; without let-chains
+// (unavailable on edition 2021) these reads stay nested.
+#[allow(clippy::collapsible_if, clippy::collapsible_match)]
 pub fn parse_for(input: &str) -> Option<ParsedFor> {
     let src = input.trim();
     let wrapped = format!("for({}){{}}", src);
@@ -87,12 +90,12 @@ pub fn parse_for(input: &str) -> Option<ParsedFor> {
                         if ident_prop.sym.as_ref() == "entries" {
                             let obj_expr = &*member_expr.obj;
                             let drop_entries = match obj_expr {
-                                Expr::Ident(obj_ident) if obj_ident.sym.as_ref() == "Object" => args
-                                    .first()
-                                    .is_some_and(|first_arg| {
+                                Expr::Ident(obj_ident) if obj_ident.sym.as_ref() == "Object" => {
+                                    args.first().is_some_and(|first_arg| {
                                         first_arg.spread.is_none()
                                             && !matches!(&*first_arg.expr, Expr::Ident(_))
-                                    }),
+                                    })
+                                }
                                 Expr::Member(_) => true,
                                 Expr::Paren(paren_expr) => {
                                     matches!(&*paren_expr.expr, Expr::Member(_))
@@ -126,4 +129,3 @@ pub fn parse_for(input: &str) -> Option<ParsedFor> {
         iterable,
     })
 }
-

@@ -136,7 +136,10 @@ fn html_block_keeps_raw_indentation() {
     let src = "html:\n    <ul>\n        <li/>\n    </ul>\n";
     let (file, _) = parse(src);
     let block = file.html.as_ref().unwrap();
-    assert_eq!(block.source.range.slice(src), Some(block.source.text.as_str()));
+    assert_eq!(
+        block.source.range.slice(src),
+        Some(block.source.text.as_str())
+    );
     assert!(block.source.text.contains("    <ul>"));
 }
 

@@ -228,7 +228,11 @@ impl<'a> Builder<'a> {
                     if let Some(name) = unclosed {
                         self.diagnostics.push(Diagnostic::warning(
                             close_range,
-                            format!("`<{}>` implicitly closed by `</{}>`", name, slice_owned(self.source, name_range)),
+                            format!(
+                                "`<{}>` implicitly closed by `</{}>`",
+                                name,
+                                slice_owned(self.source, name_range)
+                            ),
                         ));
                     }
                 }
@@ -243,9 +247,7 @@ impl<'a> Builder<'a> {
     /// child does). Returns the auto-closed element's raw name when `close_end`
     /// is `None`.
     fn finalize_top(&mut self, close_end: Option<TextSize>) -> Option<String> {
-        let Some(open) = self.stack.pop() else {
-            return None;
-        };
+        let open = self.stack.pop()?;
         let auto_closed = close_end.is_none();
         let end = close_end.unwrap_or_else(|| {
             open.children
@@ -294,4 +296,3 @@ fn is_whitespace_node(node: &Node) -> bool {
         _ => false,
     }
 }
-

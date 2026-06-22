@@ -306,7 +306,10 @@ mod tests {
 
     #[test]
     fn strip_preserves_relative_indent() {
-        assert_eq!(strip_common_indent("    a\n        b\n    c"), "a\n    b\nc");
+        assert_eq!(
+            strip_common_indent("    a\n        b\n    c"),
+            "a\n    b\nc"
+        );
     }
 
     #[test]

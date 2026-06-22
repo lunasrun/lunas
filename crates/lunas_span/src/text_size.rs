@@ -182,8 +182,14 @@ mod tests {
 
     #[test]
     fn range_shifted() {
-        assert_eq!(TextRange::at(2, 5).shifted(TextSize::new(10)), TextRange::at(12, 15));
-        assert_eq!(TextRange::at(0, 3).shifted(TextSize::new(0)), TextRange::at(0, 3));
+        assert_eq!(
+            TextRange::at(2, 5).shifted(TextSize::new(10)),
+            TextRange::at(12, 15)
+        );
+        assert_eq!(
+            TextRange::at(0, 3).shifted(TextSize::new(0)),
+            TextRange::at(0, 3)
+        );
     }
 
     #[test]

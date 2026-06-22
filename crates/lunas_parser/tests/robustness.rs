@@ -57,7 +57,10 @@ fn adversarial_lunas_files_do_not_panic() {
 struct Lcg(u64);
 impl Lcg {
     fn next(&mut self) -> u64 {
-        self.0 = self.0.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        self.0 = self
+            .0
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         self.0
     }
 }
@@ -66,10 +69,40 @@ impl Lcg {
 fn pseudo_random_fuzz_does_not_panic() {
     // Tokens biased toward `.lunas` structural pieces.
     let fragments: &[&str] = &[
-        "html:", "style:", "script:", "@input", "@use", "@useRouting", "\n", "    ", "\t", "<div>",
-        "</div>", "<a ", "/>", ":if=", ":for=", ":else", "::v=", "@click=", "\"x\"", "'y'", "${",
-        "}", "${count}", "<Comp", "from", "\"./p\"", " of ", " in ", "name:string", "=", "あ",
-        "\u{1F600}", "\0", "\r",
+        "html:",
+        "style:",
+        "script:",
+        "@input",
+        "@use",
+        "@useRouting",
+        "\n",
+        "    ",
+        "\t",
+        "<div>",
+        "</div>",
+        "<a ",
+        "/>",
+        ":if=",
+        ":for=",
+        ":else",
+        "::v=",
+        "@click=",
+        "\"x\"",
+        "'y'",
+        "${",
+        "}",
+        "${count}",
+        "<Comp",
+        "from",
+        "\"./p\"",
+        " of ",
+        " in ",
+        "name:string",
+        "=",
+        "あ",
+        "\u{1F600}",
+        "\0",
+        "\r",
     ];
     let mut rng = Lcg(0xdead_beef_cafe_babe);
     for _ in 0..4000 {

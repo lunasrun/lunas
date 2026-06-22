@@ -13,7 +13,9 @@ use lunas_span::{TextRange, TextSize};
 pub enum TokenKind {
     Doctype,
     /// `<name` — the start of an open tag, before any attributes.
-    OpenTagStart { name: TextRange },
+    OpenTagStart {
+        name: TextRange,
+    },
     /// An attribute inside an open tag.
     Attribute {
         name: TextRange,
@@ -24,11 +26,15 @@ pub enum TokenKind {
     /// `/>` ending a self-closing tag.
     SelfCloseTagEnd,
     /// `</name>`.
-    CloseTag { name: TextRange },
+    CloseTag {
+        name: TextRange,
+    },
     /// Text content between tags.
     Text,
     /// `<!-- … -->`; range covers the inner content only.
-    Comment { content: TextRange },
+    Comment {
+        content: TextRange,
+    },
     /// Raw text content of a script/style/title/textarea element.
     RawText,
     /// An unexpected character; enables error recovery.
@@ -311,7 +317,10 @@ impl<'a> Lexer<'a> {
             _ => {
                 let v_start = self.pos;
                 while let Some(b) = self.peek() {
-                    if is_ascii_whitespace(b) || b == b'>' || (b == b'/' && self.peek_at(1) == Some(b'>')) {
+                    if is_ascii_whitespace(b)
+                        || b == b'>'
+                        || (b == b'/' && self.peek_at(1) == Some(b'>'))
+                    {
                         break;
                     }
                     self.pos += 1;
@@ -330,7 +339,12 @@ impl<'a> Lexer<'a> {
                 // Check for `</name` ignoring case, allowing leading whitespace
                 // after `</`.
                 let mut probe = self.pos + 2;
-                while self.bytes.get(probe).copied().is_some_and(is_ascii_whitespace) {
+                while self
+                    .bytes
+                    .get(probe)
+                    .copied()
+                    .is_some_and(is_ascii_whitespace)
+                {
                     probe += 1;
                 }
                 let end = probe + name.len();
@@ -352,4 +366,3 @@ impl<'a> Lexer<'a> {
         }
     }
 }
-

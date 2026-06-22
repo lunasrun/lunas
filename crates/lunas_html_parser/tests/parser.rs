@@ -210,28 +210,19 @@ fn boolean_attribute() {
 #[test]
 fn double_quoted_attribute() {
     let d = dom("<a href=\"/x\"></a>");
-    assert_eq!(
-        first_element(&d).attributes[0].value.as_deref(),
-        Some("/x")
-    );
+    assert_eq!(first_element(&d).attributes[0].value.as_deref(), Some("/x"));
 }
 
 #[test]
 fn single_quoted_attribute() {
     let d = dom("<a href='/x'></a>");
-    assert_eq!(
-        first_element(&d).attributes[0].value.as_deref(),
-        Some("/x")
-    );
+    assert_eq!(first_element(&d).attributes[0].value.as_deref(), Some("/x"));
 }
 
 #[test]
 fn unquoted_attribute() {
     let d = dom("<a href=/x></a>");
-    assert_eq!(
-        first_element(&d).attributes[0].value.as_deref(),
-        Some("/x")
-    );
+    assert_eq!(first_element(&d).attributes[0].value.as_deref(), Some("/x"));
 }
 
 #[test]
@@ -330,7 +321,10 @@ fn mismatched_close_auto_closes_ancestor() {
         Node::Element(e) => assert_eq!(e.name, "span"),
         _ => panic!(),
     }
-    assert!(r.diagnostics.iter().any(|d| d.severity == Severity::Warning));
+    assert!(r
+        .diagnostics
+        .iter()
+        .any(|d| d.severity == Severity::Warning));
 }
 
 #[test]

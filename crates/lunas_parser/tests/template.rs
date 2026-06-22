@@ -176,8 +176,9 @@ fn interpolation_expr_range_is_absolute() {
 #[test]
 fn unterminated_interpolation_errors_and_recovers() {
     let (ns, diags) = parse_template(&html("<div>${count</div>"));
-    assert!(diags.iter().any(|d| d.is_error()
-        && d.message.contains("unterminated")));
+    assert!(diags
+        .iter()
+        .any(|d| d.is_error() && d.message.contains("unterminated")));
     // Tree still built.
     assert!(!elements(&ns).is_empty());
 }
@@ -386,14 +387,17 @@ fn for_with_if_nests_for_outside() {
 #[test]
 fn for_empty_header_errors() {
     let (_ns, diags) = parse_template(&html("<li :for=\"\">x</li>"));
-    assert!(diags.iter().any(|d| d.is_error() && d.message.contains("`:for`")));
+    assert!(diags
+        .iter()
+        .any(|d| d.is_error() && d.message.contains("`:for`")));
 }
 
 // --- Components ---
 
 #[test]
 fn component_resolved_from_use_table() {
-    let src = "@use()\nButton from \"./Button\"\n\nhtml:\n    <Button label=\"go\" :count=\"n\" />\n";
+    let src =
+        "@use()\nButton from \"./Button\"\n\nhtml:\n    <Button label=\"go\" :count=\"n\" />\n";
     let ns = nodes(src);
     let comp = ns
         .iter()
@@ -453,7 +457,10 @@ fn if_on_component() {
             _ => None,
         })
         .expect("if chain");
-    assert!(matches!(*chain.branches[0].body, TemplateNode::Component(_)));
+    assert!(matches!(
+        *chain.branches[0].body,
+        TemplateNode::Component(_)
+    ));
 }
 
 #[test]
@@ -487,10 +494,7 @@ fn nested_for_then_if_child() {
         other => panic!("expected ul element, got {:?}", other),
     };
     assert_eq!(ul.name, "ul");
-    let inner_if = ul
-        .children
-        .iter()
-        .any(|n| matches!(n, TemplateNode::If(_)));
+    let inner_if = ul.children.iter().any(|n| matches!(n, TemplateNode::If(_)));
     assert!(inner_if, "expected nested if inside the for body");
 }
 
@@ -523,8 +527,14 @@ fn cascade_of_components() {
         })
         .expect("if chain");
     assert_eq!(chain.branches.len(), 2);
-    assert!(matches!(*chain.branches[0].body, TemplateNode::Component(_)));
-    assert!(matches!(*chain.branches[1].body, TemplateNode::Component(_)));
+    assert!(matches!(
+        *chain.branches[0].body,
+        TemplateNode::Component(_)
+    ));
+    assert!(matches!(
+        *chain.branches[1].body,
+        TemplateNode::Component(_)
+    ));
 }
 
 #[test]

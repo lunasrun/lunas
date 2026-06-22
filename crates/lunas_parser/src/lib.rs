@@ -15,9 +15,7 @@ mod lower;
 mod parser1;
 mod template;
 
-pub use ir::{
-    BlockSource, Directive, HtmlBlock, PropInput, ScriptBlock, StyleBlock, UseComponent,
-};
+pub use ir::{BlockSource, Directive, HtmlBlock, PropInput, ScriptBlock, StyleBlock, UseComponent};
 pub use template::{
     BranchKind, ComponentUse, Expr, ForBlock, ForHeader, IfBranch, IfChain, Interpolation,
     StaticValue, Template, TemplateAttr, TemplateElement, TemplateNode, TemplateText, TextSegment,

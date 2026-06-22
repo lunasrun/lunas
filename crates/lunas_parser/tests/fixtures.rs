@@ -53,9 +53,9 @@ fn counter_game_parses() {
 
     // The `@click="toggle"` handler is present.
     let has_click = all.iter().any(|n| match n {
-        TemplateNode::Element(e) => e.attrs.iter().any(|a| {
-            matches!(a, lunas_parser::TemplateAttr::Event { event, .. } if event == "click")
-        }),
+        TemplateNode::Element(e) => e.attrs.iter().any(
+            |a| matches!(a, lunas_parser::TemplateAttr::Event { event, .. } if event == "click"),
+        ),
         _ => false,
     });
     assert!(has_click, "expected an @click handler");
@@ -70,7 +70,10 @@ fn counter_game_parses() {
         .flat_map(|t| &t.segments)
         .filter(|s| matches!(s, lunas_parser::TextSegment::Interpolation(_)))
         .count();
-    assert!(interpolations >= 2, "expected interpolations, got {interpolations}");
+    assert!(
+        interpolations >= 2,
+        "expected interpolations, got {interpolations}"
+    );
 }
 
 #[test]

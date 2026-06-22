@@ -68,4 +68,3 @@ pub fn transform_ts_to_js(ts_code: &str) -> Result<String, TsToJsError> {
 
     Ok(code)
 }
-

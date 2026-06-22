@@ -95,7 +95,10 @@ pub(crate) fn parse1(source: &str) -> Result<Vec<RawItem>, Diagnostic> {
                         _ => {}
                     }
                 }
-                items.push(RawItem::LanguageBlock(RawLanguageBlock { name, body_range }));
+                items.push(RawItem::LanguageBlock(RawLanguageBlock {
+                    name,
+                    body_range,
+                }));
             }
             _ => {}
         }
@@ -146,7 +149,11 @@ mod tests {
         let d = directives(&items);
         assert_eq!(d.len(), 1);
         assert_eq!(d[0].keyword, "input");
-        let content = d[0].content_range.expect("content").slice(src).expect("slice");
+        let content = d[0]
+            .content_range
+            .expect("content")
+            .slice(src)
+            .expect("slice");
         assert_eq!(content.trim(), "message1:string");
     }
 
@@ -155,7 +162,11 @@ mod tests {
         let src = "@input\nname: string = \"a\"\n";
         let items = parse1(src).expect("parse ok");
         let d = directives(&items);
-        let content = d[0].content_range.expect("content").slice(src).expect("slice");
+        let content = d[0]
+            .content_range
+            .expect("content")
+            .slice(src)
+            .expect("slice");
         assert!(content.contains("name: string = \"a\""));
     }
 

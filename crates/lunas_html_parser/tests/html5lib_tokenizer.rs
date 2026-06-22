@@ -47,9 +47,7 @@ fn map_tokens(source: &str, tokens: &[Token]) -> Vec<H5> {
                 i += 1;
             }
             TokenKind::Comment { content } => {
-                out.push(H5::Comment(
-                    content.slice(source).unwrap_or("").to_string(),
-                ));
+                out.push(H5::Comment(content.slice(source).unwrap_or("").to_string()));
                 i += 1;
             }
             TokenKind::Doctype => {

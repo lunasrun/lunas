@@ -66,7 +66,10 @@ fn adversarial_scripts_do_not_panic() {
 struct Lcg(u64);
 impl Lcg {
     fn next(&mut self) -> u64 {
-        self.0 = self.0.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        self.0 = self
+            .0
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         self.0
     }
 }
@@ -74,9 +77,38 @@ impl Lcg {
 #[test]
 fn pseudo_random_fuzz_does_not_panic() {
     let frags: &[&str] = &[
-        "let ", "const ", "for", "(", ")", "{", "}", "[", "]", " of ", " in ", ";", "=", "=>",
-        "item", "items", ".entries()", "a", "b", "1", "?", "!", ":", "number", "\"s\"", "'c'",
-        "`t`", "${", "\n", " ", "あ", "\0",
+        "let ",
+        "const ",
+        "for",
+        "(",
+        ")",
+        "{",
+        "}",
+        "[",
+        "]",
+        " of ",
+        " in ",
+        ";",
+        "=",
+        "=>",
+        "item",
+        "items",
+        ".entries()",
+        "a",
+        "b",
+        "1",
+        "?",
+        "!",
+        ":",
+        "number",
+        "\"s\"",
+        "'c'",
+        "`t`",
+        "${",
+        "\n",
+        " ",
+        "あ",
+        "\0",
     ];
     let mut rng = Lcg(0x0bad_f00d_1234_5678);
     for _ in 0..1500 {

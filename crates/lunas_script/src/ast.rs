@@ -96,4 +96,3 @@ fn stmt_kind(stmt: &Stmt) -> &'static str {
         _ => "Statement",
     }
 }
-

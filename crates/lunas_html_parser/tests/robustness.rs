@@ -75,7 +75,10 @@ fn deeply_unbalanced_does_not_panic() {
 struct Lcg(u64);
 impl Lcg {
     fn next(&mut self) -> u64 {
-        self.0 = self.0.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        self.0 = self
+            .0
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         self.0
     }
 }
@@ -84,8 +87,34 @@ impl Lcg {
 fn pseudo_random_fuzz_does_not_panic() {
     // Alphabet weighted toward characters that drive the lexer/parser states.
     let alphabet: &[char] = &[
-        '<', '>', '/', '=', '"', '\'', '!', '-', '?', ':', '@', '$', '{', '}', ' ', '\n', '\t',
-        '\r', '\0', 'a', 'b', 'c', 'x', '&', ';', '#', 'あ', '\u{1F600}',
+        '<',
+        '>',
+        '/',
+        '=',
+        '"',
+        '\'',
+        '!',
+        '-',
+        '?',
+        ':',
+        '@',
+        '$',
+        '{',
+        '}',
+        ' ',
+        '\n',
+        '\t',
+        '\r',
+        '\0',
+        'a',
+        'b',
+        'c',
+        'x',
+        '&',
+        ';',
+        '#',
+        'あ',
+        '\u{1F600}',
     ];
     let mut rng = Lcg(0x1234_5678_9abc_def0);
     for _ in 0..5000 {
