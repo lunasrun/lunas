@@ -500,14 +500,24 @@ parser only owns structural/delimiter diagnostics. Diagnostics merge into the
   list. Diagnostics append to the returned vec.
 
 - **Orchestrator (`lunas_compiler`) consumption.** Per `DESIGN.md`, the future
-  orchestrator drives codegen. It walks `HtmlBlock.template` and:
-  - for each `Interpolation` / `Bound` / `Event` / `TwoWay`, runs reactivity
-    analysis (the `.v` accessor injection that was `append_v_to_vars_in_html` on
-    `main`) over the raw `Expr.text`, using the script's variable list;
-  - calls `lunas_script::parse_for(for_header.text)` for `ForBlock`s;
-  - emits DOM-construction + anchor + event-listener code, mapping spans back via
-    `LineIndex`. The grouped `IfChain` means the generator no longer reconstructs
-    sibling cascades (a notable simplification over `main`'s `elm_loc` scanning).
+  orchestrator drives codegen. The primitives it needs already exist:
+  - `Template::visit` walks `HtmlBlock.template` in pre-order (no need to
+    re-implement the recursive descent);
+  - `lunas_script::declared_bindings(script)` gives the component's binding set;
+    for each `Interpolation` / `Bound` / `Event` / `TwoWay` expression,
+    `lunas_script::referenced_identifiers(expr) ∩ bindings` is the reactive
+    dependency set (replacing `main`'s `append_v_to_vars_in_html` string munging),
+    and `assigned_identifiers(handler) ∩ bindings` is what an event handler
+    mutates (what to re-render);
+  - `lunas_script::parse_for(for_header.text)` recovers the `ForBlock` binding /
+    iterable;
+  - it then emits DOM-construction + anchor + event-listener code, mapping spans
+    back via `LineIndex`. The grouped `IfChain` means the generator no longer
+    reconstructs sibling cascades (a notable simplification over `main`'s
+    `elm_loc` scanning).
+
+  In short, the only thing left to build is the codegen itself — every analysis
+  input it consumes is implemented and tested.
 
 ---
 
