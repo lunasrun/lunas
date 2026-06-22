@@ -384,3 +384,17 @@ fn input_without_type_is_error() {
         .iter()
         .any(|d| d.is_error() && d.message.contains("@input")));
 }
+
+#[test]
+fn diagnostic_render_on_real_error() {
+    // `:else` without a matching `:if` is an error; its rendering points at the
+    // offending source line with a caret.
+    let src = "html:\n    <div :else>x</div>\n";
+    let (file, diags) = parse(src);
+    let err = diags.iter().find(|d| d.is_error()).expect("an error");
+    let rendered = err.render(src, &file.line_index);
+    assert!(rendered.starts_with("error: "), "{rendered}");
+    assert!(rendered.contains("--> 2:"), "{rendered}");
+    assert!(rendered.contains("<div :else>x</div>"), "{rendered}");
+    assert!(rendered.contains('^'), "{rendered}");
+}

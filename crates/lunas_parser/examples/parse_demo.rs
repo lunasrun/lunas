@@ -46,10 +46,6 @@ script:
 
     println!("diagnostics: {}", diagnostics.len());
     for diag in &diagnostics {
-        let lc = file.line_index.line_col(diag.range.start());
-        println!(
-            "  [{:?}] {}:{} {}",
-            diag.severity, lc.line, lc.col, diag.message
-        );
+        println!("{}", diag.render(source, &file.line_index));
     }
 }
