@@ -244,6 +244,49 @@ the registry resolves to today.
 
 ---
 
+## Compilation pipeline & orchestration
+
+The crates in this workspace are **parts**, not a pipeline. None of them calls
+another to drive an end-to-end compile; they expose pure library functions. The
+wiring is owned by a future top-level **orchestrator crate** (working name
+`lunas_compiler`) — the equivalent of the old `lunas_compiler` / `lunas_generator`
+pair, and the artifact that gets compiled to WASM for the npm `lunas` package.
+
+```
+        ┌────────────────────────────────────────────────┐
+        │ lunas_compiler  (orchestrator — NOT YET BUILT)  │
+        │   1. parse        2. script transform/AST        │
+        │   3. code generation → JS + runtime              │
+        │   compiled to WASM; called by the npm `lunas` pkg│
+        └───────┬──────────────────────────┬──────────────┘
+                │                           │
+     ┌──────────▼──────────┐     ┌──────────▼───────────┐
+     │ lunas_parser         │     │ lunas_script          │
+     │ .lunas → ParsedFile  │     │ parse_to_ast_json     │
+     │ (script = raw text)  │     │ transform_ts_to_js    │
+     └──────────────────────┘     └───────────────────────┘
+```
+
+Responsibilities of the orchestrator (when built):
+
+1. `lunas_parser::parse(src)` → `ParsedFile`. The `script:` block is raw text.
+2. For the script block, call **`lunas_script`**:
+   `transform_ts_to_js(script.source.text)` for the emitted JS, and/or
+   `parse_to_ast_json(...)` for analysis.
+3. Generate the component output (DOM construction + reactivity + the lowered
+   JS) and stitch in source positions via the `LineIndex`.
+
+**Where TS→JS happens:** the *function* lives in `lunas_script` (JS/TS domain),
+but it is *invoked* by the orchestrator crate — never by `lunas_parser`, which
+stays a pure syntax parser with no JS/TS toolchain. This keeps the dependency
+direction one-way (orchestrator → parts) and lets tools that only need parsing
+(e.g. the language server) depend on `lunas_parser` alone.
+
+This crate (`lunas_compiler`) is intentionally not created yet; it is added once
+there is a generator to drive.
+
+---
+
 ## Error model
 
 ```rust
