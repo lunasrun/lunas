@@ -9,9 +9,16 @@
 
 use lunas_parser::{parse, Directive, TemplateAttr, TemplateNode};
 use lunas_script::{
-    assigned_identifiers, declared_bindings, free_identifiers, function_mutations, parse_for,
-    referenced_identifiers,
+    analyze_script, assigned_identifiers, free_identifiers, parse_for, referenced_identifiers,
+    ScriptAnalysis,
 };
+
+fn empty_analysis() -> ScriptAnalysis {
+    ScriptAnalysis {
+        bindings: Vec::new(),
+        function_mutations: Vec::new(),
+    }
+}
 
 fn main() {
     let src = "\
@@ -32,12 +39,14 @@ script:
         println!("{}", d.render(src, &file.line_index));
     }
 
-    // Component bindings = top-level script declarations + @input props.
-    let mut bindings = file
+    // One analysis pass over the script: declared bindings + per-function
+    // mutation sets. Component bindings also include the @input props.
+    let analysis = file
         .script
         .as_ref()
-        .map(|s| declared_bindings(&s.source.text).unwrap_or_default())
-        .unwrap_or_default();
+        .map(|s| analyze_script(&s.source.text).unwrap_or_else(|_| empty_analysis()))
+        .unwrap_or_else(empty_analysis);
+    let mut bindings = analysis.bindings.clone();
     for d in &file.directives {
         if let Directive::Input(p) = d {
             bindings.push(p.name.clone());
@@ -87,11 +96,7 @@ script:
         // Event handler *effects*: what state re-renders when it fires. A handler
         // that calls a function inherits that function's mutation set, which is
         // why `add()` (no direct assignment) still re-renders items + count.
-        let fn_muts = file
-            .script
-            .as_ref()
-            .map(|s| function_mutations(&s.source.text).unwrap_or_default())
-            .unwrap_or_default();
+        let fn_muts = &analysis.function_mutations;
         println!("\nevent handler effects (state to re-render):");
         html.template.visit(&mut |n| {
             let attrs = match n {
