@@ -297,3 +297,34 @@ fn function_mutations_on_real_fixture() {
     assert!(by_name("clear").unwrap().contains(&"count".to_string()));
     assert!(by_name("toggle").unwrap().contains(&"interval".to_string()));
 }
+
+// --- analyze_script (single-parse combined) ---
+
+use lunas_script::analyze_script;
+
+#[test]
+fn analyze_script_combines_bindings_and_mutations() {
+    let a = analyze_script(
+        "let count = 0\nlet items = []\nfunction add(){ items = items.concat(1); count++ }",
+    )
+    .unwrap();
+    assert_eq!(a.bindings, ["count", "items", "add"]);
+    assert_eq!(
+        a.function_mutations,
+        vec![(
+            "add".to_string(),
+            vec!["items".to_string(), "count".to_string()]
+        )]
+    );
+}
+
+#[test]
+fn analyze_script_matches_individual_functions() {
+    let code = "import x from 'm'\nconst a = 1\nfunction f(){ a2 = 1 }\nconst g = () => { b++ }";
+    let combined = analyze_script(code).unwrap();
+    assert_eq!(combined.bindings, declared_bindings(code).unwrap());
+    assert_eq!(
+        combined.function_mutations,
+        function_mutations(code).unwrap()
+    );
+}

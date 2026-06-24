@@ -25,8 +25,10 @@ use crate::ast::ScriptParseError;
 /// assert_eq!(names, ["count", "x", "f"]);
 /// ```
 pub fn declared_bindings(code: &str) -> Result<Vec<String>, ScriptParseError> {
-    let module = parse_program(code)?;
+    Ok(collect_bindings(&parse_program(code)?))
+}
 
+fn collect_bindings(module: &swc_ecma_ast::Module) -> Vec<String> {
     let mut names = Vec::new();
     for item in &module.body {
         match item {
@@ -47,7 +49,7 @@ pub fn declared_bindings(code: &str) -> Result<Vec<String>, ScriptParseError> {
             _ => {}
         }
     }
-    Ok(names)
+    names
 }
 
 /// Returns the identifiers *referenced* (read) by a JS expression or program,
@@ -215,7 +217,10 @@ pub fn assigned_identifiers(code: &str) -> Result<Vec<String>, ScriptParseError>
 ///                       ("noop".to_string(), vec![])]);
 /// ```
 pub fn function_mutations(code: &str) -> Result<Vec<(String, Vec<String>)>, ScriptParseError> {
-    let module = parse_program(code)?;
+    Ok(collect_function_mutations(&parse_program(code)?))
+}
+
+fn collect_function_mutations(module: &swc_ecma_ast::Module) -> Vec<(String, Vec<String>)> {
     let mut out = Vec::new();
     for item in &module.body {
         let decl = match item {
@@ -243,7 +248,34 @@ pub fn function_mutations(code: &str) -> Result<Vec<(String, Vec<String>)>, Scri
             _ => {}
         }
     }
-    Ok(out)
+    out
+}
+
+/// A whole-`script:`-block analysis computed in a single parse: the names the
+/// script declares and, for each top-level function, what it mutates. This is
+/// the per-component analysis the orchestrator runs once (rather than parsing
+/// the script twice via [`declared_bindings`] + [`function_mutations`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScriptAnalysis {
+    pub bindings: Vec<String>,
+    pub function_mutations: Vec<(String, Vec<String>)>,
+}
+
+/// Analyzes a `script:` block in one parse. See [`ScriptAnalysis`].
+///
+/// ```
+/// use lunas_script::analyze_script;
+///
+/// let a = analyze_script("let n = 0\nfunction inc(){ n++ }").unwrap();
+/// assert_eq!(a.bindings, ["n", "inc"]);
+/// assert_eq!(a.function_mutations, vec![("inc".to_string(), vec!["n".to_string()])]);
+/// ```
+pub fn analyze_script(code: &str) -> Result<ScriptAnalysis, ScriptParseError> {
+    let module = parse_program(code)?;
+    Ok(ScriptAnalysis {
+        bindings: collect_bindings(&module),
+        function_mutations: collect_function_mutations(&module),
+    })
 }
 
 fn is_callable(expr: &Expr) -> bool {
