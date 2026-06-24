@@ -328,3 +328,52 @@ fn analyze_script_matches_individual_functions() {
         function_mutations(code).unwrap()
     );
 }
+
+// --- referenced_identifiers_with_spans ---
+
+use lunas_script::referenced_identifiers_with_spans;
+
+#[test]
+fn refs_with_spans_slice_back() {
+    let code = "count + label * count";
+    let ids = referenced_identifiers_with_spans(code).unwrap();
+    let names: Vec<_> = ids.iter().map(|(n, _)| n.as_str()).collect();
+    assert_eq!(names, ["count", "label", "count"]);
+    // Every reported range must slice back to its identifier text.
+    for (name, range) in &ids {
+        assert_eq!(
+            range.slice(code),
+            Some(name.as_str()),
+            "bad span for {name}"
+        );
+    }
+    // The two `count` occurrences have distinct ranges.
+    assert_ne!(ids[0].1, ids[2].1);
+    assert_eq!(ids[0].1.slice(code), Some("count"));
+    assert_eq!(ids[2].1.start().raw(), 16);
+}
+
+#[test]
+fn refs_with_spans_member_and_call() {
+    let code = "a.b ? f(c) : d[e]";
+    let ids = referenced_identifiers_with_spans(code).unwrap();
+    for (name, range) in &ids {
+        assert_eq!(range.slice(code), Some(name.as_str()));
+    }
+    let names: Vec<_> = ids.iter().map(|(n, _)| n.as_str()).collect();
+    assert_eq!(names, ["a", "f", "c", "d", "e"]);
+}
+
+#[test]
+fn refs_with_spans_unicode() {
+    let code = "あ + b";
+    let ids = referenced_identifiers_with_spans(code).unwrap();
+    for (name, range) in &ids {
+        assert_eq!(range.slice(code), Some(name.as_str()));
+    }
+}
+
+#[test]
+fn refs_with_spans_invalid_is_error() {
+    assert!(referenced_identifiers_with_spans("= = =").is_err());
+}

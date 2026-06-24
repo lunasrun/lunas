@@ -75,6 +75,53 @@ pub fn referenced_identifiers(code: &str) -> Result<Vec<String>, ScriptParseErro
     Ok(collector.names)
 }
 
+/// Like [`referenced_identifiers`] but also returns each identifier's byte
+/// `TextRange` *within `code`* (0-based). The language server adds the
+/// expression's file-absolute start to these to locate references for
+/// highlight / rename across a template.
+///
+/// ```
+/// use lunas_script::referenced_identifiers_with_spans;
+///
+/// let ids = referenced_identifiers_with_spans("a + bb").unwrap();
+/// let names: Vec<_> = ids.iter().map(|(n, _)| n.as_str()).collect();
+/// assert_eq!(names, ["a", "bb"]);
+/// assert_eq!(ids[1].1.slice("a + bb"), Some("bb"));
+/// ```
+pub fn referenced_identifiers_with_spans(
+    code: &str,
+) -> Result<Vec<(String, lunas_span::TextRange)>, ScriptParseError> {
+    // Wrap as `(code);` so a bare expression parses; the `(` shifts offsets by 1.
+    let (module, fm) = parse_source_with_fm(format!("({});", code))?;
+    let mut collector = SpanRefCollector { items: Vec::new() };
+    module.visit_with(&mut collector);
+
+    let base = fm.start_pos.0; // BytePos of the file's first byte
+    const PREFIX: u32 = 1; // the leading "("
+    let code_len = code.len() as u32;
+    let out = collector
+        .items
+        .into_iter()
+        .filter_map(|(name, lo, hi)| {
+            let lo = lo.checked_sub(base)?.checked_sub(PREFIX)?;
+            let hi = hi.checked_sub(base)?.checked_sub(PREFIX)?;
+            (hi <= code_len && lo <= hi).then(|| (name, lunas_span::TextRange::at(lo, hi)))
+        })
+        .collect();
+    Ok(out)
+}
+
+struct SpanRefCollector {
+    items: Vec<(String, u32, u32)>,
+}
+
+impl Visit for SpanRefCollector {
+    fn visit_ident(&mut self, n: &Ident) {
+        self.items
+            .push((n.sym.to_string(), n.span.lo.0, n.span.hi.0));
+    }
+}
+
 /// Parses `code` as a program (a sequence of statements / declarations).
 fn parse_program(code: &str) -> Result<swc_ecma_ast::Module, ScriptParseError> {
     parse_source(code.to_string())
@@ -87,6 +134,12 @@ fn parse_expr_module(code: &str) -> Result<swc_ecma_ast::Module, ScriptParseErro
 }
 
 fn parse_source(text: String) -> Result<swc_ecma_ast::Module, ScriptParseError> {
+    Ok(parse_source_with_fm(text)?.0)
+}
+
+fn parse_source_with_fm(
+    text: String,
+) -> Result<(swc_ecma_ast::Module, Lrc<swc_common::SourceFile>), ScriptParseError> {
     let cm: Lrc<SourceMap> = Default::default();
     let fm = cm.new_source_file(Lrc::new(FileName::Anon), text);
     let lexer = Lexer::new(
@@ -99,9 +152,10 @@ fn parse_source(text: String) -> Result<swc_ecma_ast::Module, ScriptParseError> 
         None,
     );
     let mut parser = Parser::new_from(lexer);
-    parser
+    let module = parser
         .parse_module()
-        .map_err(|e| ScriptParseError::Parse(format!("{:?}", e)))
+        .map_err(|e| ScriptParseError::Parse(format!("{:?}", e)))?;
+    Ok((module, fm))
 }
 
 struct RefCollector {
