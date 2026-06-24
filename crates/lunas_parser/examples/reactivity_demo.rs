@@ -7,20 +7,24 @@
 //!
 //! Run with `cargo run -p lunas_parser --example reactivity_demo`.
 
-use lunas_parser::{parse, Directive, TemplateNode};
-use lunas_script::{declared_bindings, free_identifiers, parse_for};
+use lunas_parser::{parse, Directive, TemplateAttr, TemplateNode};
+use lunas_script::{
+    assigned_identifiers, declared_bindings, free_identifiers, function_mutations, parse_for,
+    referenced_identifiers,
+};
 
 fn main() {
     let src = "\
 @input label:string
 html:
     <div :class=\"theme\">${ count + label }</div>
-    <button @click=\"count++\">${ label }</button>
+    <button @click=\"add()\">${ label }</button>
     <li :for=\"item of items\">${ item.name }</li>
 script:
     let count = 0
     let theme = \"dark\"
     let items = []
+    function add(){ items = items.concat(label); count++ }
 ";
 
     let (file, diagnostics) = parse(src);
@@ -76,6 +80,45 @@ script:
                         parsed.iterable,
                         deps_of(&parsed.iterable)
                     );
+                }
+            }
+        });
+
+        // Event handler *effects*: what state re-renders when it fires. A handler
+        // that calls a function inherits that function's mutation set, which is
+        // why `add()` (no direct assignment) still re-renders items + count.
+        let fn_muts = file
+            .script
+            .as_ref()
+            .map(|s| function_mutations(&s.source.text).unwrap_or_default())
+            .unwrap_or_default();
+        println!("\nevent handler effects (state to re-render):");
+        html.template.visit(&mut |n| {
+            let attrs = match n {
+                TemplateNode::Element(e) => &e.attrs,
+                TemplateNode::Component(c) => &c.props,
+                _ => return,
+            };
+            for a in attrs {
+                if let TemplateAttr::Event { event, handler, .. } = a {
+                    let mut effects = Vec::new();
+                    // Direct mutations in the handler text.
+                    for m in assigned_identifiers(&handler.text).unwrap_or_default() {
+                        if bindings.contains(&m) && !effects.contains(&m) {
+                            effects.push(m);
+                        }
+                    }
+                    // Mutations of any function the handler calls.
+                    for called in referenced_identifiers(&handler.text).unwrap_or_default() {
+                        if let Some((_, muts)) = fn_muts.iter().find(|(name, _)| *name == called) {
+                            for m in muts {
+                                if bindings.contains(m) && !effects.contains(m) {
+                                    effects.push(m.clone());
+                                }
+                            }
+                        }
+                    }
+                    println!("  @{}={:?}  ->  {:?}", event, handler.text, effects);
                 }
             }
         });
