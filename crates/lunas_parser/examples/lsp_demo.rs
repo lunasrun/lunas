@@ -8,7 +8,7 @@
 //! Run: `cargo run -p lunas_parser --example lsp_demo`
 
 use lunas_parser::{parse, LineCol, TextRange};
-use lunas_script::{declared_bindings_with_spans, referenced_identifiers_with_spans};
+use lunas_script::{declared_bindings_with_spans, free_identifiers_with_spans};
 
 fn main() {
     let target = "count";
@@ -46,7 +46,9 @@ script:
     println!("\ntemplate references:");
     if let Some(html) = &file.html {
         html.template.for_each_expression(|text, expr_range| {
-            for (name, local) in referenced_identifiers_with_spans(text).unwrap_or_default() {
+            // free_* (not referenced_*) so a shadowing local of the same name
+            // isn't reported as a use of the component binding.
+            for (name, local) in free_identifiers_with_spans(text).unwrap_or_default() {
                 if name == target {
                     show("ref", local.shifted(expr_range.start()));
                 }
