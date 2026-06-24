@@ -29,11 +29,15 @@ impl Template {
         }
     }
 
-    /// Calls `f(text, range)` for every embedded JS expression in the template:
-    /// `${…}` interpolations (in text and static attribute values), `:`/`::`/`@`
-    /// attribute expressions, `:if`/`:elseif` conditions, and `:for` headers.
-    /// Each `range` is `.lunas`-file-absolute. This is the iteration the code
-    /// generator runs reactivity analysis over.
+    /// Calls `f(text, range)` for every embedded JS **expression** in the
+    /// template that can be analyzed directly: `${…}` interpolations (in text
+    /// and static attribute values), `:`/`::`/`@` attribute expressions, and
+    /// `:if`/`:elseif` conditions. Each `range` is `.lunas`-file-absolute.
+    ///
+    /// `:for` headers are deliberately **not** included: a header like
+    /// `item of items` is a for-loop head, not an expression, so it must first
+    /// be split with `lunas_script::parse_for` (the loop variable is local; the
+    /// iterable is the reactive part). Walk `ForBlock`s separately for that.
     pub fn for_each_expression<F: FnMut(&str, TextRange)>(&self, mut f: F) {
         for node in &self.nodes {
             node.for_each_expression(&mut f);
@@ -66,7 +70,7 @@ impl TemplateNode {
                 }
             }
             TemplateNode::For(block) => {
-                f(&block.header.text, block.header.range);
+                // The header is not a plain expression; analyze via parse_for.
                 block.body.for_each_expression(f);
             }
             TemplateNode::Comment(_) => {}

@@ -704,12 +704,13 @@ fn for_each_expression_collects_all_embedded_js() {
         exprs.push(text.to_string());
     });
 
-    // for header, if condition, :class bound, @click handler, two interpolations.
-    assert!(exprs.contains(&"x of xs".to_string()));
+    // if condition, :class bound, @click handler, two interpolations.
+    // The `:for` header is intentionally excluded (needs parse_for first).
+    assert!(!exprs.contains(&"x of xs".to_string()));
     assert!(exprs.contains(&"x.ok".to_string()));
     assert!(exprs.contains(&"cls".to_string()));
     assert!(exprs.contains(&"go(x)".to_string()));
     assert!(exprs.contains(&"x.v".to_string()));
     assert!(exprs.contains(&"y".to_string()));
-    assert_eq!(exprs.len(), 6);
+    assert_eq!(exprs.len(), 5);
 }
