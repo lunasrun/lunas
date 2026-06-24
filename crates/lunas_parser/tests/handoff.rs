@@ -120,3 +120,27 @@ script:
     });
     assert_eq!(handler_mutations, ["count"]);
 }
+
+#[test]
+fn analysis_on_real_fixture_script() {
+    use lunas_script::{assigned_identifiers, declared_bindings};
+    let path = format!(
+        "{}/tests/fixtures/counter-game.lun",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let src = std::fs::read_to_string(&path).expect("read fixture");
+    let (file, _) = parse(&src);
+    let script = file.script.expect("script block");
+
+    let declared = declared_bindings(&script.source.text).expect("analyze");
+    for expected in ["count", "clear", "increment", "toggle", "interval"] {
+        assert!(
+            declared.contains(&expected.to_string()),
+            "missing {expected} in {declared:?}"
+        );
+    }
+
+    let assigned = assigned_identifiers(&script.source.text).expect("analyze");
+    assert!(assigned.contains(&"count".to_string()));
+    assert!(assigned.contains(&"interval".to_string()));
+}
