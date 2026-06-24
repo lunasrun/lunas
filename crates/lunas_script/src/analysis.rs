@@ -28,6 +28,103 @@ pub fn declared_bindings(code: &str) -> Result<Vec<String>, ScriptParseError> {
     Ok(collect_bindings(&parse_program(code)?))
 }
 
+/// Like [`declared_bindings`] but also returns each declared name's byte
+/// `TextRange` within `code` (0-based) — the *declaration site*. The language
+/// server uses this for go-to-definition: a binding referenced in the template
+/// jumps to where the `script:` block declares it.
+///
+/// ```
+/// use lunas_script::declared_bindings_with_spans;
+///
+/// let code = "let count = 0\nfunction inc(){}";
+/// let decls = declared_bindings_with_spans(code).unwrap();
+/// assert_eq!(decls[0].0, "count");
+/// assert_eq!(decls[0].1.slice(code), Some("count"));
+/// assert_eq!(decls[1].1.slice(code), Some("inc"));
+/// ```
+pub fn declared_bindings_with_spans(
+    code: &str,
+) -> Result<Vec<(String, lunas_span::TextRange)>, ScriptParseError> {
+    let (module, fm) = parse_source_with_fm(code.to_string())?;
+    let mut spans: Vec<(String, u32, u32)> = Vec::new();
+    for item in &module.body {
+        match item {
+            ModuleItem::Stmt(Stmt::Decl(decl)) => collect_decl_spans(decl, &mut spans),
+            ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(e)) => {
+                collect_decl_spans(&e.decl, &mut spans)
+            }
+            ModuleItem::ModuleDecl(ModuleDecl::Import(import)) => {
+                for spec in &import.specifiers {
+                    let local = match spec {
+                        ImportSpecifier::Named(n) => &n.local,
+                        ImportSpecifier::Default(d) => &d.local,
+                        ImportSpecifier::Namespace(n) => &n.local,
+                    };
+                    spans.push((local.sym.to_string(), local.span.lo.0, local.span.hi.0));
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let base = fm.start_pos.0;
+    let code_len = code.len() as u32;
+    Ok(spans
+        .into_iter()
+        .filter_map(|(name, lo, hi)| {
+            let lo = lo.checked_sub(base)?;
+            let hi = hi.checked_sub(base)?;
+            (hi <= code_len && lo <= hi).then(|| (name, lunas_span::TextRange::at(lo, hi)))
+        })
+        .collect())
+}
+
+fn collect_decl_spans(decl: &Decl, out: &mut Vec<(String, u32, u32)>) {
+    match decl {
+        Decl::Var(var) => {
+            for d in &var.decls {
+                collect_pat_spans(&d.name, out);
+            }
+        }
+        Decl::Fn(f) => out.push((
+            f.ident.sym.to_string(),
+            f.ident.span.lo.0,
+            f.ident.span.hi.0,
+        )),
+        Decl::Class(c) => out.push((
+            c.ident.sym.to_string(),
+            c.ident.span.lo.0,
+            c.ident.span.hi.0,
+        )),
+        _ => {}
+    }
+}
+
+fn collect_pat_spans(pat: &Pat, out: &mut Vec<(String, u32, u32)>) {
+    match pat {
+        Pat::Ident(b) => out.push((b.id.sym.to_string(), b.id.span.lo.0, b.id.span.hi.0)),
+        Pat::Array(arr) => arr
+            .elems
+            .iter()
+            .flatten()
+            .for_each(|e| collect_pat_spans(e, out)),
+        Pat::Object(obj) => {
+            for prop in &obj.props {
+                match prop {
+                    ObjectPatProp::KeyValue(kv) => collect_pat_spans(&kv.value, out),
+                    ObjectPatProp::Assign(a) => {
+                        out.push((a.key.sym.to_string(), a.key.span.lo.0, a.key.span.hi.0))
+                    }
+                    ObjectPatProp::Rest(r) => collect_pat_spans(&r.arg, out),
+                }
+            }
+        }
+        Pat::Rest(rest) => collect_pat_spans(&rest.arg, out),
+        Pat::Assign(assign) => collect_pat_spans(&assign.left, out),
+        _ => {}
+    }
+}
+
 fn collect_bindings(module: &swc_ecma_ast::Module) -> Vec<String> {
     let mut names = Vec::new();
     for item in &module.body {

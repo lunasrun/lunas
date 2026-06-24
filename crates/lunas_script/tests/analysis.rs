@@ -377,3 +377,38 @@ fn refs_with_spans_unicode() {
 fn refs_with_spans_invalid_is_error() {
     assert!(referenced_identifiers_with_spans("= = =").is_err());
 }
+
+// --- declared_bindings_with_spans ---
+
+use lunas_script::declared_bindings_with_spans;
+
+#[test]
+fn declared_spans_slice_back() {
+    let code = "let count = 0\nconst { x, y: z } = p\nfunction inc(){}\nclass C {}";
+    let decls = declared_bindings_with_spans(code).unwrap();
+    let names: Vec<_> = decls.iter().map(|(n, _)| n.as_str()).collect();
+    assert_eq!(names, ["count", "x", "z", "inc", "C"]);
+    for (name, range) in &decls {
+        assert_eq!(
+            range.slice(code),
+            Some(name.as_str()),
+            "bad span for {name}"
+        );
+    }
+}
+
+#[test]
+fn declared_spans_names_match_declared_bindings() {
+    let code = "import d from 'm'\nlet a = 1, b = 2";
+    let with: Vec<String> = declared_bindings_with_spans(code)
+        .unwrap()
+        .into_iter()
+        .map(|(n, _)| n)
+        .collect();
+    assert_eq!(with, declared_bindings(code).unwrap());
+}
+
+#[test]
+fn declared_spans_invalid_is_error() {
+    assert!(declared_bindings_with_spans("let = = =").is_err());
+}

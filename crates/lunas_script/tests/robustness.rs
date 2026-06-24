@@ -23,6 +23,9 @@ fn exercise(input: &str) {
     no_panic("declared_bindings", input, |s| {
         let _ = lunas_script::declared_bindings(s);
     });
+    no_panic("declared_bindings_with_spans", input, |s| {
+        let _ = lunas_script::declared_bindings_with_spans(s);
+    });
     no_panic("referenced_identifiers", input, |s| {
         let _ = lunas_script::referenced_identifiers(s);
     });
