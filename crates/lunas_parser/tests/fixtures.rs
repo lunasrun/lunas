@@ -112,3 +112,70 @@ fn fixture_template_serde_round_trips() {
         }
     }
 }
+
+#[test]
+fn todo_app_fixture_parses_with_all_features() {
+    use lunas_parser::{Directive, TemplateAttr};
+
+    let file = parse_fixture("todo.lunas");
+    assert!(file.html.is_some() && file.style.is_some() && file.script.is_some());
+
+    // Directives: @input title:string = "Todos", @use TodoItem.
+    assert!(file
+        .directives
+        .iter()
+        .any(|d| matches!(d, Directive::Input(p) if p.name == "title")));
+    assert!(file
+        .directives
+        .iter()
+        .any(|d| matches!(d, Directive::UseComponent(u) if u.component_name == "TodoItem")));
+
+    let mut nodes = Vec::new();
+    flatten(&file.html.as_ref().unwrap().template.nodes, &mut nodes);
+
+    // The TodoItem component is recognized (resolved via @use) and wrapped in a
+    // :for block.
+    let component = nodes
+        .iter()
+        .any(|n| matches!(n, TemplateNode::Component(c) if c.name == "TodoItem"));
+    assert!(component, "TodoItem component not resolved");
+    let for_block = nodes.iter().any(|n| matches!(n, TemplateNode::For(_)));
+    assert!(for_block, "expected a :for block");
+
+    // The if/elseif/else cascade over the three <p> elements is one grouped chain.
+    let chains: Vec<_> = nodes
+        .iter()
+        .filter_map(|n| match n {
+            TemplateNode::If(c) => Some(c),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(chains.len(), 1, "expected one grouped if-chain");
+    assert_eq!(chains[0].branches.len(), 3);
+
+    // Two-way binding ::value and an @keydown event on the input.
+    let input_attrs: Vec<&TemplateAttr> = nodes
+        .iter()
+        .filter_map(|n| match n {
+            TemplateNode::Element(e) if e.name == "input" => Some(&e.attrs),
+            _ => None,
+        })
+        .flatten()
+        .collect();
+    assert!(input_attrs
+        .iter()
+        .any(|a| matches!(a, TemplateAttr::TwoWay { name, .. } if name == "value")));
+    assert!(input_attrs
+        .iter()
+        .any(|a| matches!(a, TemplateAttr::Event { event, .. } if event == "keydown")));
+
+    // Whole file: no parse errors.
+    let (_f, diags) = parse(
+        &std::fs::read_to_string(format!(
+            "{}/tests/fixtures/todo.lunas",
+            env!("CARGO_MANIFEST_DIR")
+        ))
+        .unwrap(),
+    );
+    assert!(diags.iter().all(|d| !d.is_error()), "{diags:?}");
+}
