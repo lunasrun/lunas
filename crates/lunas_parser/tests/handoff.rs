@@ -144,3 +144,35 @@ fn analysis_on_real_fixture_script() {
     assert!(assigned.contains(&"count".to_string()));
     assert!(assigned.contains(&"interval".to_string()));
 }
+
+#[test]
+fn find_all_references_to_a_binding_in_the_template() {
+    // The LSP "find references / highlight" flow: locate every use of a binding
+    // across all template expressions, in file-absolute positions.
+    use lunas_script::referenced_identifiers_with_spans;
+
+    let src = "\
+html:
+    <div :class=\"count > 0 ? 'on' : 'off'\">${ count }</div>
+    <button @click=\"count = count + 1\">+</button>
+script:
+    let count = 0
+";
+    let (file, _) = parse(src);
+    let html = file.html.unwrap();
+
+    let mut refs = Vec::new();
+    html.template.for_each_expression(|text, expr_range| {
+        for (name, local) in referenced_identifiers_with_spans(text).unwrap_or_default() {
+            if name == "count" {
+                refs.push(local.shifted(expr_range.start()));
+            }
+        }
+    });
+
+    // count: once in :class, once in ${ count }, twice in @click = 4 uses.
+    assert_eq!(refs.len(), 4, "{refs:?}");
+    for r in &refs {
+        assert_eq!(r.slice(src), Some("count"), "bad range {r:?}");
+    }
+}
