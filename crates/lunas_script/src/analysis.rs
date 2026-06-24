@@ -218,6 +218,81 @@ pub fn assigned_identifiers(code: &str) -> Result<Vec<String>, ScriptParseError>
     Ok(collector.names)
 }
 
+/// For each top-level function (a `function` declaration or a `const f = …`
+/// arrow/function expression), returns its name and the identifiers its body
+/// mutates (deduplicated). This is what reactivity needs for the common pattern
+/// of an event handler that *calls* a function which mutates state — e.g.
+/// `@click="add(x)"` where `function add(){ items = … }`: the click depends on
+/// `add`'s mutation set, not on any direct assignment in the handler text.
+///
+/// ```
+/// use lunas_script::function_mutations;
+///
+/// let muts = function_mutations(
+///     "function add(){ items = items.concat(x); count++ }\nconst noop = () => 0"
+/// ).unwrap();
+/// assert_eq!(muts, vec![("add".to_string(), vec!["items".to_string(), "count".to_string()]),
+///                       ("noop".to_string(), vec![])]);
+/// ```
+pub fn function_mutations(code: &str) -> Result<Vec<(String, Vec<String>)>, ScriptParseError> {
+    let cm: Lrc<SourceMap> = Default::default();
+    let fm = cm.new_source_file(Lrc::new(FileName::Anon), code.to_string());
+    let lexer = Lexer::new(
+        Syntax::Typescript(TsSyntax {
+            tsx: false,
+            ..Default::default()
+        }),
+        Default::default(),
+        StringInput::from(&*fm),
+        None,
+    );
+    let mut parser = Parser::new_from(lexer);
+    let module = parser
+        .parse_module()
+        .map_err(|e| ScriptParseError::Parse(format!("{:?}", e)))?;
+
+    let mut out = Vec::new();
+    for item in &module.body {
+        let decl = match item {
+            ModuleItem::Stmt(Stmt::Decl(d)) => d,
+            ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(e)) => &e.decl,
+            _ => continue,
+        };
+        match decl {
+            Decl::Fn(f) => {
+                let mut c = AssignCollector { names: Vec::new() };
+                f.function.visit_with(&mut c);
+                out.push((f.ident.sym.to_string(), dedup(c.names)));
+            }
+            Decl::Var(var) => {
+                for d in &var.decls {
+                    if let (Pat::Ident(name), Some(init)) = (&d.name, &d.init) {
+                        if is_callable(init) {
+                            let mut c = AssignCollector { names: Vec::new() };
+                            init.visit_with(&mut c);
+                            out.push((name.id.sym.to_string(), dedup(c.names)));
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(out)
+}
+
+fn is_callable(expr: &Expr) -> bool {
+    matches!(expr, Expr::Arrow(_) | Expr::Fn(_))
+}
+
+fn dedup(names: Vec<String>) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    names
+        .into_iter()
+        .filter(|n| seen.insert(n.clone()))
+        .collect()
+}
+
 struct AssignCollector {
     names: Vec<String>,
 }

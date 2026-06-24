@@ -227,3 +227,73 @@ fn free_destructured_params_excluded() {
 fn free_invalid_is_error() {
     assert!(free_identifiers("=>").is_err());
 }
+
+// --- function_mutations ---
+
+use lunas_script::function_mutations;
+
+#[test]
+fn function_mutations_basic() {
+    let muts = function_mutations(
+        "function add(){ items = items.concat(x); count++ }\nfunction noop(){ return 1 }",
+    )
+    .unwrap();
+    assert_eq!(
+        muts,
+        vec![
+            (
+                "add".to_string(),
+                vec!["items".to_string(), "count".to_string()]
+            ),
+            ("noop".to_string(), vec![]),
+        ]
+    );
+}
+
+#[test]
+fn function_mutations_arrow_const() {
+    let muts = function_mutations("const inc = () => { n++ }").unwrap();
+    assert_eq!(muts, vec![("inc".to_string(), vec!["n".to_string()])]);
+}
+
+#[test]
+fn function_mutations_dedups() {
+    let muts = function_mutations("function f(){ a = 1; a = 2; a++ }").unwrap();
+    assert_eq!(muts, vec![("f".to_string(), vec!["a".to_string()])]);
+}
+
+#[test]
+fn function_mutations_ignores_locals_but_keeps_outer() {
+    // `local` is a local var; it's still reported (flat analysis), but the
+    // important outer `state` mutation is captured.
+    let muts = function_mutations("function f(){ let local = 0; state = local }").unwrap();
+    assert_eq!(muts[0].0, "f");
+    assert!(muts[0].1.contains(&"state".to_string()));
+}
+
+#[test]
+fn function_mutations_on_real_fixture() {
+    // counter-game's functions and what they mutate.
+    let path = format!(
+        "{}/../lunas_parser/tests/fixtures/counter-game.lun",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let src = std::fs::read_to_string(&path).expect("read");
+    // Extract the script block crudely for this analysis-only check.
+    let script = src
+        .split("script:")
+        .nth(1)
+        .unwrap()
+        .split("style:")
+        .next()
+        .unwrap();
+    let muts = function_mutations(script).unwrap();
+    let by_name = |n: &str| {
+        muts.iter()
+            .find(|(name, _)| name == n)
+            .map(|(_, m)| m.clone())
+    };
+    assert!(by_name("increment").unwrap().contains(&"count".to_string()));
+    assert!(by_name("clear").unwrap().contains(&"count".to_string()));
+    assert!(by_name("toggle").unwrap().contains(&"interval".to_string()));
+}

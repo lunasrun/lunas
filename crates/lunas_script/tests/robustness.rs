@@ -29,6 +29,9 @@ fn exercise(input: &str) {
     no_panic("assigned_identifiers", input, |s| {
         let _ = lunas_script::assigned_identifiers(s);
     });
+    no_panic("function_mutations", input, |s| {
+        let _ = lunas_script::function_mutations(s);
+    });
     no_panic("free_identifiers", input, |s| {
         let _ = lunas_script::free_identifiers(s);
     });
