@@ -16,7 +16,7 @@ orchestrator is not built yet (see the pipeline section in the design doc).
 |---|---|
 | [`lunas_span`](crates/lunas_span) | shared `TextSize`/`TextRange`, `LineIndex`, `Diagnostic` — the frozen interface between the parser crates |
 | [`lunas_html_parser`](crates/lunas_html_parser) | hand-written HTML lexer + recursive-descent parser (no parser library); validated against the html5lib-tests tokenizer suite |
-| [`lunas_script`](crates/lunas_script) | the JS/TS "AST parser": SWC-based AST extraction, TypeScript→JavaScript transform, and `for`-header parsing |
+| [`lunas_script`](crates/lunas_script) | the JS/TS "AST parser" (SWC): AST extraction, TS→JS transform, `for`-header parsing, and a static-analysis suite for reactivity and the language server |
 | [`lunas_parser`](crates/lunas_parser) | the `.lunas` syntax parser: a Pest grammar splits blocks/directives, then a semantic pass builds the `ParsedFile` and a binding-aware template IR (interpolation, `:if`/`:for`, components). No JS/TS toolchain dependency. |
 
 A `.lunas` example and the full architecture — span model, layering, the
@@ -24,6 +24,25 @@ parser-vs-AST-parser split, where TS→JS conversion happens, and the template
 binding layer — are documented in
 [`crates/lunas_parser/DESIGN.md`](crates/lunas_parser/DESIGN.md) and
 [`crates/lunas_parser/docs/template-design.md`](crates/lunas_parser/docs/template-design.md).
+
+## Analysis & language-server support
+
+Beyond producing the IR, the front end exposes the primitives a code generator
+and a language server need. All embedded JS stays raw text + file-absolute
+spans in the parser; `lunas_script` analyzes it on demand:
+
+- **Reactivity** — `analyze_script` (a script's bindings + per-function mutation
+  sets in one parse), `free_identifiers` (the reactive dependencies of an
+  expression), `assigned_identifiers` / `function_mutations` (what a handler, or
+  a function it calls, mutates). `examples/reactivity_demo.rs` shows the full
+  flow: `@click="add()"` re-renders `items`/`count` via `add`'s mutation set.
+- **Navigation** — `referenced_identifiers_with_spans` +
+  `Template::for_each_expression` locate every use of a binding across the
+  template (find-references / highlight / rename); `declared_bindings_with_spans`
+  gives the declaration site (go-to-definition). `ParsedFile::block_at` and
+  `lunas_to_script` route positions to the right backend; `Diagnostic::render`
+  formats errors. `examples/lsp_demo.rs` prints a binding's declaration and all
+  template references in `line:col`.
 
 ## Design principles
 
@@ -51,5 +70,6 @@ cargo clippy --all-targets -- -D warnings
 cargo fmt --all --check
 cargo run -p lunas_parser --example parse_demo        # end-to-end demo
 cargo run -p lunas_parser --example reactivity_demo   # reactivity analysis flow
+cargo run -p lunas_parser --example lsp_demo          # go-to-def + find-references
 cargo run -p lunas_parser --example check -- file.lunas   # diagnostic checker
 ```
