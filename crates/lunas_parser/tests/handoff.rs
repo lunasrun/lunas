@@ -176,3 +176,36 @@ script:
         assert_eq!(r.slice(src), Some("count"), "bad range {r:?}");
     }
 }
+
+#[test]
+fn go_to_definition_template_binding_to_script_declaration() {
+    // LSP go-to-definition: a binding used in the template resolves to its
+    // declaration site in the script:, in file-absolute coordinates.
+    use lunas_script::declared_bindings_with_spans;
+
+    let src = "\
+html:
+    <div>${ count }</div>
+script:
+    let other = 1
+    let count = 0
+";
+    let (file, _) = parse(src);
+    let script = file.script.unwrap();
+
+    let decls: Vec<(String, _)> = declared_bindings_with_spans(&script.source.text)
+        .unwrap()
+        .into_iter()
+        .map(|(name, local)| (name, local.shifted(script.source.range.start())))
+        .collect();
+
+    let count_decl = decls
+        .iter()
+        .find(|(n, _)| n == "count")
+        .map(|(_, r)| *r)
+        .expect("count declared");
+
+    assert_eq!(count_decl.slice(src), Some("count"));
+    let lc = file.line_index.line_col(count_decl.start());
+    assert_eq!(lc.line, 4); // "    let count = 0"
+}
