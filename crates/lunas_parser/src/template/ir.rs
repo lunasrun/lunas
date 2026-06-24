@@ -28,6 +28,73 @@ impl Template {
             node.visit(f);
         }
     }
+
+    /// Calls `f(text, range)` for every embedded JS expression in the template:
+    /// `${…}` interpolations (in text and static attribute values), `:`/`::`/`@`
+    /// attribute expressions, `:if`/`:elseif` conditions, and `:for` headers.
+    /// Each `range` is `.lunas`-file-absolute. This is the iteration the code
+    /// generator runs reactivity analysis over.
+    pub fn for_each_expression<F: FnMut(&str, TextRange)>(&self, mut f: F) {
+        for node in &self.nodes {
+            node.for_each_expression(&mut f);
+        }
+    }
+}
+
+impl TemplateNode {
+    fn for_each_expression<F: FnMut(&str, TextRange)>(&self, f: &mut F) {
+        match self {
+            TemplateNode::Text(t) => segments_expressions(&t.segments, f),
+            TemplateNode::Element(e) => {
+                attrs_expressions(&e.attrs, f);
+                for c in &e.children {
+                    c.for_each_expression(f);
+                }
+            }
+            TemplateNode::Component(c) => {
+                attrs_expressions(&c.props, f);
+                for n in &c.children {
+                    n.for_each_expression(f);
+                }
+            }
+            TemplateNode::If(chain) => {
+                for b in &chain.branches {
+                    if let Some(cond) = &b.condition {
+                        f(&cond.text, cond.range);
+                    }
+                    b.body.for_each_expression(f);
+                }
+            }
+            TemplateNode::For(block) => {
+                f(&block.header.text, block.header.range);
+                block.body.for_each_expression(f);
+            }
+            TemplateNode::Comment(_) => {}
+        }
+    }
+}
+
+fn segments_expressions<F: FnMut(&str, TextRange)>(segments: &[TextSegment], f: &mut F) {
+    for seg in segments {
+        if let TextSegment::Interpolation(i) = seg {
+            f(&i.expr, i.expr_range);
+        }
+    }
+}
+
+fn attrs_expressions<F: FnMut(&str, TextRange)>(attrs: &[TemplateAttr], f: &mut F) {
+    for attr in attrs {
+        match attr {
+            TemplateAttr::Bound { expr, .. } => f(&expr.text, expr.range),
+            TemplateAttr::TwoWay { lvalue, .. } => f(&lvalue.text, lvalue.range),
+            TemplateAttr::Event { handler, .. } => f(&handler.text, handler.range),
+            TemplateAttr::Static { value, .. } => {
+                if let Some(v) = value {
+                    segments_expressions(&v.segments, f);
+                }
+            }
+        }
+    }
 }
 
 /// A node in the template tree.

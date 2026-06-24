@@ -689,3 +689,27 @@ fn template_text_is_whitespace_and_has_interpolation() {
     assert!(!text.is_whitespace());
     assert!(text.has_interpolation());
 }
+
+#[test]
+fn for_each_expression_collects_all_embedded_js() {
+    use lunas_parser::Template;
+    let src = "html:\n    <div :for=\"x of xs\"><span :if=\"x.ok\" :class=\"cls\" @click=\"go(x)\">a ${x.v} b ${y}</span></div>\n";
+    let (file, _) = parse(src);
+    let template: Template = file.html.unwrap().template;
+
+    let mut exprs = Vec::new();
+    template.for_each_expression(|text, range| {
+        // Every reported range must slice back to the reported text.
+        assert_eq!(range.slice(src), Some(text));
+        exprs.push(text.to_string());
+    });
+
+    // for header, if condition, :class bound, @click handler, two interpolations.
+    assert!(exprs.contains(&"x of xs".to_string()));
+    assert!(exprs.contains(&"x.ok".to_string()));
+    assert!(exprs.contains(&"cls".to_string()));
+    assert!(exprs.contains(&"go(x)".to_string()));
+    assert!(exprs.contains(&"x.v".to_string()));
+    assert!(exprs.contains(&"y".to_string()));
+    assert_eq!(exprs.len(), 6);
+}
