@@ -25,21 +25,7 @@ use crate::ast::ScriptParseError;
 /// assert_eq!(names, ["count", "x", "f"]);
 /// ```
 pub fn declared_bindings(code: &str) -> Result<Vec<String>, ScriptParseError> {
-    let cm: Lrc<SourceMap> = Default::default();
-    let fm = cm.new_source_file(Lrc::new(FileName::Anon), code.to_string());
-    let lexer = Lexer::new(
-        Syntax::Typescript(TsSyntax {
-            tsx: false,
-            ..Default::default()
-        }),
-        Default::default(),
-        StringInput::from(&*fm),
-        None,
-    );
-    let mut parser = Parser::new_from(lexer);
-    let module = parser
-        .parse_module()
-        .map_err(|e| ScriptParseError::Parse(format!("{:?}", e)))?;
+    let module = parse_program(code)?;
 
     let mut names = Vec::new();
     for item in &module.body {
@@ -87,11 +73,20 @@ pub fn referenced_identifiers(code: &str) -> Result<Vec<String>, ScriptParseErro
     Ok(collector.names)
 }
 
+/// Parses `code` as a program (a sequence of statements / declarations).
+fn parse_program(code: &str) -> Result<swc_ecma_ast::Module, ScriptParseError> {
+    parse_source(code.to_string())
+}
+
 /// Parses `code` as an expression by wrapping it in `(…);` so a bare expression
 /// (an interpolation / attribute value) parses as a module.
 fn parse_expr_module(code: &str) -> Result<swc_ecma_ast::Module, ScriptParseError> {
+    parse_source(format!("({});", code))
+}
+
+fn parse_source(text: String) -> Result<swc_ecma_ast::Module, ScriptParseError> {
     let cm: Lrc<SourceMap> = Default::default();
-    let fm = cm.new_source_file(Lrc::new(FileName::Anon), format!("({});", code));
+    let fm = cm.new_source_file(Lrc::new(FileName::Anon), text);
     let lexer = Lexer::new(
         Syntax::Typescript(TsSyntax {
             tsx: false,
@@ -197,22 +192,7 @@ fn collect_pat_names(pat: &Pat, out: &mut std::collections::HashSet<String>) {
 ///            ["count", "obj", "n"]);
 /// ```
 pub fn assigned_identifiers(code: &str) -> Result<Vec<String>, ScriptParseError> {
-    let cm: Lrc<SourceMap> = Default::default();
-    let fm = cm.new_source_file(Lrc::new(FileName::Anon), code.to_string());
-    let lexer = Lexer::new(
-        Syntax::Typescript(TsSyntax {
-            tsx: false,
-            ..Default::default()
-        }),
-        Default::default(),
-        StringInput::from(&*fm),
-        None,
-    );
-    let mut parser = Parser::new_from(lexer);
-    let module = parser
-        .parse_module()
-        .map_err(|e| ScriptParseError::Parse(format!("{:?}", e)))?;
-
+    let module = parse_program(code)?;
     let mut collector = AssignCollector { names: Vec::new() };
     module.visit_with(&mut collector);
     Ok(collector.names)
@@ -235,22 +215,7 @@ pub fn assigned_identifiers(code: &str) -> Result<Vec<String>, ScriptParseError>
 ///                       ("noop".to_string(), vec![])]);
 /// ```
 pub fn function_mutations(code: &str) -> Result<Vec<(String, Vec<String>)>, ScriptParseError> {
-    let cm: Lrc<SourceMap> = Default::default();
-    let fm = cm.new_source_file(Lrc::new(FileName::Anon), code.to_string());
-    let lexer = Lexer::new(
-        Syntax::Typescript(TsSyntax {
-            tsx: false,
-            ..Default::default()
-        }),
-        Default::default(),
-        StringInput::from(&*fm),
-        None,
-    );
-    let mut parser = Parser::new_from(lexer);
-    let module = parser
-        .parse_module()
-        .map_err(|e| ScriptParseError::Parse(format!("{:?}", e)))?;
-
+    let module = parse_program(code)?;
     let mut out = Vec::new();
     for item in &module.body {
         let decl = match item {
