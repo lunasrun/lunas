@@ -64,6 +64,25 @@ pub struct TemplateText {
     pub range: TextRange,
 }
 
+impl TemplateText {
+    /// Whether this run is insignificant whitespace: no interpolations and only
+    /// whitespace in its literal text. The code generator skips such nodes
+    /// (they come from indentation/newlines between elements).
+    pub fn is_whitespace(&self) -> bool {
+        self.segments.iter().all(|seg| match seg {
+            TextSegment::Literal { text, .. } => text.trim().is_empty(),
+            TextSegment::Interpolation(_) => false,
+        })
+    }
+
+    /// Whether this run contains at least one `${…}` interpolation.
+    pub fn has_interpolation(&self) -> bool {
+        self.segments
+            .iter()
+            .any(|seg| matches!(seg, TextSegment::Interpolation(_)))
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum TextSegment {
     Literal { text: String, range: TextRange },

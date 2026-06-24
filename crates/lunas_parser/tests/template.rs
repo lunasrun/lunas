@@ -665,3 +665,27 @@ fn visit_reaches_all_nested_nodes() {
     // ${a} and ${b} inside the two branches.
     assert_eq!(interpolations, 2);
 }
+
+// --- TemplateText helpers ---
+
+#[test]
+fn template_text_is_whitespace_and_has_interpolation() {
+    // The leading indentation before <div> is a whitespace-only text node.
+    let ns = nodes(&html("<div>x</div>"));
+    let ws = ns.iter().find_map(|n| match n {
+        TemplateNode::Text(t) if t.is_whitespace() => Some(t),
+        _ => None,
+    });
+    assert!(ws.is_some(), "expected a whitespace text node");
+    assert!(!ws.unwrap().has_interpolation());
+
+    // A text run with interpolation is neither whitespace nor interpolation-free.
+    let inner = nodes(&html("<div> ${a} </div>"));
+    let div = first_element(&inner);
+    let text = match &div.children[0] {
+        TemplateNode::Text(t) => t,
+        _ => panic!(),
+    };
+    assert!(!text.is_whitespace());
+    assert!(text.has_interpolation());
+}
