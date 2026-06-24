@@ -412,3 +412,37 @@ fn declared_spans_names_match_declared_bindings() {
 fn declared_spans_invalid_is_error() {
     assert!(declared_bindings_with_spans("let = = =").is_err());
 }
+
+// --- free_identifiers_with_spans ---
+
+use lunas_script::free_identifiers_with_spans;
+
+#[test]
+fn free_with_spans_excludes_shadows_and_slices_back() {
+    let code = "count + items.map(count => count)";
+    let ids = free_identifiers_with_spans(code).unwrap();
+    let names: Vec<_> = ids.iter().map(|(n, _)| n.as_str()).collect();
+    // `count` shadowed by the arrow param is excluded entirely (flat scope);
+    // the free `items` remains.
+    assert_eq!(names, ["items"]);
+    for (name, range) in &ids {
+        assert_eq!(range.slice(code), Some(name.as_str()));
+    }
+}
+
+#[test]
+fn free_with_spans_keeps_distinct_free_uses() {
+    let code = "a + b.f(a)";
+    let ids = free_identifiers_with_spans(code).unwrap();
+    let names: Vec<_> = ids.iter().map(|(n, _)| n.as_str()).collect();
+    assert_eq!(names, ["a", "b", "a"]);
+    assert_ne!(ids[0].1, ids[2].1);
+    for (name, range) in &ids {
+        assert_eq!(range.slice(code), Some(name.as_str()));
+    }
+}
+
+#[test]
+fn free_with_spans_invalid_is_error() {
+    assert!(free_identifiers_with_spans("=>").is_err());
+}

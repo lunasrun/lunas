@@ -208,6 +208,46 @@ pub fn referenced_identifiers_with_spans(
     Ok(out)
 }
 
+/// Like [`free_identifiers`] but with each identifier's byte `TextRange` within
+/// `code` — the accurate input for LSP find-references / rename of a *component
+/// binding*: occurrences shadowed by a local (e.g. an arrow parameter of the
+/// same name) are excluded, so renaming the binding does not touch them.
+///
+/// ```
+/// use lunas_script::free_identifiers_with_spans;
+///
+/// // `count` is free; the `x` arrow param is excluded.
+/// let ids = free_identifiers_with_spans("count + items.map(x => x)").unwrap();
+/// let names: Vec<_> = ids.iter().map(|(n, _)| n.as_str()).collect();
+/// assert_eq!(names, ["count", "items"]);
+/// assert_eq!(ids[0].1.slice("count + items.map(x => x)"), Some("count"));
+/// ```
+pub fn free_identifiers_with_spans(
+    code: &str,
+) -> Result<Vec<(String, lunas_span::TextRange)>, ScriptParseError> {
+    let (module, fm) = parse_source_with_fm(format!("({});", code))?;
+    let mut refs = SpanRefCollector { items: Vec::new() };
+    module.visit_with(&mut refs);
+    let mut bound = BoundCollector {
+        names: Default::default(),
+    };
+    module.visit_with(&mut bound);
+
+    let base = fm.start_pos.0;
+    const PREFIX: u32 = 1;
+    let code_len = code.len() as u32;
+    Ok(refs
+        .items
+        .into_iter()
+        .filter(|(name, ..)| !bound.names.contains(name))
+        .filter_map(|(name, lo, hi)| {
+            let lo = lo.checked_sub(base)?.checked_sub(PREFIX)?;
+            let hi = hi.checked_sub(base)?.checked_sub(PREFIX)?;
+            (hi <= code_len && lo <= hi).then(|| (name, lunas_span::TextRange::at(lo, hi)))
+        })
+        .collect())
+}
+
 struct SpanRefCollector {
     items: Vec<(String, u32, u32)>,
 }
