@@ -49,5 +49,7 @@ cd crates
 cargo test --all          # run all tests
 cargo clippy --all-targets -- -D warnings
 cargo fmt --all --check
-cargo run -p lunas_parser --example parse_demo   # end-to-end demo
+cargo run -p lunas_parser --example parse_demo        # end-to-end demo
+cargo run -p lunas_parser --example reactivity_demo   # reactivity analysis flow
+cargo run -p lunas_parser --example check -- file.lunas   # diagnostic checker
 ```
