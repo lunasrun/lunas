@@ -105,6 +105,13 @@ mod tests {
     use super::*;
 
     #[test]
+    fn severity_labels() {
+        assert_eq!(Severity::Error.label(), "error");
+        assert_eq!(Severity::Warning.label(), "warning");
+        assert_eq!(Severity::Hint.label(), "hint");
+    }
+
+    #[test]
     fn constructors_set_severity() {
         let r = TextRange::at(0, 1);
         assert!(Diagnostic::error(r, "boom").is_error());
