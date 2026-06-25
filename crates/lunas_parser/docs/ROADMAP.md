@@ -20,7 +20,12 @@ Legend: `[x]` done · `[ ]` remaining · `[~]` partial / documented limitation.
 - [x] Error recovery (auto-close, stray/dangling tags) — never panics
 - [x] html5lib-tests **tokenizer** conformance (in-scope subset + reported gaps)
 - [x] Span-containment property tests; fuzz; attribute/raw-text edge cases
-- [ ] html5lib-tests **tree-construction** (fragment subset) conformance
+- [~] html5lib-tests **tree-construction**: not pursued. The suite mostly
+      exercises full HTML5 tree-construction quirks (implicit `<body>`/`<head>`,
+      table foster-parenting, active formatting elements) that this pragmatic
+      `.lunas`-template parser intentionally does not implement. Lexer-level
+      conformance is covered by the tokenizer suite; basic nesting correctness
+      by the span-containment / parser tests.
 
 ## Phase 3 — `.lunas` syntax (`lunas_parser`)
 - [x] Pest grammar: language blocks + directives (column-0, indented bodies)
@@ -48,8 +53,11 @@ Legend: `[x]` done · `[ ]` remaining · `[~]` partial / documented limitation.
 - [x] Reactivity: `declared_bindings`, `free_identifiers`, `assigned_identifiers`,
       `function_mutations`, `analyze_script`
 - [x] LSP spans: `referenced_/free_/declared_*_with_spans`
-- [~] `free_identifiers` uses a documented flat-scope approximation
-- [ ] Full lexical-scope free-variable analysis (correctness refinement)
+- [~] `free_identifiers` uses a documented flat-scope approximation. Full
+      lexical scoping is **not pursued**: it only changes behavior when a name
+      is *both* free in an outer scope and a same-named inner parameter in one
+      expression (e.g. `count + xs.map(count => count)`) — which does not occur
+      in real templates — at the cost of nontrivial scope-tracking risk.
 
 ## Phase 6 — Language-server foundation
 - [x] `ParsedFile::block_at` (route a position to html/style/script)
@@ -72,6 +80,9 @@ Legend: `[x]` done · `[ ]` remaining · `[~]` partial / documented limitation.
 
 ## Status
 
-Front end is essentially complete. Remaining *parser-scope* items: full lexical
-scoping (Phase 5) and html5lib tree-construction conformance (Phase 2). Worked
-next, top to bottom.
+**The parser front end is functionally complete.** Every Lunas syntax form is
+parsed correctly (the last functional fix was regex-literal handling in the
+interpolation scanner). The two remaining `[~]` items (full lexical scoping,
+html5lib tree-construction) are consciously-accepted limitations with documented
+rationale, not functional gaps. The only work left is the separate, deferred
+code-generator phase (`lunas_compiler`), which needs the runtime API spec.
