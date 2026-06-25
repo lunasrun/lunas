@@ -9,8 +9,10 @@ end in Rust, organized as a Cargo workspace under [`crates/`](crates/).
 
 ## Status
 
-The **parser front end** is implemented and well-tested; the code generator /
-orchestrator is not built yet (see the pipeline section in the design doc).
+The **parser front end**, the JS/TS static-analysis suite, and the language-server
+foundation are implemented and well-tested; the code generator / orchestrator is
+not built yet. See [`crates/lunas_parser/docs/STATUS.md`](crates/lunas_parser/docs/STATUS.md)
+for a what's-done / what's-next handoff and the pipeline section of the design doc.
 
 | crate | role |
 |---|---|
