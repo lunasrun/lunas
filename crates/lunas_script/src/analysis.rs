@@ -226,20 +226,14 @@ pub fn free_identifiers_with_spans(
     code: &str,
 ) -> Result<Vec<(String, lunas_span::TextRange)>, ScriptParseError> {
     let (module, fm) = parse_source_with_fm(format!("({});", code))?;
-    let mut refs = SpanRefCollector { items: Vec::new() };
-    module.visit_with(&mut refs);
-    let mut bound = BoundCollector {
-        names: Default::default(),
-    };
-    module.visit_with(&mut bound);
+    let mut c = ScopedFreeCollector::default();
+    module.visit_with(&mut c);
 
     let base = fm.start_pos.0;
     const PREFIX: u32 = 1;
     let code_len = code.len() as u32;
-    Ok(refs
-        .items
+    Ok(c.free
         .into_iter()
-        .filter(|(name, ..)| !bound.names.contains(name))
         .filter_map(|(name, lo, hi)| {
             let lo = lo.checked_sub(base)?.checked_sub(PREFIX)?;
             let hi = hi.checked_sub(base)?.checked_sub(PREFIX)?;
@@ -308,15 +302,13 @@ impl Visit for RefCollector {
 }
 
 /// Like [`referenced_identifiers`] but excludes names bound *locally* within the
-/// expression — function/arrow parameters and local declarations. So
-/// `items.map(x => x.active)` reports `items`, not `x`. This is the accurate
+/// expression — function/arrow parameters and block-scoped local declarations.
+/// So `items.map(x => x.active)` reports `items`, not `x`. This is the accurate
 /// input for reactivity: the free variables an expression actually depends on.
 ///
-/// Limitation: bound names are treated as a flat set rather than with full
-/// lexical scoping, so a name that is *both* free in an outer scope and a
-/// parameter of an inner one (e.g. `a + (a => a)`) is over-excluded. This does
-/// not occur in practice for template expressions; full scope resolution can be
-/// added if it ever does.
+/// Uses proper lexical scoping (a scope stack), so a name that is free in an
+/// outer scope is still reported even when an inner scope binds the same name:
+/// `a + (a => a)` reports `a` (the inner `a` is the param).
 ///
 /// ```
 /// use lunas_script::free_identifiers;
@@ -326,43 +318,69 @@ impl Visit for RefCollector {
 /// ```
 pub fn free_identifiers(code: &str) -> Result<Vec<String>, ScriptParseError> {
     let module = parse_expr_module(code)?;
-    let mut refs = RefCollector { names: Vec::new() };
-    module.visit_with(&mut refs);
-    let mut bound = BoundCollector {
-        names: Default::default(),
-    };
-    module.visit_with(&mut bound);
-    Ok(refs
-        .names
-        .into_iter()
-        .filter(|n| !bound.names.contains(n))
-        .collect())
+    let mut c = ScopedFreeCollector::default();
+    module.visit_with(&mut c);
+    Ok(c.free.into_iter().map(|(name, ..)| name).collect())
 }
 
-/// Collects names bound locally inside an expression: function/arrow params and
-/// nested local declarations.
-struct BoundCollector {
-    names: std::collections::HashSet<String>,
+/// Collects free identifiers with proper lexical scoping: a name is reported
+/// only if it is not bound by an enclosing function/arrow parameter or a local
+/// declaration in any enclosing scope. So in `a + (a => a)` the outer `a` is
+/// free while the arrow's `a` is bound.
+#[derive(Default)]
+struct ScopedFreeCollector {
+    scopes: Vec<std::collections::HashSet<String>>,
+    free: Vec<(String, u32, u32)>,
 }
 
-impl Visit for BoundCollector {
+impl ScopedFreeCollector {
+    fn is_bound(&self, name: &str) -> bool {
+        self.scopes.iter().any(|s| s.contains(name))
+    }
+}
+
+impl Visit for ScopedFreeCollector {
     fn visit_arrow_expr(&mut self, n: &swc_ecma_ast::ArrowExpr) {
+        let mut scope = std::collections::HashSet::new();
         for p in &n.params {
-            collect_pat_names(p, &mut self.names);
+            collect_pat_names(p, &mut scope);
         }
+        self.scopes.push(scope);
         n.visit_children_with(self);
+        self.scopes.pop();
     }
 
     fn visit_function(&mut self, n: &swc_ecma_ast::Function) {
+        let mut scope = std::collections::HashSet::new();
         for p in &n.params {
-            collect_pat_names(&p.pat, &mut self.names);
+            collect_pat_names(&p.pat, &mut scope);
         }
+        self.scopes.push(scope);
         n.visit_children_with(self);
+        self.scopes.pop();
     }
 
-    fn visit_var_declarator(&mut self, n: &swc_ecma_ast::VarDeclarator) {
-        collect_pat_names(&n.name, &mut self.names);
+    fn visit_block_stmt(&mut self, n: &swc_ecma_ast::BlockStmt) {
+        // Block-scoped declarations (and hoisted var/function) are visible
+        // throughout the block, so collect them before visiting reads.
+        let mut scope = std::collections::HashSet::new();
+        for stmt in &n.stmts {
+            if let Stmt::Decl(decl) = stmt {
+                let mut names = Vec::new();
+                collect_decl(decl, &mut names);
+                scope.extend(names);
+            }
+        }
+        self.scopes.push(scope);
         n.visit_children_with(self);
+        self.scopes.pop();
+    }
+
+    fn visit_ident(&mut self, n: &Ident) {
+        if !self.is_bound(&n.sym) {
+            self.free
+                .push((n.sym.to_string(), n.span.lo.0, n.span.hi.0));
+        }
     }
 }
 

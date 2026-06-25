@@ -422,9 +422,11 @@ fn free_with_spans_excludes_shadows_and_slices_back() {
     let code = "count + items.map(count => count)";
     let ids = free_identifiers_with_spans(code).unwrap();
     let names: Vec<_> = ids.iter().map(|(n, _)| n.as_str()).collect();
-    // `count` shadowed by the arrow param is excluded entirely (flat scope);
-    // the free `items` remains.
-    assert_eq!(names, ["items"]);
+    // Proper lexical scoping: the OUTER `count` is free (and renameable); the
+    // two inner `count`s are the arrow param and are excluded. `items` is free.
+    assert_eq!(names, ["count", "items"]);
+    // The reported `count` is the outer one (offset 0), not an inner param.
+    assert_eq!(ids[0].1.start().raw(), 0);
     for (name, range) in &ids {
         assert_eq!(range.slice(code), Some(name.as_str()));
     }
@@ -448,10 +450,16 @@ fn free_with_spans_invalid_is_error() {
 }
 
 #[test]
-fn free_flat_scope_limitation_is_documented_behavior() {
-    // Known limitation (see free_identifiers docs): bound names are a flat set,
-    // so a name BOTH free in an outer scope and an inner parameter is
-    // over-excluded. Locks current behavior; revisit if real templates need it.
-    assert_eq!(free("a + (a => a)"), Vec::<String>::new());
+fn free_lexical_scoping_handles_shadowing() {
+    // Proper lexical scoping: the outer `a` is free even when an inner arrow
+    // shadows the name; the inner `a` is bound to the param.
+    assert_eq!(free("a + (a => a)"), ["a"]);
     assert_eq!(free("a + (b => b)"), ["a"]);
+    // A name used only as an inner param is not free.
+    assert_eq!(free("xs.map(a => a)"), ["xs"]);
+    // Block-scoped local declarations are bound within their block.
+    assert_eq!(
+        free("(function(){ let local = outer; return local })"),
+        ["outer"]
+    );
 }
