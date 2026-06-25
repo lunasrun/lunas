@@ -767,3 +767,49 @@ fn interpolation_spanning_whole_attr_value() {
         _ => panic!(),
     }
 }
+
+// --- More structural edge cases ---
+
+#[test]
+fn nested_for_loops() {
+    let src =
+        "html:\n    <table :for=\"row of rows\"><tr :for=\"cell of row\">${cell}</tr></table>\n";
+    let ns = nodes(src);
+    let outer = ns
+        .iter()
+        .find_map(|n| match n {
+            TemplateNode::For(f) => Some(f),
+            _ => None,
+        })
+        .expect("outer for");
+    assert_eq!(outer.header.text, "row of rows");
+    let table = match &*outer.body {
+        TemplateNode::Element(e) => e,
+        _ => panic!("expected table"),
+    };
+    let inner_for = table
+        .children
+        .iter()
+        .find_map(|n| match n {
+            TemplateNode::For(f) => Some(f),
+            _ => None,
+        })
+        .expect("inner for");
+    assert_eq!(inner_for.header.text, "cell of row");
+}
+
+#[test]
+fn template_comment_preserved() {
+    use lunas_parser::TextRange;
+    let src = "html:\n    <div><!-- note --></div>\n";
+    let (file, _) = parse(src);
+    let ns = file.html.unwrap().template.nodes;
+    let div = first_element(&ns);
+    let comment = div.children.iter().find_map(|n| match n {
+        TemplateNode::Comment(c) => Some(c),
+        _ => None,
+    });
+    let c = comment.expect("comment node");
+    assert_eq!(c.value, " note ");
+    let _: TextRange = c.range;
+}
