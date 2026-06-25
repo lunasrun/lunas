@@ -714,3 +714,56 @@ fn for_each_expression_collects_all_embedded_js() {
     assert!(exprs.contains(&"y".to_string()));
     assert_eq!(exprs.len(), 5);
 }
+
+// --- Attribute interpolation & binding edge cases ---
+
+#[test]
+fn single_quoted_static_attr_interpolation() {
+    let ns = nodes(&html("<div class='a ${x} b'></div>"));
+    let el = first_element(&ns);
+    match &el.attrs[0] {
+        TemplateAttr::Static { value, .. } => {
+            let segs = &value.as_ref().unwrap().segments;
+            assert!(segs
+                .iter()
+                .any(|s| matches!(s, TextSegment::Interpolation(i) if i.expr == "x")));
+        }
+        other => panic!("got {:?}", other),
+    }
+}
+
+#[test]
+fn bound_attr_without_value_errors() {
+    let (_ns, diags) = parse_template(&html("<input :value />"));
+    assert!(diags
+        .iter()
+        .any(|d| d.is_error() && d.message.contains("expects an expression")));
+}
+
+#[test]
+fn event_attr_without_value_errors() {
+    let (_ns, diags) = parse_template(&html("<button @click>x</button>"));
+    assert!(diags
+        .iter()
+        .any(|d| d.is_error() && d.message.contains("expects an expression")));
+}
+
+#[test]
+fn two_way_attr_without_value_errors() {
+    let (_ns, diags) = parse_template(&html("<input ::value />"));
+    assert!(diags.iter().any(|d| d.is_error()));
+}
+
+#[test]
+fn interpolation_spanning_whole_attr_value() {
+    let ns = nodes(&html("<img src=\"${url}\" />"));
+    let el = first_element(&ns);
+    match &el.attrs[0] {
+        TemplateAttr::Static { value, .. } => {
+            let segs = &value.as_ref().unwrap().segments;
+            assert_eq!(segs.len(), 1);
+            assert!(matches!(&segs[0], TextSegment::Interpolation(i) if i.expr == "url"));
+        }
+        _ => panic!(),
+    }
+}
