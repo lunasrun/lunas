@@ -813,3 +813,46 @@ fn template_comment_preserved() {
     assert_eq!(c.value, " note ");
     let _: TextRange = c.range;
 }
+
+#[test]
+fn interpolation_with_regex_literal() {
+    // A regex literal containing `}` must not terminate the interpolation early.
+    let ns = nodes(&html("<div>${ s.replace(/}/g, '') }</div>"));
+    let div = first_element(&ns);
+    let text = match &div.children[0] {
+        TemplateNode::Text(t) => t,
+        _ => panic!(),
+    };
+    match &text.segments[0] {
+        TextSegment::Interpolation(i) => assert_eq!(i.expr, " s.replace(/}/g, '') "),
+        other => panic!("got {:?}", other),
+    }
+}
+
+#[test]
+fn interpolation_division_not_regex() {
+    let ns = nodes(&html("<div>${ a / b + c }</div>"));
+    let div = first_element(&ns);
+    let text = match &div.children[0] {
+        TemplateNode::Text(t) => t,
+        _ => panic!(),
+    };
+    match &text.segments[0] {
+        TextSegment::Interpolation(i) => assert_eq!(i.expr, " a / b + c "),
+        other => panic!("got {:?}", other),
+    }
+}
+
+#[test]
+fn interpolation_regex_char_class_with_brace() {
+    let ns = nodes(&html("<div>${ x.match(/[}{]/) }</div>"));
+    let div = first_element(&ns);
+    let text = match &div.children[0] {
+        TemplateNode::Text(t) => t,
+        _ => panic!(),
+    };
+    match &text.segments[0] {
+        TextSegment::Interpolation(i) => assert_eq!(i.expr, " x.match(/[}{]/) "),
+        other => panic!("got {:?}", other),
+    }
+}

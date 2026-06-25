@@ -39,7 +39,7 @@ Legend: `[x]` done · `[ ]` remaining · `[~]` partial / documented limitation.
 - [x] Components resolved via the `@use` name table (case-sensitive)
 - [x] Never-panic diagnostics (unterminated/empty `${}`, orphan `:else`, …)
 - [x] `Template::visit`, `for_each_expression`; `TemplateText` predicates
-- [ ] Interpolation scanner: regex-literal awareness (`${ /}/.test(x) }`)
+- [x] Interpolation scanner: regex-literal + comment awareness (`${ /}/.test(x) }`)
 
 ## Phase 5 — JS/TS analysis (`lunas_script`)
 - [x] `transform_ts_to_js` (validated on enums/generics/casts/type-only imports/…)
@@ -72,6 +72,6 @@ Legend: `[x]` done · `[ ]` remaining · `[~]` partial / documented limitation.
 
 ## Status
 
-Front end is essentially complete. Remaining *parser-scope* items: regex-literal
-interpolation handling (Phase 4), full lexical scoping (Phase 5), html5lib
-tree-construction conformance (Phase 2). These are worked next, top to bottom.
+Front end is essentially complete. Remaining *parser-scope* items: full lexical
+scoping (Phase 5) and html5lib tree-construction conformance (Phase 2). Worked
+next, top to bottom.
