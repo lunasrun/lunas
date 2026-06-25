@@ -4,8 +4,9 @@ use serde::{Deserialize, Serialize};
 /// A 0-based line/column position.
 ///
 /// `col` is a UTF-8 byte offset from the start of the line, matching the rest
-/// of the span model. Editors that need UTF-16 columns (LSP default) convert at
-/// the boundary; this type stays byte-oriented for internal consistency.
+/// of the span model. For UTF-16 columns (the LSP default), use
+/// [`LineIndex::utf16_line_col`] / [`LineIndex::offset_utf16`]; this type stays
+/// byte-oriented for internal consistency.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct LineCol {
     pub line: u32,
