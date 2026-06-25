@@ -104,6 +104,21 @@ mod tests {
     }
 
     #[test]
+    fn crlf_line_breaks() {
+        // "ab\r\ncd" — the \n at offset 3 ends line 0; line 1 starts at offset 4.
+        let idx = LineIndex::new("ab\r\ncd");
+        assert_eq!(idx.line_count(), 2);
+        assert_eq!(idx.line_col(ts(2)), LineCol::new(0, 2)); // the \r (col on line 0)
+        assert_eq!(idx.line_col(ts(4)), LineCol::new(1, 0)); // 'c'
+        assert_eq!(idx.line_col(ts(5)), LineCol::new(1, 1)); // 'd'
+                                                             // Round-trips for every offset.
+        for off in 0..=6u32 {
+            let lc = idx.line_col(ts(off));
+            assert_eq!(idx.offset(lc), ts(off.min(6)));
+        }
+    }
+
+    #[test]
     fn single_line_no_newline() {
         let idx = LineIndex::new("hello");
         assert_eq!(idx.line_count(), 1);
