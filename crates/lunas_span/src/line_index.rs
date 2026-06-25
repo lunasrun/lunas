@@ -83,6 +83,46 @@ impl LineIndex {
         let candidate = line_start + TextSize::new(pos.col);
         candidate.min(line_end)
     }
+
+    /// Converts a byte `offset` into a `(line, utf16_col)` position, where
+    /// `utf16_col` counts UTF-16 code units from the start of the line — the
+    /// column convention LSP uses by default. `text` must be the same source
+    /// the index was built from.
+    pub fn utf16_line_col(&self, offset: TextSize, text: &str) -> LineCol {
+        let lc = self.line_col(offset);
+        let line_start = self.line_starts[lc.line as usize].as_usize();
+        let end = offset.min(self.len).as_usize();
+        let col16 = text
+            .get(line_start..end)
+            .unwrap_or("")
+            .chars()
+            .map(|c| c.len_utf16() as u32)
+            .sum();
+        LineCol::new(lc.line, col16)
+    }
+
+    /// Inverse of [`utf16_line_col`](Self::utf16_line_col): converts a
+    /// `(line, utf16_col)` LSP position back to a byte offset. A column past the
+    /// end of the line clamps to the line's end.
+    pub fn offset_utf16(&self, line: u32, utf16_col: u32, text: &str) -> TextSize {
+        if line as usize >= self.line_starts.len() {
+            return self.len;
+        }
+        let line_start = self.line_starts[line as usize].as_usize();
+        let line_end = self
+            .line_starts
+            .get(line as usize + 1)
+            .map(|p| p.as_usize())
+            .unwrap_or(self.len.as_usize());
+        let mut units = 0u32;
+        for (i, c) in text.get(line_start..line_end).unwrap_or("").char_indices() {
+            if units >= utf16_col {
+                return TextSize::new((line_start + i) as u32);
+            }
+            units += c.len_utf16() as u32;
+        }
+        TextSize::new(line_end as u32)
+    }
 }
 
 impl TextSize {
@@ -101,6 +141,33 @@ mod tests {
 
     fn ts(n: u32) -> TextSize {
         TextSize::new(n)
+    }
+
+    #[test]
+    fn utf16_columns_for_multibyte() {
+        // "あ😀x": あ = 3 bytes / 1 UTF-16 unit; 😀 = 4 bytes / 2 UTF-16 units.
+        let text = "あ😀x";
+        let idx = LineIndex::new(text);
+        // byte offset 0 -> col16 0; after あ (byte 3) -> 1; after 😀 (byte 7) -> 3.
+        assert_eq!(idx.utf16_line_col(ts(0), text), LineCol::new(0, 0));
+        assert_eq!(idx.utf16_line_col(ts(3), text), LineCol::new(0, 1));
+        assert_eq!(idx.utf16_line_col(ts(7), text), LineCol::new(0, 3));
+        // Inverse round-trips.
+        assert_eq!(idx.offset_utf16(0, 0, text), ts(0));
+        assert_eq!(idx.offset_utf16(0, 1, text), ts(3));
+        assert_eq!(idx.offset_utf16(0, 3, text), ts(7));
+        // Past-end clamps to line end.
+        assert_eq!(idx.offset_utf16(0, 99, text), ts(text.len() as u32));
+    }
+
+    #[test]
+    fn utf16_columns_multiline() {
+        let text = "a\nか😀\nb";
+        let idx = LineIndex::new(text);
+        // On line 1, after か (1 unit) the 😀 starts at col16 1.
+        let off = idx.offset_utf16(1, 1, text);
+        assert_eq!(idx.utf16_line_col(off, text), LineCol::new(1, 1));
+        assert_eq!(text[off.as_usize()..].chars().next(), Some('😀'));
     }
 
     #[test]
