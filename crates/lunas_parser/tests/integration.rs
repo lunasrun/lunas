@@ -398,3 +398,42 @@ fn diagnostic_render_on_real_error() {
     assert!(rendered.contains("<div :else>x</div>"), "{rendered}");
     assert!(rendered.contains('^'), "{rendered}");
 }
+
+#[test]
+fn malformed_use_directive_errors() {
+    let (_file, diags) = parse("@use Button\nhtml:\n    <p/>\n");
+    assert!(diags
+        .iter()
+        .any(|d| d.is_error() && d.message.contains("@use")));
+}
+
+#[test]
+fn malformed_input_directive_errors() {
+    let (_file, diags) = parse("@input :nope\nhtml:\n    <p/>\n");
+    assert!(diags
+        .iter()
+        .any(|d| d.is_error() && d.message.contains("@input")));
+}
+
+#[test]
+fn duplicate_script_and_style_error() {
+    let src = "html:\n    <p/>\nscript:\n    let a=1\nscript:\n    let b=2\n";
+    let (_file, diags) = parse(src);
+    assert!(diags
+        .iter()
+        .any(|d| d.is_error() && d.message.contains("duplicate `script:`")));
+
+    let src2 = "html:\n    <p/>\nstyle:\n    a{}\nstyle:\n    b{}\n";
+    let (_file2, diags2) = parse(src2);
+    assert!(diags2
+        .iter()
+        .any(|d| d.is_error() && d.message.contains("duplicate `style:`")));
+}
+
+#[test]
+fn unknown_directive_warns() {
+    let (_file, diags) = parse("@whatever something\nhtml:\n    <p/>\n");
+    assert!(diags
+        .iter()
+        .any(|d| d.message.contains("unknown directive")));
+}
