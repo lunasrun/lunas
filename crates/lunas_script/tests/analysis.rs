@@ -446,3 +446,12 @@ fn free_with_spans_keeps_distinct_free_uses() {
 fn free_with_spans_invalid_is_error() {
     assert!(free_identifiers_with_spans("=>").is_err());
 }
+
+#[test]
+fn free_flat_scope_limitation_is_documented_behavior() {
+    // Known limitation (see free_identifiers docs): bound names are a flat set,
+    // so a name BOTH free in an outer scope and an inner parameter is
+    // over-excluded. Locks current behavior; revisit if real templates need it.
+    assert_eq!(free("a + (a => a)"), Vec::<String>::new());
+    assert_eq!(free("a + (b => b)"), ["a"]);
+}
