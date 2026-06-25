@@ -209,3 +209,54 @@ script:
     let lc = file.line_index.line_col(count_decl.start());
     assert_eq!(lc.line, 4); // "    let count = 0"
 }
+
+#[test]
+fn reactivity_pipeline_on_todo_fixture() {
+    use lunas_script::{analyze_script, free_identifiers};
+
+    let path = format!("{}/tests/fixtures/todo.lunas", env!("CARGO_MANIFEST_DIR"));
+    let src = std::fs::read_to_string(&path).expect("read");
+    let (file, _) = parse(&src);
+
+    let script = file.script.as_ref().unwrap();
+    let analysis = analyze_script(&script.source.text).unwrap();
+    for n in [
+        "theme",
+        "draft",
+        "items",
+        "remaining",
+        "add",
+        "complete",
+        "onKey",
+    ] {
+        assert!(analysis.bindings.contains(&n.to_string()), "missing {n}");
+    }
+    let add_muts = analysis
+        .function_mutations
+        .iter()
+        .find(|(n, _)| n == "add")
+        .map(|(_, m)| m.clone())
+        .unwrap();
+    assert!(add_muts.contains(&"items".to_string()));
+    assert!(add_muts.contains(&"draft".to_string()));
+
+    let mut found_remaining_dep = false;
+    file.html
+        .as_ref()
+        .unwrap()
+        .template
+        .for_each_expression(|text, _| {
+            let deps: Vec<String> = free_identifiers(text)
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|id| analysis.bindings.contains(id))
+                .collect();
+            if deps.contains(&"remaining".to_string()) {
+                found_remaining_dep = true;
+            }
+        });
+    assert!(
+        found_remaining_dep,
+        "expected an expression depending on `remaining`"
+    );
+}
