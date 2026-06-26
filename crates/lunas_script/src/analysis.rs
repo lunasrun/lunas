@@ -360,6 +360,38 @@ impl Visit for ScopedFreeCollector {
         self.scopes.pop();
     }
 
+    fn visit_fn_decl(&mut self, n: &swc_ecma_ast::FnDecl) {
+        // The name is a binding occurrence (already bound in the enclosing block
+        // scope by `visit_block_stmt`); skip it and visit only the function.
+        n.function.visit_with(self);
+    }
+
+    fn visit_fn_expr(&mut self, n: &swc_ecma_ast::FnExpr) {
+        // A named function expression can reference its own name internally, so
+        // bind it for the function's scope; the name itself is not a free ref.
+        let mut scope = std::collections::HashSet::new();
+        if let Some(id) = &n.ident {
+            scope.insert(id.sym.to_string());
+        }
+        self.scopes.push(scope);
+        n.function.visit_with(self);
+        self.scopes.pop();
+    }
+
+    fn visit_class_decl(&mut self, n: &swc_ecma_ast::ClassDecl) {
+        n.class.visit_with(self);
+    }
+
+    fn visit_class_expr(&mut self, n: &swc_ecma_ast::ClassExpr) {
+        let mut scope = std::collections::HashSet::new();
+        if let Some(id) = &n.ident {
+            scope.insert(id.sym.to_string());
+        }
+        self.scopes.push(scope);
+        n.class.visit_with(self);
+        self.scopes.pop();
+    }
+
     fn visit_block_stmt(&mut self, n: &swc_ecma_ast::BlockStmt) {
         // Block-scoped declarations (and hoisted var/function) are visible
         // throughout the block, so collect them before visiting reads.

@@ -463,3 +463,46 @@ fn free_lexical_scoping_handles_shadowing() {
         ["outer"]
     );
 }
+
+// --- lexical scoping edge cases ---
+
+#[test]
+fn free_nested_arrow_shadowing() {
+    assert_eq!(free("a => (a => a)"), Vec::<String>::new());
+    assert_eq!(
+        free("outer + (a => (b => a + b + outer))"),
+        ["outer", "outer"]
+    );
+}
+
+#[test]
+fn free_block_scope_in_arrow_body() {
+    assert_eq!(
+        free("() => { const local = dep; return local + 1 }"),
+        ["dep"]
+    );
+}
+
+#[test]
+fn free_nested_function_chain() {
+    assert_eq!(
+        free("function f(a){ return function g(b){ return a + b + c } }"),
+        ["c"]
+    );
+}
+
+#[test]
+fn free_does_not_leak_inner_block_binding() {
+    assert_eq!(
+        free("function f(){ if (cond) { let y = 1 } return y }"),
+        ["cond", "y"]
+    );
+}
+
+#[test]
+fn free_destructured_and_default_params_scope() {
+    assert_eq!(
+        free("xs.map(({ a }, b = fallback) => a + b)"),
+        ["xs", "fallback"]
+    );
+}
