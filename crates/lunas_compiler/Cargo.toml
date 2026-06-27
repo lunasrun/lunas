@@ -1,0 +1,12 @@
+[package]
+name = "lunas_compiler"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Resolution layer for the Lunas compiler: parses a .lunas file and resolves its reactive model — the input a code generator consumes. Does not generate code."
+repository = "https://github.com/lunasrun/lunas"
+
+[dependencies]
+lunas_span = { path = "../lunas_span" }
+lunas_parser = { path = "../lunas_parser" }
+lunas_script = { path = "../lunas_script" }
