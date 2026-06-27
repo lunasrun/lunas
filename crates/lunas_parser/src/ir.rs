@@ -8,7 +8,9 @@ use serde::{Deserialize, Serialize};
 /// A language block's extracted body together with its location in the source.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BlockSource {
-    /// The block body with its common indentation stripped.
+    /// The block body, verbatim (no indentation stripping). Equal to
+    /// `range.slice(file)`, so offsets within `text` map onto the file by adding
+    /// `range.start()`.
     pub text: String,
     /// The range of the body within the original `.lunas` file.
     pub range: TextRange,

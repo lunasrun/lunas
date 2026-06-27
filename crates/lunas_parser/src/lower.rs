@@ -1,7 +1,8 @@
 //! Stage 2: lower the raw Pest items into the public [`ParsedFile`].
 //!
-//! Validates block uniqueness, extracts indentation-stripped block bodies,
-//! invokes the HTML sub-parser, and parses directive bodies. The script block
+//! Validates block uniqueness, extracts verbatim block bodies (no indentation
+//! stripping, so spans map exactly onto the file), invokes the HTML sub-parser,
+//! and parses directive bodies. The script block
 //! is only extracted as raw text; JS/TS parsing lives in `lunas_script`. Never
 //! panics; all problems are accumulated as [`Diagnostic`]s.
 

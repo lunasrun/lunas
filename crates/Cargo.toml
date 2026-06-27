@@ -5,4 +5,5 @@ members = [
     "lunas_html_parser",
     "lunas_script",
     "lunas_parser",
+    "lunas_compiler",
 ]
