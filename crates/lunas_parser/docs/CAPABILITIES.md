@@ -176,15 +176,44 @@ which calls `add()` re-renders whatever `add` mutates.
 All of `lunas_script` (the whole SWC stack) builds for
 `wasm32-unknown-unknown`, so the front end can run in a browser compiler/LSP.
 
+### 8. Resolve a component for a code generator (`lunas_compiler`)
+
+`lunas_compiler::resolve(source) -> (ResolvedComponent, Vec<Diagnostic>)` ties
+capabilities 1–7 together into the model a generator consumes — without
+generating any code:
+
+```rust
+use lunas_compiler::resolve;
+let (c, _diags) = resolve(src);
+c.props;          // @input props
+c.imports;        // @use child components
+c.reactive_vars;  // top-level bindings that change, each with a stable bit index
+c.dynamics;       // each reactive template expr + the reactive vars it reads (Deps)
+c.handlers;       // each @event handler + the reactive vars it writes (Deps)
+c.template;       // the IR (structure); script / style (raw)
+```
+
+- A **reactive variable** is a top-level binding that is mutated somewhere; each
+  gets an `index` (so a dependency set is a bitmask — `Deps::mask_u128`).
+- Each **dynamic part** (`${…}` text, `:attr`, `::two-way`, `:if`, `:for`
+  iterable) carries the reactive indices it reads, expanded **transitively
+  through function calls** (`${ total() }` depends on what `total` reads).
+- Each **handler** carries the reactive indices it writes, likewise transitive
+  (`@click="add()"` dirties what `add` mutates). Cycles terminate.
+
+See `cargo run -p lunas_compiler --example resolve_demo`. This is the boundary
+the project is built up to: the next phase is the generator that turns a
+`ResolvedComponent` into JS.
+
 ---
 
 ## What it deliberately does **not** do
 
-These are downstream phases, not gaps in the parser:
+These are downstream phases, not gaps in the front end:
 
-- **Code generation / runtime** — turning the IR into JS + reactivity wiring is
-  the `lunas_compiler` orchestrator, intentionally not built yet (it needs the
-  runtime API spec). The front end exposes every primitive it will consume.
+- **Code generation / runtime** — turning a `ResolvedComponent` into JS +
+  reactivity wiring is the generator, intentionally not built yet (it needs the
+  runtime API spec). Everything up to its input is done (capability 8).
 - **CSS parsing / scoping** — `style:` is kept as raw text; a `lunas_css` crate
   is an open owner decision.
 - **Type checking** — `lunas_script` parses and analyzes TS but does not
@@ -210,8 +239,14 @@ spans: `Diagnostic`/`Severity`/`LineCol`/`LineIndex`/`TextRange`/`TextSize`.
 **`lunas_script`**
 `declared_bindings`(`_with_spans`) · `referenced_identifiers`(`_with_spans`) ·
 `free_identifiers`(`_with_spans`) · `assigned_identifiers` · `function_mutations`
-· `analyze_script`/`ScriptAnalysis` · `parse_to_ast_json` · `parse_for`/
-`ForKind`/`ParsedFor` · `transform_ts_to_js`.
+· `function_dependencies` · `analyze_script`/`ScriptAnalysis` · `parse_to_ast_json`
+· `parse_for`/`ForKind`/`ParsedFor` · `transform_ts_to_js`.
+
+**`lunas_compiler`**
+`resolve` · `ResolvedComponent` (`props`/`imports`/`style`/`script`/`template`/
+`reactive_vars`/`dynamics`/`handlers`, `reactive_index`/`is_reactive`) ·
+`ReactiveVar` · `DynamicPart`/`DynamicKind` · `ResolvedHandler` · `Deps`
+(`indices`/`mask_u128`/`contains`/`is_empty`).
 
 ## Run it yourself
 
@@ -221,4 +256,5 @@ cargo run -p lunas_parser --example parse_demo        # blocks + template IR
 cargo run -p lunas_parser --example reactivity_demo   # dependency / mutation flow
 cargo run -p lunas_parser --example lsp_demo          # go-to-def + find-references
 cargo run -p lunas_parser --example check -- f.lunas  # diagnostics CLI
+cargo run -p lunas_compiler --example resolve_demo    # resolved model for codegen
 ```

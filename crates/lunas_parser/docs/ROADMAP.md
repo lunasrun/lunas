@@ -72,15 +72,31 @@ Legend: `[x]` done · `[ ]` remaining · `[~]` partial / documented limitation.
 - [x] `DESIGN.md`, `template-design.md`, `STATUS.md`, README, MIT LICENSE
 - [x] Runnable examples: `parse_demo`, `reactivity_demo`, `lsp_demo`, `check`
 
-## Out of scope (separate phases, owner decision required)
-- [ ] `lunas_compiler` orchestrator + code generator (deferred; needs runtime API)
+## Phase 8 — Resolution layer (`lunas_compiler`)
+- [x] `resolve(source) -> (ResolvedComponent, Vec<Diagnostic>)`; never panics
+- [x] Extract props (`@input`) and child components (`@use`)
+- [x] Number reactive variables (declared **and** mutated), with decl spans
+- [x] `function_dependencies` (per-function read deps) added to `lunas_script`
+- [x] Annotate each dynamic template part (text/attr/two-way/`:if`/`:for`) with
+      its reactive read-dependency set, transitively through function calls
+- [x] Annotate each `@event` handler with its reactive write set (transitive)
+- [x] `Deps` (sorted indices + `mask_u128` bitset); cycle-safe closure
+- [x] `examples/resolve_demo.rs`; robustness/never-panic tests
+
+## Remaining (separate phase, owner decision required)
+- [ ] **Code generator** — emit JS + reactivity wiring from a `ResolvedComponent`
+      (the project is built up to *just before* this; needs the runtime API spec)
 - [ ] `lunas_css` crate for `style:` scoping (style is raw text today, by design)
 
 ## Status
 
-**The parser front end is functionally complete.** Every Lunas syntax form is
-parsed correctly; the analysis suite now uses proper lexical scoping. The single
-remaining `[~]` item (html5lib tree-construction) is a consciously-accepted
-non-goal with documented rationale, not a functional gap. The only work left is
-the separate, deferred code-generator phase (`lunas_compiler`), which needs the
-runtime API spec.
+**The parser front end and the resolution layer are complete.** Every Lunas
+syntax form is parsed correctly (with proper lexical scoping in the analysis),
+and `lunas_compiler::resolve` now produces the full `ResolvedComponent` —
+numbered reactive variables, per-dynamic dependency sets, per-handler write
+sets — which is exactly the input a code generator consumes. The project is
+built up to *just before* code generation.
+
+The only remaining work is the **code generator** itself (emitting JS from a
+`ResolvedComponent`), which needs the runtime API spec. The one `[~]` item
+(html5lib tree-construction) is a consciously-accepted non-goal.
