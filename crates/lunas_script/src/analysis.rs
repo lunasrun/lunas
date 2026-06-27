@@ -461,6 +461,66 @@ pub fn function_mutations(code: &str) -> Result<Vec<(String, Vec<String>)>, Scri
     Ok(collect_function_mutations(&parse_program(code)?))
 }
 
+/// For each top-level function (a `function` declaration or a `const f = …`
+/// arrow/function expression), returns its name and the free identifiers its
+/// body *reads* (deduplicated) — its dependency set. This is the read-side
+/// counterpart of [`function_mutations`]: it tells reactivity when a value
+/// computed by *calling* the function must be recomputed (e.g. `${ total() }`
+/// re-renders when `total`'s dependencies change).
+///
+/// The set is scope-aware (params/locals excluded) and **includes the names of
+/// any functions the body calls** (they are free reads), so a caller can expand
+/// dependencies transitively to a fixpoint.
+///
+/// ```
+/// use lunas_script::function_dependencies;
+///
+/// let deps = function_dependencies(
+///     "function total(){ return price * qty }\nconst f = () => total() + tax"
+/// ).unwrap();
+/// assert_eq!(deps[0], ("total".to_string(), vec!["price".to_string(), "qty".to_string()]));
+/// // `f` reads `tax` and calls `total` (listed for transitive expansion).
+/// assert_eq!(deps[1], ("f".to_string(), vec!["total".to_string(), "tax".to_string()]));
+/// ```
+pub fn function_dependencies(code: &str) -> Result<Vec<(String, Vec<String>)>, ScriptParseError> {
+    Ok(collect_function_dependencies(&parse_program(code)?))
+}
+
+fn collect_function_dependencies(module: &swc_ecma_ast::Module) -> Vec<(String, Vec<String>)> {
+    let mut out = Vec::new();
+    for item in &module.body {
+        let decl = match item {
+            ModuleItem::Stmt(Stmt::Decl(d)) => d,
+            ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(e)) => &e.decl,
+            _ => continue,
+        };
+        match decl {
+            Decl::Fn(f) => {
+                let mut c = ScopedFreeCollector::default();
+                f.function.visit_with(&mut c);
+                out.push((f.ident.sym.to_string(), dedup(free_names(c))));
+            }
+            Decl::Var(var) => {
+                for d in &var.decls {
+                    if let (Pat::Ident(name), Some(init)) = (&d.name, &d.init) {
+                        if is_callable(init) {
+                            let mut c = ScopedFreeCollector::default();
+                            init.visit_with(&mut c);
+                            out.push((name.id.sym.to_string(), dedup(free_names(c))));
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
+fn free_names(c: ScopedFreeCollector) -> Vec<String> {
+    c.free.into_iter().map(|(name, ..)| name).collect()
+}
+
 fn collect_function_mutations(module: &swc_ecma_ast::Module) -> Vec<(String, Vec<String>)> {
     let mut out = Vec::new();
     for item in &module.body {
