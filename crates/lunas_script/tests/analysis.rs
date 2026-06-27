@@ -506,3 +506,43 @@ fn free_destructured_and_default_params_scope() {
         ["xs", "fallback"]
     );
 }
+
+// --- function_dependencies (reads) ---
+
+use lunas_script::function_dependencies;
+
+#[test]
+fn function_dependencies_basic_reads() {
+    let deps = function_dependencies("function total(){ return price * qty }").unwrap();
+    assert_eq!(
+        deps,
+        vec![(
+            "total".to_string(),
+            vec!["price".to_string(), "qty".to_string()]
+        )]
+    );
+}
+
+#[test]
+fn function_dependencies_excludes_params_and_locals() {
+    let deps = function_dependencies("function f(a){ const b = a + outer; return b }").unwrap();
+    assert_eq!(deps, vec![("f".to_string(), vec!["outer".to_string()])]);
+}
+
+#[test]
+fn function_dependencies_includes_called_functions() {
+    let deps = function_dependencies("const f = () => total() + tax").unwrap();
+    assert_eq!(
+        deps,
+        vec![(
+            "f".to_string(),
+            vec!["total".to_string(), "tax".to_string()]
+        )]
+    );
+}
+
+#[test]
+fn function_dependencies_ignores_non_callable_const() {
+    let deps = function_dependencies("const x = a + b\nfunction g(){ return x }").unwrap();
+    assert_eq!(deps, vec![("g".to_string(), vec!["x".to_string()])]);
+}
