@@ -29,8 +29,9 @@ use lunas_parser::{parse, Diagnostic, Directive};
 use lunas_script::{analyze_script, assigned_identifiers, declared_bindings_with_spans};
 
 mod model;
+mod reactivity;
 
-pub use model::{ReactiveVar, ResolvedComponent};
+pub use model::{Deps, DynamicKind, DynamicPart, ReactiveVar, ResolvedComponent, ResolvedHandler};
 
 /// Parses and resolves a `.lunas` source string into a [`ResolvedComponent`].
 ///
@@ -61,6 +62,21 @@ pub fn resolve(source: &str) -> (ResolvedComponent, Vec<Diagnostic>) {
         None => Vec::new(),
     };
 
+    // Annotate every dynamic template expression with the reactive variables it
+    // reads, and every handler with what it writes.
+    let (dynamics, handlers) = match &file.html {
+        Some(html) => {
+            let script_text = file
+                .script
+                .as_ref()
+                .map(|s| s.source.text.as_str())
+                .unwrap_or("");
+            let graph = reactivity::DependencyGraph::build(script_text, &reactive_vars);
+            reactivity::collect(&html.template, &graph)
+        }
+        None => (Vec::new(), Vec::new()),
+    };
+
     let component = ResolvedComponent {
         props,
         imports,
@@ -68,6 +84,8 @@ pub fn resolve(source: &str) -> (ResolvedComponent, Vec<Diagnostic>) {
         script: file.script,
         style: file.style,
         reactive_vars,
+        dynamics,
+        handlers,
     };
     (component, diags)
 }
