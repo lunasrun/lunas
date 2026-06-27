@@ -9,9 +9,11 @@ end in Rust, organized as a Cargo workspace under [`crates/`](crates/).
 
 ## Status
 
-The **parser front end**, the JS/TS static-analysis suite, and the language-server
-foundation are implemented and well-tested; the code generator / orchestrator is
-not built yet.
+The **parser front end**, the JS/TS static-analysis suite, the language-server
+foundation, and the **resolution layer** (`lunas_compiler`, which produces the
+`ResolvedComponent` a code generator consumes) are implemented and well-tested.
+The project is built up to *just before* code generation; the generator itself
+is the remaining phase.
 
 - **What you can actually do with it** (input → output, with examples):
   [`crates/lunas_parser/docs/CAPABILITIES.md`](crates/lunas_parser/docs/CAPABILITIES.md)
@@ -26,6 +28,7 @@ not built yet.
 | [`lunas_html_parser`](crates/lunas_html_parser) | hand-written HTML lexer + recursive-descent parser (no parser library); validated against the html5lib-tests tokenizer suite |
 | [`lunas_script`](crates/lunas_script) | the JS/TS "AST parser" (SWC): AST extraction, TS→JS transform, `for`-header parsing, and a static-analysis suite for reactivity and the language server |
 | [`lunas_parser`](crates/lunas_parser) | the `.lunas` syntax parser: a Pest grammar splits blocks/directives, then a semantic pass builds the `ParsedFile` and a binding-aware template IR (interpolation, `:if`/`:for`, components). No JS/TS toolchain dependency. |
+| [`lunas_compiler`](crates/lunas_compiler) | the resolution layer: combines the parser and analysis into a `ResolvedComponent` — numbered reactive variables, each dynamic template part with its dependency set, each handler with its write set. The input a code generator consumes; it does **not** generate code. |
 
 A `.lunas` example and the full architecture — span model, layering, the
 parser-vs-AST-parser split, where TS→JS conversion happens, and the template
@@ -80,4 +83,5 @@ cargo run -p lunas_parser --example parse_demo        # end-to-end demo
 cargo run -p lunas_parser --example reactivity_demo   # reactivity analysis flow
 cargo run -p lunas_parser --example lsp_demo          # go-to-def + find-references
 cargo run -p lunas_parser --example check -- file.lunas   # diagnostic checker
+cargo run -p lunas_compiler --example resolve_demo    # resolved model for codegen
 ```
