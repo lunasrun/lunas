@@ -698,3 +698,252 @@ fn collect_object_pat(obj: &ObjectPat, out: &mut Vec<String>) {
         }
     }
 }
+
+/// A scope-aware reference to a top-level module binding. See
+/// [`module_binding_references`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BindingRef {
+    pub name: String,
+    /// Byte range of the identifier within the analyzed code.
+    pub range: lunas_span::TextRange,
+    /// The reference is an object-literal / object-pattern shorthand
+    /// (`{ count }`), so a rewriter must expand it (`{ count: count.v }`)
+    /// rather than splice the identifier in place.
+    pub shorthand: bool,
+}
+
+/// Scope-aware references to *top-level module bindings*: every identifier in
+/// `code` that resolves to a top-level declaration — not shadowed by an
+/// enclosing function/arrow parameter, block-scoped local, catch parameter, or
+/// named fn/class expression — with its byte range. Declaration sites
+/// themselves (declarator patterns, fn/class names, import locals, parameter
+/// patterns) are excluded; default-value expressions inside skipped patterns
+/// are still visited.
+///
+/// This is the primitive behind compile-time rewrites of reactive variables
+/// (`count` → `count.v`) across a script block without touching shadowed uses.
+///
+/// ```
+/// use lunas_script::module_binding_references;
+///
+/// let code = "let count = 0\nfunction inc(){ count++ }\nconst f = (count) => count";
+/// let refs = module_binding_references(code).unwrap();
+/// // Only the `count++` occurrence refers to the top-level binding: the
+/// // declaration site and the shadowing arrow parameter/body are excluded.
+/// assert_eq!(refs.len(), 1);
+/// assert_eq!(refs[0].name, "count");
+/// assert_eq!(refs[0].range.slice(code), Some("count"));
+/// assert!(!refs[0].shorthand);
+/// ```
+pub fn module_binding_references(code: &str) -> Result<Vec<BindingRef>, ScriptParseError> {
+    let (module, fm) = parse_source_with_fm(code.to_string())?;
+    let targets: std::collections::HashSet<String> =
+        collect_bindings(&module).into_iter().collect();
+    let mut c = ModuleRefCollector {
+        targets,
+        scopes: Vec::new(),
+        out: Vec::new(),
+    };
+    module.visit_with(&mut c);
+
+    let base = fm.start_pos.0;
+    let code_len = code.len() as u32;
+    Ok(c.out
+        .into_iter()
+        .filter_map(|(name, lo, hi, shorthand)| {
+            let lo = lo.checked_sub(base)?;
+            let hi = hi.checked_sub(base)?;
+            (hi <= code_len && lo <= hi).then(|| BindingRef {
+                name,
+                range: lunas_span::TextRange::at(lo, hi),
+                shorthand,
+            })
+        })
+        .collect())
+}
+
+struct ModuleRefCollector {
+    targets: std::collections::HashSet<String>,
+    scopes: Vec<std::collections::HashSet<String>>,
+    out: Vec<(String, u32, u32, bool)>,
+}
+
+impl ModuleRefCollector {
+    fn shadowed(&self, name: &str) -> bool {
+        self.scopes.iter().any(|s| s.contains(name))
+    }
+
+    fn record(&mut self, id: &Ident, shorthand: bool) {
+        if !self.shadowed(&id.sym) && self.targets.contains(&*id.sym) {
+            self.out
+                .push((id.sym.to_string(), id.span.lo.0, id.span.hi.0, shorthand));
+        }
+    }
+
+    /// Visits only the *expressions* inside a binding pattern (defaults,
+    /// computed keys) — the bound identifiers themselves are skipped.
+    fn visit_pat_defaults(&mut self, pat: &Pat) {
+        match pat {
+            Pat::Assign(a) => {
+                a.right.visit_with(self);
+                self.visit_pat_defaults(&a.left);
+            }
+            Pat::Array(arr) => {
+                for p in arr.elems.iter().flatten() {
+                    self.visit_pat_defaults(p);
+                }
+            }
+            Pat::Object(obj) => {
+                for prop in &obj.props {
+                    match prop {
+                        ObjectPatProp::KeyValue(kv) => {
+                            if let swc_ecma_ast::PropName::Computed(c) = &kv.key {
+                                c.expr.visit_with(self);
+                            }
+                            self.visit_pat_defaults(&kv.value);
+                        }
+                        ObjectPatProp::Assign(a) => {
+                            if let Some(v) = &a.value {
+                                v.visit_with(self);
+                            }
+                        }
+                        ObjectPatProp::Rest(r) => self.visit_pat_defaults(&r.arg),
+                    }
+                }
+            }
+            Pat::Rest(r) => self.visit_pat_defaults(&r.arg),
+            _ => {}
+        }
+    }
+}
+
+impl Visit for ModuleRefCollector {
+    fn visit_ident(&mut self, n: &Ident) {
+        self.record(n, false);
+    }
+
+    fn visit_prop(&mut self, n: &swc_ecma_ast::Prop) {
+        // `{ count }` — record as shorthand so a rewriter expands it.
+        if let swc_ecma_ast::Prop::Shorthand(id) = n {
+            self.record(id, true);
+        } else {
+            n.visit_children_with(self);
+        }
+    }
+
+    fn visit_object_pat(&mut self, n: &ObjectPat) {
+        // Assignment-target object patterns: `({ count } = obj)` — the
+        // shorthand key is a reference that a rewriter must expand.
+        // (Declaration patterns never reach here: declarators skip them.
+        // Parameter patterns do, but their idents are shadowed by then.)
+        for prop in &n.props {
+            match prop {
+                ObjectPatProp::Assign(a) => {
+                    self.record(&a.key.id, true);
+                    if let Some(v) = &a.value {
+                        v.visit_with(self);
+                    }
+                }
+                ObjectPatProp::KeyValue(kv) => {
+                    if let swc_ecma_ast::PropName::Computed(c) = &kv.key {
+                        c.expr.visit_with(self);
+                    }
+                    kv.value.visit_with(self);
+                }
+                ObjectPatProp::Rest(r) => r.arg.visit_with(self),
+            }
+        }
+    }
+
+    fn visit_var_declarator(&mut self, n: &swc_ecma_ast::VarDeclarator) {
+        // The name pattern is a binding occurrence, not a reference.
+        self.visit_pat_defaults(&n.name);
+        if let Some(init) = &n.init {
+            init.visit_with(self);
+        }
+    }
+
+    fn visit_import_decl(&mut self, _n: &swc_ecma_ast::ImportDecl) {
+        // Import locals are binding occurrences; the source is a string.
+    }
+
+    fn visit_fn_decl(&mut self, n: &swc_ecma_ast::FnDecl) {
+        n.function.visit_with(self);
+    }
+
+    fn visit_class_decl(&mut self, n: &swc_ecma_ast::ClassDecl) {
+        n.class.visit_with(self);
+    }
+
+    fn visit_fn_expr(&mut self, n: &swc_ecma_ast::FnExpr) {
+        let mut scope = std::collections::HashSet::new();
+        if let Some(id) = &n.ident {
+            scope.insert(id.sym.to_string());
+        }
+        self.scopes.push(scope);
+        n.function.visit_with(self);
+        self.scopes.pop();
+    }
+
+    fn visit_class_expr(&mut self, n: &swc_ecma_ast::ClassExpr) {
+        let mut scope = std::collections::HashSet::new();
+        if let Some(id) = &n.ident {
+            scope.insert(id.sym.to_string());
+        }
+        self.scopes.push(scope);
+        n.class.visit_with(self);
+        self.scopes.pop();
+    }
+
+    fn visit_function(&mut self, n: &swc_ecma_ast::Function) {
+        let mut scope = std::collections::HashSet::new();
+        for p in &n.params {
+            collect_pat_names(&p.pat, &mut scope);
+        }
+        self.scopes.push(scope);
+        for p in &n.params {
+            self.visit_pat_defaults(&p.pat);
+        }
+        if let Some(body) = &n.body {
+            body.visit_with(self);
+        }
+        self.scopes.pop();
+    }
+
+    fn visit_arrow_expr(&mut self, n: &swc_ecma_ast::ArrowExpr) {
+        let mut scope = std::collections::HashSet::new();
+        for p in &n.params {
+            collect_pat_names(p, &mut scope);
+        }
+        self.scopes.push(scope);
+        for p in &n.params {
+            self.visit_pat_defaults(p);
+        }
+        n.body.visit_with(self);
+        self.scopes.pop();
+    }
+
+    fn visit_block_stmt(&mut self, n: &swc_ecma_ast::BlockStmt) {
+        let mut scope = std::collections::HashSet::new();
+        for stmt in &n.stmts {
+            if let Stmt::Decl(decl) = stmt {
+                let mut names = Vec::new();
+                collect_decl(decl, &mut names);
+                scope.extend(names);
+            }
+        }
+        self.scopes.push(scope);
+        n.visit_children_with(self);
+        self.scopes.pop();
+    }
+
+    fn visit_catch_clause(&mut self, n: &swc_ecma_ast::CatchClause) {
+        let mut scope = std::collections::HashSet::new();
+        if let Some(p) = &n.param {
+            collect_pat_names(p, &mut scope);
+        }
+        self.scopes.push(scope);
+        n.body.visit_with(self);
+        self.scopes.pop();
+    }
+}

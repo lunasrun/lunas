@@ -546,3 +546,103 @@ fn function_dependencies_ignores_non_callable_const() {
     let deps = function_dependencies("const x = a + b\nfunction g(){ return x }").unwrap();
     assert_eq!(deps, vec![("g".to_string(), vec!["x".to_string()])]);
 }
+
+// --- module_binding_references (scope-aware top-level refs) ---
+
+use lunas_script::module_binding_references;
+
+fn mrefs(code: &str) -> Vec<(String, String, bool)> {
+    module_binding_references(code)
+        .expect("parse ok")
+        .into_iter()
+        .map(|r| {
+            let text = r.range.slice(code).expect("in bounds").to_string();
+            (r.name, text, r.shorthand)
+        })
+        .collect()
+}
+
+#[test]
+fn mref_reads_and_writes_inside_functions() {
+    let code = "let count = 0\nfunction inc(){ count++ }\nconst show = () => count * 2";
+    let got = mrefs(code);
+    assert_eq!(got.len(), 2);
+    for (name, text, sh) in &got {
+        assert_eq!(name, "count");
+        assert_eq!(text, "count");
+        assert!(!sh);
+    }
+}
+
+#[test]
+fn mref_declaration_sites_excluded() {
+    // Declarators, fn/class names, and import locals are binding occurrences.
+    let code = "import x from 'm'\nlet a = 1\nfunction f(){}\nclass C {}";
+    assert!(mrefs(code).is_empty());
+}
+
+#[test]
+fn mref_shadowing_excluded() {
+    let code = "let n = 1\nconst f = (n) => n + 1\nfunction g(){ let n = 2; return n }";
+    assert!(mrefs(code).is_empty());
+}
+
+#[test]
+fn mref_block_shadow_and_outer_use() {
+    let code = "let n = 1\nfunction g(){ { let n = 2; n } return n }";
+    // Only the `return n` refers to the top-level binding.
+    assert_eq!(mrefs(code).len(), 1);
+}
+
+#[test]
+fn mref_member_prop_excluded_computed_included() {
+    let code = "let k = 'a'\nlet obj = {}\nfunction f(){ return obj.k + obj[k] }";
+    let got = mrefs(code);
+    // obj (twice) and computed k (once); the static `.k` prop is not a ref.
+    let ks = got.iter().filter(|(n, ..)| n == "k").count();
+    let objs = got.iter().filter(|(n, ..)| n == "obj").count();
+    assert_eq!(ks, 1);
+    assert_eq!(objs, 2);
+}
+
+#[test]
+fn mref_shorthand_flagged() {
+    let code = "let count = 0\nfunction f(){ return { count } }";
+    let got = mrefs(code);
+    assert_eq!(got.len(), 1);
+    assert!(got[0].2, "shorthand must be flagged");
+}
+
+#[test]
+fn mref_assignment_destructuring_shorthand() {
+    let code = "let count = 0\nfunction f(obj){ ({ count } = obj) }";
+    let got = mrefs(code);
+    assert_eq!(got.len(), 1);
+    assert_eq!(got[0].0, "count");
+    assert!(got[0].2);
+}
+
+#[test]
+fn mref_param_default_is_reference() {
+    let code = "let base = 1\nconst f = (x = base) => x";
+    let got = mrefs(code);
+    assert_eq!(got.len(), 1);
+    assert_eq!(got[0].0, "base");
+}
+
+#[test]
+fn mref_catch_param_shadows() {
+    let code = "let e = 1\nfunction f(){ try { g() } catch (e) { return e } return e }";
+    // Only the final `return e` is a top-level ref (g is not declared).
+    let got = mrefs(code);
+    assert_eq!(got.len(), 1);
+    assert_eq!(got[0].0, "e");
+}
+
+#[test]
+fn mref_top_level_expression_reference() {
+    let code = "let a = 1\nlet b = a + 1";
+    let got = mrefs(code);
+    assert_eq!(got.len(), 1);
+    assert_eq!(got[0].0, "a");
+}
