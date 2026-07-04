@@ -55,10 +55,10 @@ tree:
       title: Runtime package (ES2015 + Proxy floor)
       status: in_progress
       children:
-        - { id: rt-core, title: Adjacency dispatch core (bind, markVar, flush), status: todo }
-        - { id: rt-boxes, title: "box / deepBox / shared", status: todo }
-        - { id: rt-dom, title: "component / refs / on helpers", status: todo }
-        - { id: rt-blocks, title: "ifBlock / forBlock / mountChild", status: todo }
+        - { id: rt-core, title: Adjacency dispatch core (bind, markVar, flush), status: done }
+        - { id: rt-boxes, title: "box / deepBox / shared", status: done }
+        - { id: rt-dom, title: "component / refs / on helpers", status: done }
+        - { id: rt-blocks, title: "ifBlock / forBlock / mountChild", status: done }
         - { id: rt-package, title: npm package, tree-shaking, status: todo }
     - id: for-diff
       title: "Keyed :for reconciliation"
