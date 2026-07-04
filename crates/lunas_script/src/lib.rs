@@ -22,7 +22,8 @@ mod transform;
 pub use analysis::{
     analyze_script, assigned_identifiers, declared_bindings, declared_bindings_with_spans,
     free_identifiers, free_identifiers_with_spans, function_dependencies, function_mutations,
-    referenced_identifiers, referenced_identifiers_with_spans, ScriptAnalysis,
+    module_binding_references, referenced_identifiers, referenced_identifiers_with_spans,
+    top_level_declarations, BindingRef, DeclKind, ScriptAnalysis, TopLevelDecl,
 };
 pub use ast::{parse_to_ast_json, ScriptParseError};
 pub use for_header::{parse_for, ForKind, ParsedFor};

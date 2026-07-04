@@ -21,6 +21,7 @@ pub use template::{
     StaticValue, Template, TemplateAttr, TemplateElement, TemplateNode, TemplateText, TextSegment,
 };
 
+pub use lunas_html_parser::ElementKind;
 pub use lunas_span::{Diagnostic, LineCol, LineIndex, Severity, TextRange, TextSize};
 
 /// A fully parsed `.lunas` file.
