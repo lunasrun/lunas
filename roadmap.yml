@@ -38,8 +38,8 @@ tree:
       title: Code generator (ResolvedComponent to JS)
       status: in_progress
       children:
-        - { id: cg-scaffold, title: Codegen module + JS emitter utils, status: in_progress }
-        - { id: cg-static-html, title: Static skeleton emission (escaped, minified), status: todo }
+        - { id: cg-scaffold, title: Codegen module + JS emitter utils, status: done }
+        - { id: cg-static-html, title: Static skeleton emission (escaped, minified), status: done }
         - { id: cg-refs, title: Positional ref paths for dynamic nodes, status: todo }
         - { id: cg-anchors, title: Runtime text-anchor creation, status: todo }
         - { id: cg-text, title: Reactive text binds, status: todo }
@@ -53,7 +53,7 @@ tree:
         - { id: cg-e2e, title: End-to-end snapshot + browser smoke tests, status: todo }
     - id: runtime
       title: Runtime package (ES2015 + Proxy floor)
-      status: todo
+      status: in_progress
       children:
         - { id: rt-core, title: Adjacency dispatch core (bind, markVar, flush), status: todo }
         - { id: rt-boxes, title: "box / deepBox / shared", status: todo }
@@ -62,16 +62,16 @@ tree:
         - { id: rt-package, title: npm package, tree-shaking, status: todo }
     - id: for-diff
       title: "Keyed :for reconciliation"
-      status: in_progress
+      status: done
       children:
-        - { id: fd-design, title: Algorithm design doc (LIS keyed diff), status: in_progress }
-        - { id: fd-proto, title: Reference implementation + fuzz tests, status: todo }
+        - { id: fd-design, title: Algorithm design doc (LIS keyed diff), status: done }
+        - { id: fd-proto, title: Reference implementation + fuzz tests, status: done }
     - id: tooling
       title: Tooling
-      status: in_progress
+      status: done
       children:
-        - { id: roadmap-viz, title: 3D roadmap visualization repo (three.js), status: in_progress }
-        - { id: roadmap-sync, title: roadmap.yml sync to viz repo, status: in_progress }
+        - { id: roadmap-viz, title: 3D roadmap visualization repo (three.js), status: done }
+        - { id: roadmap-sync, title: roadmap.yml sync to viz repo, status: done }
     - id: later
       title: Deferred
       status: deferred
