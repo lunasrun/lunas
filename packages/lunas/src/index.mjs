@@ -1,0 +1,35 @@
+// lunas — minimal runtime for Lunas-compiled components.
+// Plain ESM, no build step. Compatibility floor: ES2015 + Proxy. No BigInt.
+// Contract: crates/lunas_compiler/docs/output-design.md
+//           crates/lunas_compiler/docs/for-diff-design.md
+
+export {
+  createContext,
+  bind,
+  markVar,
+  flush,
+  unbind,
+  beginScope,
+  endScope,
+  dropScope,
+} from "./core.mjs";
+
+export { box, deepBox, shared } from "./boxes.mjs";
+
+export {
+  component,
+  refs,
+  on,
+  anchorBefore,
+  anchorBeforeSplit,
+  anchorAppend,
+} from "./dom.mjs";
+
+export { ifBlock, forBlock, mountChild } from "./blocks.mjs";
+
+export {
+  createForState,
+  seedForState,
+  reconcile,
+  longestIncreasingSubsequence,
+} from "./for_diff.mjs";
