@@ -38,6 +38,18 @@
       "types": "./types/boxes.d.ts",
       "import": "./src/boxes.mjs"
     },
+    "./computed": {
+      "types": "./types/computed.d.ts",
+      "import": "./src/computed.mjs"
+    },
+    "./watch": {
+      "types": "./types/watch.d.ts",
+      "import": "./src/watch.mjs"
+    },
+    "./batch": {
+      "types": "./types/batch.d.ts",
+      "import": "./src/batch.mjs"
+    },
     "./dom": {
       "types": "./types/dom.d.ts",
       "import": "./src/dom.mjs"

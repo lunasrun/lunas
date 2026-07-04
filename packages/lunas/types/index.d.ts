@@ -13,6 +13,7 @@ export {
   bind,
   markVar,
   flush,
+  afterFlush,
   unbind,
   beginScope,
   endScope,
@@ -22,6 +23,16 @@ export {
 export type { Box, Shared } from "./boxes.js";
 
 export { box, deepBox, shared } from "./boxes.js";
+
+export type { Computed } from "./computed.js";
+
+export { computed } from "./computed.js";
+
+export type { StopHandle, WatchOpts } from "./watch.js";
+
+export { watch, watchEffect } from "./watch.js";
+
+export { nextTick, batch } from "./batch.js";
 
 export type {
   RootAttrs,

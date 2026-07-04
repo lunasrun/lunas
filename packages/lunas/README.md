@@ -28,7 +28,8 @@ import { box } from "lunas/boxes";
 ```
 
 Available deep-import subpaths mirror the internal modules: `lunas/core`,
-`lunas/boxes`, `lunas/dom`, `lunas/blocks`, `lunas/for_diff`.
+`lunas/boxes`, `lunas/computed`, `lunas/watch`, `lunas/batch`, `lunas/dom`,
+`lunas/blocks`, `lunas/for_diff`.
 
 TypeScript types are included (`types/index.d.ts`, plus one `.d.ts` per
 subpath) — no `@types` package needed.
@@ -60,6 +61,7 @@ main repo for the calling contract.
 | `bind(c, deps, fn)` | `lunas/core` | Register an update fn for reactive indices `deps`; runs once immediately. |
 | `markVar(c, i)` | `lunas/core` | Mark reactive variable `i` dirty; schedules a microtask flush. |
 | `flush(c)` | `lunas/core` | Run every queued update once. |
+| `afterFlush(c, cb)` | `lunas/core` | Run `cb` once, after the next flush completes (nextTick's primitive). |
 | `unbind(c, s)` | `lunas/core` | Permanently unregister a bind record. |
 | `beginScope(c)` | `lunas/core` | Open a collection scope for a control-flow block's inner binds. |
 | `endScope(c)` | `lunas/core` | Close the currently-open scope. |
@@ -67,6 +69,11 @@ main repo for the calling contract.
 | `box(c, i, v)` | `lunas/boxes` | Reassign-only reactive cell (plain getter/setter, no Proxy). |
 | `deepBox(c, i, v)` | `lunas/boxes` | Deeply-mutated reactive cell (Proxy-wrapped nested reads/writes). |
 | `shared(v)` | `lunas/boxes` | A value shared/mutated across multiple components. |
+| `computed(c, i, deps, fn)` | `lunas/computed` | Lazily-evaluated, memoized derived value. |
+| `watch(c, deps, cb, opts?)` | `lunas/watch` | Run `cb` when any of `deps` changes (optionally `immediate`). |
+| `watchEffect(c, deps, fn)` | `lunas/watch` | Run `fn` immediately and again on any `deps` change. |
+| `nextTick(c)` | `lunas/batch` | Promise resolved after the next flush (DOM updated). |
+| `batch(c, fn)` | `lunas/batch` | Run `fn`, then flush synchronously, collapsing writes into one update pass. |
 | `component(tag, attrs, HTML, setup)` | `lunas/dom` | Compiled-component factory: builds the root, parses static HTML, runs `setup`. |
 | `refs(root, paths)` | `lunas/dom` | Positional navigation to dynamic elements by child-index paths. |
 | `on(el, ev, fn)` | `lunas/dom` | `addEventListener` shorthand. |

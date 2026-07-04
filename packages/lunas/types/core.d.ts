@@ -18,10 +18,12 @@ export interface Scope {
 }
 
 /**
- * A component context: { root, deps, queue, pending, scope }.
+ * A component context: { root, deps, queue, pending, scope, post }.
  * `deps[i]` is the adjacency list of bind records that read reactive
  * variable `i`. `root` is whatever value the caller passed to
- * createContext (typically the component's root DOM node).
+ * createContext (typically the component's root DOM node). `post` is the
+ * list of pending afterFlush callbacks (nextTick's primitive); `batchDepth`
+ * is used internally by batch() in batch.mjs.
  */
 export interface Context<R = unknown> {
   root: R;
@@ -29,6 +31,8 @@ export interface Context<R = unknown> {
   queue: BindRecord[];
   pending: boolean;
   scope: Scope | null;
+  post: (() => void)[] | null;
+  batchDepth?: number;
 }
 
 /** Create a fresh reactive context rooted at `root`. */
@@ -51,8 +55,19 @@ export function bind(
  */
 export function markVar(c: Context, i: number): void;
 
-/** Run every queued update once. Only affected parts run. */
+/**
+ * Run every queued update once. Only affected parts run. After the update
+ * pass, drains any post-flush callbacks registered via `afterFlush`.
+ */
 export function flush(c: Context): void;
+
+/**
+ * Run `cb` once, after the next flush completes (i.e. after the DOM update
+ * pass). If a flush is already pending the callback rides that one;
+ * otherwise a flush is scheduled so the callback still fires this tick.
+ * This is the primitive behind nextTick() (see batch.mjs).
+ */
+export function afterFlush(c: Context, cb: () => void): void;
 
 /**
  * Permanently unregister a bind record. Safe to call while a flush
