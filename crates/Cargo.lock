@@ -648,6 +648,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "lunas_css"
+version = "0.1.0"
+dependencies = [
+ "lunas_span",
+]
+
+[[package]]
 name = "lunas_html_parser"
 version = "0.1.0"
 dependencies = [
