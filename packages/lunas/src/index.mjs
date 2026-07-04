@@ -42,3 +42,11 @@ export {
 } from "./for_diff.mjs";
 
 export { createStore, useStore, derivedStore } from "./store.mjs";
+
+export {
+  createRouter,
+  memoryHistory,
+  historyAdapter,
+  routerOutlet,
+  routerLink,
+} from "./router.mjs";
