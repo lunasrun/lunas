@@ -5,6 +5,8 @@
 //! the JS emitter (next pass) turns that plus the resolved reactivity into the
 //! final module text.
 
+pub mod emit;
 pub mod skeleton;
 
+pub use emit::compile;
 pub use skeleton::{build_skeleton, DynamicElement, InsertPos, Skeleton, Slot, SlotContent};

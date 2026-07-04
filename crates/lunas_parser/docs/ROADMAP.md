@@ -84,8 +84,13 @@ Legend: `[x]` done · `[ ]` remaining · `[~]` partial / documented limitation.
 - [x] `examples/resolve_demo.rs`; robustness/never-panic tests
 
 ## Remaining (separate phase, owner decision required)
-- [ ] **Code generator** — emit JS + reactivity wiring from a `ResolvedComponent`
-      (the project is built up to *just before* this; needs the runtime API spec)
+- [~] **Code generator** — emit JS + reactivity wiring from a `ResolvedComponent`
+      - [x] Wave 1 (`lunas_compiler::compile`): static skeleton + positional
+            refs + runtime text anchors + reactive text/attr binds + event
+            listeners; script rewrite (reactive `let` → box, refs → `.v`).
+            Verified end-to-end against the real runtime under Node.
+      - [ ] Wave 2: `:if` / `:for` / two-way / child components (currently voided
+            with a `/* TODO(wave2) */` marker so modules still compile & run).
 - [ ] `lunas_css` crate for `style:` scoping (style is raw text today, by design)
 
 ## Status

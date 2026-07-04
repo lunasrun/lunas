@@ -8,3 +8,7 @@ npm-pkgs/
 
 .vscode/
 .claude/
+
+# Transient modules written by the codegen execution test (codegen_exec.rs);
+# cleaned up on success, ignored in case a run is interrupted.
+packages/lunas/__exec_*.mjs

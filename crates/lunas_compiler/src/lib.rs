@@ -32,6 +32,7 @@ pub mod codegen;
 mod model;
 mod reactivity;
 
+pub use codegen::compile;
 pub use model::{Deps, DynamicKind, DynamicPart, ReactiveVar, ResolvedComponent, ResolvedHandler};
 
 /// Parses and resolves a `.lunas` source string into a [`ResolvedComponent`].
