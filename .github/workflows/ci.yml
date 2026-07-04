@@ -67,3 +67,23 @@ jobs:
       # The whole front end must stay wasm-ready (browser compiler / LSP).
       - name: Build for wasm32
         run: cargo build --all --target wasm32-unknown-unknown
+
+  runtime:
+    name: runtime tests (packages/lunas)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/lunas
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Run test suite
+        run: node test/run-all.mjs
+
+      - name: Tree-shaking / no-side-effects check
+        run: node test/treeshake.check.mjs
