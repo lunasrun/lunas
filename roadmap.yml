@@ -102,7 +102,7 @@ tree:
       status: todo
       children:
         - { id: a-router, title: "Router (directives parsed; runtime todo)", status: todo }
-        - { id: a-ssr, title: "SSR + client hydration", status: todo }
+        - { id: a-ssr, title: "SSR + client hydration", status: deferred }
         - { id: a-css, title: "Scoped CSS (lunas_css)", status: todo }
         - { id: a-suspense, title: "Suspense / async boundaries", status: todo }
         - { id: a-store, title: "Global state / stores", status: todo }
