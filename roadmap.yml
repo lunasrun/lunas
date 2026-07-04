@@ -40,11 +40,11 @@ tree:
       children:
         - { id: cg-scaffold, title: "Codegen module + JS emitter utils", status: done }
         - { id: cg-static-html, title: "Static skeleton emission (escaped, minified)", status: done }
-        - { id: cg-refs, title: "Positional ref paths for dynamic nodes", status: todo }
-        - { id: cg-anchors, title: "Runtime text-anchor creation", status: todo }
-        - { id: cg-text, title: "Reactive text binds", status: todo }
-        - { id: cg-attrs, title: "Attribute binds incl. static interpolation", status: todo }
-        - { id: cg-events, title: "Event listeners", status: todo }
+        - { id: cg-refs, title: "Positional ref paths for dynamic nodes", status: done }
+        - { id: cg-anchors, title: "Runtime text-anchor creation", status: done }
+        - { id: cg-text, title: "Reactive text binds", status: done }
+        - { id: cg-attrs, title: "Attribute binds incl. static interpolation", status: done }
+        - { id: cg-events, title: "Event listeners", status: done }
         - { id: cg-two-way, title: "Two-way bindings", status: todo }
         - { id: cg-if, title: "Conditional rendering (:if/:elseif/:else)", status: todo }
         - { id: cg-for, title: "List rendering (keyed :for)", status: todo }
