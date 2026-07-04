@@ -45,9 +45,9 @@ tree:
         - { id: cg-text, title: "Reactive text binds", status: done }
         - { id: cg-attrs, title: "Attribute binds incl. static interpolation", status: done }
         - { id: cg-events, title: "Event listeners", status: done }
-        - { id: cg-two-way, title: "Two-way bindings", status: todo }
-        - { id: cg-if, title: "Conditional rendering (:if/:elseif/:else)", status: todo }
-        - { id: cg-for, title: "List rendering (keyed :for)", status: todo }
+        - { id: cg-two-way, title: "Two-way bindings", status: in_progress }
+        - { id: cg-if, title: "Conditional rendering (:if/:elseif/:else)", status: in_progress }
+        - { id: cg-for, title: "List rendering (keyed :for)", status: in_progress }
         - { id: cg-components, title: "Child component mounting", status: todo }
         - { id: cg-inputs, title: "@input props handling", status: todo }
         - { id: cg-e2e, title: "End-to-end snapshot + browser smoke tests", status: todo }
@@ -103,9 +103,9 @@ tree:
       children:
         - { id: a-router, title: "Router (directives parsed; runtime todo)", status: todo }
         - { id: a-ssr, title: "SSR + client hydration", status: deferred }
-        - { id: a-css, title: "Scoped CSS (lunas_css)", status: todo }
+        - { id: a-css, title: "Scoped CSS (lunas_css)", status: in_progress }
         - { id: a-suspense, title: "Suspense / async boundaries", status: todo }
-        - { id: a-store, title: "Global state / stores", status: todo }
+        - { id: a-store, title: "Global state / stores", status: in_progress }
     - id: tooling
       title: Tooling
       status: todo
