@@ -25,18 +25,21 @@ Claude drives development from the roadmap autonomously:
    background agents with `isolation: "worktree"`. Choose the agent model by
    difficulty — `opus` for hard compiler/runtime work, cheaper models for
    mechanical tasks — to spread rate-limit load.
-3. **One PR per feature.** Each feature branch: `feat/<area>-<name>` (or
-   `fix/`, `chore/`). Agents commit, push, and open a PR with `gh pr create`.
-   The orchestrator merges PRs (squash) once checks pass — merging is
-   pre-authorized, no need to ask. Merge sequentially; rebase follow-ups on
-   fresh `main`.
+3. **One PR per feature — never push to `main` directly.** Every change
+   (features, docs, roadmap edits, config) lands via a PR. Each feature
+   branch: `feat/<area>-<name>` (or `fix/`, `chore/`). Agents commit, push,
+   and open a PR with `gh pr create`. The orchestrator merges PRs (squash)
+   once checks pass — merging is pre-authorized, no need to ask. Merge
+   sequentially; rebase follow-ups on fresh `main`.
 4. **Quality gate before any PR:** `cargo fmt --check`, `cargo clippy
    --workspace -D warnings`, `cargo test --workspace` (run inside `crates/`),
-   plus `node --test packages/lunas/test/` for runtime changes. Never merge a
-   red PR.
-5. **Update `roadmap.yml` after each merge** (statuses + `updated:` date) —
-   either in the feature PR itself or in a `chore(roadmap)` commit right after.
-   The public viz reads `roadmap.yml` from `main` at page load.
+   plus the runtime test driver (`node packages/lunas/test/run-all.mjs`) for
+   runtime changes. Never merge a red PR.
+5. **`roadmap.yml` updates ride inside the feature PR.** A PR that completes
+   roadmap items flips those item statuses to `done` in the same PR (touch
+   only your own item lines; leave `updated:` alone to avoid same-line
+   conflicts — it gets bumped in periodic housekeeping PRs). The public viz
+   reads `roadmap.yml` from `main` at page load.
 
 ## Conventions
 
