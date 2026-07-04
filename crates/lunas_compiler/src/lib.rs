@@ -28,6 +28,7 @@ use std::collections::HashSet;
 use lunas_parser::{parse, Diagnostic, Directive};
 use lunas_script::{analyze_script, assigned_identifiers, declared_bindings_with_spans};
 
+pub mod codegen;
 mod model;
 mod reactivity;
 

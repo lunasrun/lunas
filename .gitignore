@@ -7,3 +7,4 @@ dist/
 npm-pkgs/
 
 .vscode/
+.claude/
