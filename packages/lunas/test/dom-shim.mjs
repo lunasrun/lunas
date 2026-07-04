@@ -22,6 +22,10 @@ class FakeNode {
     this._props = {}; // IDL properties set via `el.value = …` etc.
   }
   insertBefore(n, ref) {
+    if (ref !== null && ref !== undefined && ref.parentNode !== this) {
+      // Real-DOM semantics: a reference node that is not a child is an error.
+      throw new Error("insertBefore: refNode is not a child");
+    }
     if (n.parentNode) n.parentNode._drop(n);
     const at =
       ref === null || ref === undefined
