@@ -8,6 +8,7 @@ export {
   bind,
   markVar,
   flush,
+  afterFlush,
   unbind,
   beginScope,
   endScope,
@@ -15,6 +16,12 @@ export {
 } from "./core.mjs";
 
 export { box, deepBox, shared } from "./boxes.mjs";
+
+export { computed } from "./computed.mjs";
+
+export { watch, watchEffect } from "./watch.mjs";
+
+export { nextTick, batch } from "./batch.mjs";
 
 export {
   component,

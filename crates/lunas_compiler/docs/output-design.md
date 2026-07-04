@@ -169,6 +169,17 @@ export function box(c, i, v) {               // reassign-only var at reactive in
 }
 export function deepBox(c, i, v) { /* Proxy wrapping arrays/objects; markVar(c,i) on mutation */ }
 
+// --- derived values, watchers, batching (compile-time deps, no auto-tracking) ---
+export function computed(c, i, deps, fn) { /* lazy derived value at index i reading `deps`;
+                                              memoized, recomputes on next read after a dep
+                                              changes; reads inside a bind that declares i are tracked */ }
+export function watch(c, deps, cb, opts) { /* run cb after any of `deps` changes; { immediate }
+                                              also runs once now; returns stop() (scope-aware) */ }
+export function watchEffect(c, deps, fn) { /* run fn now and after any of `deps` changes; returns stop() */ }
+export function nextTick(c) { /* Promise resolved after the next flush (DOM updated) */ }
+export function batch(c, fn) { /* run fn, then flush synchronously; nested batches flush once, outermost */ }
+export function afterFlush(c, cb) { /* run cb after the next flush completes (primitive behind nextTick) */ }
+
 // --- DOM ---
 export function component(tag, attrs, HTML, setup) {
   return (props) => {
