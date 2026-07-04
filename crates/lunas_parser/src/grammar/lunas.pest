@@ -1,0 +1,53 @@
+// Grammar for the outer `.lunas` single-file-component format.
+//
+// A `.lunas` file is a sequence of top-level items at column 0: metadata
+// directives (`@keyword(params?)`) and language blocks (`html:` / `style:` /
+// `script:`). Each item owns the lines that follow it up to the next column-0
+// item header. Body content is captured as a raw span; indentation stripping
+// and the parsing of directive/block bodies happen in Rust, not here, to keep
+// the grammar readable as a specification of the line structure.
+//
+// Block names are restricted to the three known keywords so that a directive
+// body such as `propName: Type = default` (which superficially looks like a
+// `name:` header) is not mistaken for a new language block.
+
+NL = _{ "\r\n" | "\n" | "\r" }
+
+ident = @{ (ASCII_ALPHANUMERIC | "_")+ }
+
+block_name = @{ "html" | "style" | "script" }
+
+// A line that begins a new top-level item, recognized only at column 0 (no
+// leading whitespace). Used as negative lookahead to terminate bodies.
+header_start = _{ "@" | (block_name ~ ":") }
+
+// One line of body content: any line that does not start a new top-level
+// item. Must make progress: it consumes at least the newline, or at least one
+// non-newline character (a final line without a trailing newline).
+body_line = _{ !header_start ~ ((!NL ~ ANY)+ ~ (NL | EOI) | NL) }
+
+// The body of an item: zero or more lines that are not item headers.
+body = ${ body_line* }
+
+// `( ... )` parameter list of a directive, contents captured verbatim.
+params = @{ (!")" ~ !NL ~ ANY)* }
+
+HSPACE = _{ " " | "\t" }
+
+// Inline directive content: the rest of the header line after the keyword. The
+// real Lunas form puts the declaration here (e.g. `@input message1:string`).
+inline = @{ (!NL ~ ANY)* }
+
+// Trailing characters on a language-block header line after the keyword.
+rest_of_line = _{ (!NL ~ ANY)* ~ (NL | EOI) }
+
+directive = ${ "@" ~ ident ~ ("(" ~ params ~ ")")? ~ HSPACE* ~ inline ~ (NL | EOI) ~ body }
+
+language_block = ${ block_name ~ ":" ~ rest_of_line ~ body }
+
+item = _{ directive | language_block }
+
+// Blank lines (whitespace only) between items are skipped.
+blank = _{ (" " | "\t")* ~ NL }
+
+file = { SOI ~ blank* ~ (item ~ blank*)* ~ EOI }

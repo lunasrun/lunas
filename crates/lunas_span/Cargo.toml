@@ -1,15 +1,13 @@
 [package]
-name = "lunas_html_parser"
+name = "lunas_span"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-description = "Hand-written HTML parser for the Lunas compiler"
+description = "Shared span and diagnostic primitives for the Lunas parser crates"
 repository = "https://github.com/lunasrun/lunas"
 
 [dependencies]
-lunas_span = { path = "../lunas_span" }
 serde = { version = "1", features = ["derive"] }
-thiserror = "=2.0.12"
 
 [dev-dependencies]
 serde_json = "1"

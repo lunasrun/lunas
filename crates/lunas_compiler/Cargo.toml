@@ -2,17 +2,11 @@
 name = "lunas_compiler"
 version = "0.1.0"
 edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[lib]
-crate-type = ["cdylib", "lib"]
+license = "MIT"
+description = "Resolution layer for the Lunas compiler: parses a .lunas file and resolves its reactive model — the input a code generator consumes. Does not generate code."
+repository = "https://github.com/lunasrun/lunas"
 
 [dependencies]
+lunas_span = { path = "../lunas_span" }
 lunas_parser = { path = "../lunas_parser" }
-lunas_generator = { path = "../lunas_generator" }
-wasm-bindgen = "0.2.100"
-serde = "1.0.219"
-
-[features]
-playground = ["lunas_generator/playground"]
+lunas_script = { path = "../lunas_script" }
