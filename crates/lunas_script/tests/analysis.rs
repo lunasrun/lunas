@@ -646,3 +646,61 @@ fn mref_top_level_expression_reference() {
     assert_eq!(got.len(), 1);
     assert_eq!(got[0].0, "a");
 }
+
+// --- top_level_declarations (decl span structure) ---
+
+use lunas_script::{top_level_declarations, DeclKind};
+
+#[test]
+fn tld_basic_spans() {
+    let code = "let count = 0\nconst label = \"hi\"\nvar n";
+    let ds = top_level_declarations(code).unwrap();
+    assert_eq!(ds.len(), 3);
+    assert_eq!(ds[0].name, "count");
+    assert_eq!(ds[0].kind, DeclKind::Let);
+    assert_eq!(ds[0].name_range.slice(code), Some("count"));
+    assert_eq!(ds[0].init_range.unwrap().slice(code), Some("0"));
+    assert_eq!(ds[0].stmt_range.slice(code), Some("let count = 0"));
+    assert_eq!(ds[0].declarators_in_stmt, 1);
+    assert_eq!(ds[1].kind, DeclKind::Const);
+    assert_eq!(ds[2].kind, DeclKind::Var);
+    assert!(ds[2].init_range.is_none());
+}
+
+#[test]
+fn tld_multi_declarator_counted() {
+    let code = "let a = 1, b = 2";
+    let ds = top_level_declarations(code).unwrap();
+    assert_eq!(ds.len(), 2);
+    assert_eq!(ds[0].declarators_in_stmt, 2);
+    assert_eq!(ds[1].name, "b");
+    assert_eq!(ds[1].init_range.unwrap().slice(code), Some("2"));
+    // Both share the whole-statement range.
+    assert_eq!(ds[0].stmt_range, ds[1].stmt_range);
+}
+
+#[test]
+fn tld_destructured_skipped() {
+    let code = "const { a } = obj\nlet [x] = xs\nlet plain = 1";
+    let ds = top_level_declarations(code).unwrap();
+    assert_eq!(ds.len(), 1);
+    assert_eq!(ds[0].name, "plain");
+}
+
+#[test]
+fn tld_exported_included_nested_excluded() {
+    let code = "export let visible = true\nfunction f(){ let inner = 1 }";
+    let ds = top_level_declarations(code).unwrap();
+    assert_eq!(ds.len(), 1);
+    assert_eq!(ds[0].name, "visible");
+    // stmt_range covers the VarDecl, not the `export` keyword.
+    assert_eq!(ds[0].stmt_range.slice(code), Some("let visible = true"));
+}
+
+#[test]
+fn tld_typescript_annotation() {
+    let code = "let count: number = 0";
+    let ds = top_level_declarations(code).unwrap();
+    assert_eq!(ds.len(), 1);
+    assert_eq!(ds[0].init_range.unwrap().slice(code), Some("0"));
+}

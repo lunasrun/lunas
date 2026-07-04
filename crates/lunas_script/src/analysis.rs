@@ -947,3 +947,99 @@ impl Visit for ModuleRefCollector {
         self.scopes.pop();
     }
 }
+
+/// The kind of a top-level `var`/`let`/`const` declaration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeclKind {
+    Let,
+    Const,
+    Var,
+}
+
+/// Span structure of one top-level variable declarator with a simple
+/// identifier name. See [`top_level_declarations`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TopLevelDecl {
+    pub name: String,
+    pub kind: DeclKind,
+    /// Range of the name identifier.
+    pub name_range: lunas_span::TextRange,
+    /// Range of the initializer expression, if any.
+    pub init_range: Option<lunas_span::TextRange>,
+    /// Range of the whole declaration statement (`let a = 1, b = 2`).
+    pub stmt_range: lunas_span::TextRange,
+    /// How many declarators the statement holds (1 for `let a = 1`).
+    pub declarators_in_stmt: u32,
+}
+
+/// Returns the span structure of every top-level `let`/`const`/`var`
+/// declarator whose pattern is a **simple identifier** (destructured
+/// declarators are skipped — callers that need to rewrite those must handle
+/// them separately). Includes `export`ed declarations.
+///
+/// This is the primitive behind rewriting a reactive declaration in place,
+/// e.g. `let count = 0` → `const count = box(c, 0, 0)`: the caller splices
+/// using `stmt_range` / `init_range` without re-lexing the script.
+///
+/// ```
+/// use lunas_script::{top_level_declarations, DeclKind};
+///
+/// let code = "let count = 0\nconst label = \"hi\"";
+/// let decls = top_level_declarations(code).unwrap();
+/// assert_eq!(decls.len(), 2);
+/// assert_eq!(decls[0].name, "count");
+/// assert_eq!(decls[0].kind, DeclKind::Let);
+/// assert_eq!(decls[0].init_range.unwrap().slice(code), Some("0"));
+/// assert_eq!(decls[0].stmt_range.slice(code), Some("let count = 0"));
+/// ```
+pub fn top_level_declarations(code: &str) -> Result<Vec<TopLevelDecl>, ScriptParseError> {
+    let (module, fm) = parse_source_with_fm(code.to_string())?;
+    let base = fm.start_pos.0;
+    let code_len = code.len() as u32;
+    let to_range = |lo: u32, hi: u32| -> Option<lunas_span::TextRange> {
+        let lo = lo.checked_sub(base)?;
+        let hi = hi.checked_sub(base)?;
+        (hi <= code_len && lo <= hi).then(|| lunas_span::TextRange::at(lo, hi))
+    };
+
+    let mut out = Vec::new();
+    for item in &module.body {
+        let var: &VarDecl = match item {
+            ModuleItem::Stmt(Stmt::Decl(Decl::Var(v))) => v,
+            ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(e)) => match &e.decl {
+                Decl::Var(v) => v,
+                _ => continue,
+            },
+            _ => continue,
+        };
+        let kind = match var.kind {
+            swc_ecma_ast::VarDeclKind::Let => DeclKind::Let,
+            swc_ecma_ast::VarDeclKind::Const => DeclKind::Const,
+            swc_ecma_ast::VarDeclKind::Var => DeclKind::Var,
+        };
+        let count = var.decls.len() as u32;
+        for d in &var.decls {
+            let Pat::Ident(name) = &d.name else { continue };
+            let (Some(name_range), Some(stmt_range)) = (
+                to_range(name.id.span.lo.0, name.id.span.hi.0),
+                to_range(var.span.lo.0, var.span.hi.0),
+            ) else {
+                continue;
+            };
+            let init_range = d.init.as_ref().and_then(|init| {
+                use swc_common::Spanned;
+                let s = init.span();
+                to_range(s.lo.0, s.hi.0)
+            });
+            out.push(TopLevelDecl {
+                name: name.id.sym.to_string(),
+                kind,
+                name_range,
+                init_range,
+                stmt_range,
+                declarators_in_stmt: count,
+            });
+        }
+    }
+    Ok(out)
+}
