@@ -198,6 +198,19 @@ export const on = (el, ev, fn) => el.addEventListener(ev, fn);
 export function ifBlock(c, before, deps, cond, make) { /* insert/remove make() at a text anchor */ }
 export function forBlock(c, into, deps, items, make) { /* keyed list at a text anchor */ }
 export function mountChild(c, before, Child, props) { /* Child(props) inserted at a text anchor */ }
+
+// --- module-level stores (state outside any component; §4's "shared" concept
+//     generalized to N components importing the same module, instead of one
+//     value passed down as a prop) ---
+export function createStore(initial) { /* named fields, each its own subs list + deep-mutation
+                                           proxy (reuses boxes.mjs's Proxy handler); returns
+                                           { get(key), set(key,v), subscribe(key,fn) } */ }
+export function useStore(c, i, store, key) { /* adopt field `key` at c's reactive index i;
+                                                 writes to `key` markVar(c,i), batched as usual;
+                                                 scope-aware: dropScope tears the adoption down */ }
+export function derivedStore(store, deps, fn) { /* computed's laziness policy re-hosted on store
+                                                    subscriptions; field-shaped output, so it can
+                                                    be placed under a createStore() key */ }
 ```
 
 No signal-tracking stack, no VDOM, no per-node effect objects.

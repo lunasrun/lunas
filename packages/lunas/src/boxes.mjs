@@ -45,7 +45,11 @@ export function deepBox(c, i, v) {
   };
 }
 
-function makeWrap(notify) {
+// makeWrap(notify) — build a lazy, cached deep-Proxy wrapper that calls
+// `notify` on any nested set/delete. Exported so other modules that need the
+// same "deeply-mutated value" semantics (e.g. store.mjs's per-field deep
+// mutation support) don't have to reimplement the Proxy handler.
+export function makeWrap(notify) {
   const cache = new WeakMap(); // raw object -> proxy
   const handler = {
     get(t, k, r) {

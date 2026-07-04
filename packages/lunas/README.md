@@ -29,7 +29,7 @@ import { box } from "lunas/boxes";
 
 Available deep-import subpaths mirror the internal modules: `lunas/core`,
 `lunas/boxes`, `lunas/computed`, `lunas/watch`, `lunas/batch`, `lunas/dom`,
-`lunas/blocks`, `lunas/for_diff`.
+`lunas/blocks`, `lunas/for_diff`, `lunas/store`.
 
 TypeScript types are included (`types/index.d.ts`, plus one `.d.ts` per
 subpath) — no `@types` package needed.
@@ -87,6 +87,9 @@ main repo for the calling contract.
 | `seedForState(state, keys, nodes, data)` | `lunas/for_diff` | Seed reconciler state from a bulk initial render. |
 | `reconcile(state, host, items, makeItem, opts)` | `lunas/for_diff` | Diff old vs. new keyed list and mutate `host` with minimal moves. |
 | `longestIncreasingSubsequence(arr)` | `lunas/for_diff` | LIS helper used internally by `reconcile`. |
+| `createStore(initial)` | `lunas/store` | Module-level reactive state (named fields) usable by many components. |
+| `useStore(c, i, store, key)` | `lunas/store` | Adopt store field `key` at component context `c`'s reactive index `i`. |
+| `derivedStore(store, deps, fn)` | `lunas/store` | Lazily-evaluated, memoized value derived from one or more store fields. |
 
 ## Testing
 
