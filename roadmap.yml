@@ -53,13 +53,13 @@ tree:
         - { id: cg-e2e, title: "End-to-end snapshot + browser smoke tests", status: todo }
     - id: runtime
       title: Runtime (ES2015 + Proxy floor)
-      status: in_progress
+      status: done
       children:
         - { id: rt-core, title: "Adjacency dispatch core (bind, markVar, flush)", status: done }
         - { id: rt-boxes, title: "Reactive boxes (box / deepBox / shared)", status: done }
         - { id: rt-dom, title: "DOM / refs / event helpers", status: done }
         - { id: rt-blocks, title: "ifBlock / forBlock / mountChild", status: done }
-        - { id: rt-package, title: "npm package + tree-shaking", status: todo }
+        - { id: rt-package, title: "npm package + tree-shaking", status: done }
     - id: for-diff
       title: "Keyed :for reconciliation"
       status: done
