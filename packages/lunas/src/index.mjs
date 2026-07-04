@@ -40,3 +40,5 @@ export {
   reconcile,
   longestIncreasingSubsequence,
 } from "./for_diff.mjs";
+
+export { createStore, useStore, derivedStore } from "./store.mjs";
