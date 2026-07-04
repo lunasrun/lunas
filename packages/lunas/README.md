@@ -29,7 +29,7 @@ import { box } from "lunas/boxes";
 
 Available deep-import subpaths mirror the internal modules: `lunas/core`,
 `lunas/boxes`, `lunas/computed`, `lunas/watch`, `lunas/batch`, `lunas/dom`,
-`lunas/blocks`, `lunas/for_diff`, `lunas/store`.
+`lunas/blocks`, `lunas/for_diff`, `lunas/store`, `lunas/router`.
 
 TypeScript types are included (`types/index.d.ts`, plus one `.d.ts` per
 subpath) — no `@types` package needed.
@@ -90,6 +90,11 @@ main repo for the calling contract.
 | `createStore(initial)` | `lunas/store` | Module-level reactive state (named fields) usable by many components. |
 | `useStore(c, i, store, key)` | `lunas/store` | Adopt store field `key` at component context `c`'s reactive index `i`. |
 | `derivedStore(store, deps, fn)` | `lunas/store` | Lazily-evaluated, memoized value derived from one or more store fields. |
+| `createRouter(routes, options)` | `lunas/router` | Client-side router: route table + matching (static > param > catch-all), store-backed reactive current route, navigation guards. |
+| `memoryHistory(initial)` | `lunas/router` | In-memory History-API stand-in for tests/SSR (injectable via `options.history`). |
+| `historyAdapter(win)` | `lunas/router` | Default History-API adapter (pushState/replaceState/popstate). |
+| `routerOutlet(c, anchor, router, opts)` | `lunas/router` | Mount the matched route's component at an anchor, swapping on navigation; params passed as props. |
+| `routerLink(el, router, path, opts)` | `lunas/router` | Wire an element's click to a client-side navigation (preventDefault + push). |
 
 ## Testing
 

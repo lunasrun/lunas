@@ -211,6 +211,31 @@ export function useStore(c, i, store, key) { /* adopt field `key` at c's reactiv
 export function derivedStore(store, deps, fn) { /* computed's laziness policy re-hosted on store
                                                     subscriptions; field-shaped output, so it can
                                                     be placed under a createStore() key */ }
+
+// --- client-side router (the @useRouting/@useAutoRouting codegen target;
+//     conceptually a store whose one field "route" is the current route) ---
+export function createRouter(routes, options) { /* routes=[{path,component}]; matching ranks
+                                                    static > param > catch-all; { history?,
+                                                    beforeEach?(to,from)=>bool|Promise }; exposes
+                                                    push/replace/back, current {path,params,query,
+                                                    matched}, subscribe(fn), adopt(c,i) */ }
+export function memoryHistory(initial) { /* injectable in-memory History-API stand-in (tests/SSR);
+                                            historyAdapter(win) is the browser default */ }
+export function routerOutlet(c, before, router, opts) { /* mountChild the matched route's component
+                                                            at an anchor; swap on nav (re-mount only
+                                                            when the matched route def changes);
+                                                            params passed as props */ }
+export function routerLink(el, router, path, opts) { /* click -> preventDefault + router.push(path)
+                                                         (aux/modified clicks fall through); the
+                                                         codegen target for <a :href> route links */ }
+
+// Intended emitted shape for a routed component (future codegen):
+//   const appRouter = createRouter(routes);      // module scope, from the route table
+//   // inside setup(c, props):
+//   appRouter.adopt(c, i);                       // component reads router.current at index i
+//   const a = anchorBefore(placeholder);
+//   routerOutlet(c, a, appRouter);               // <router-outlet/>
+//   routerLink(linkEl, appRouter, "/users/1");   // <a :href="/users/1">
 ```
 
 No signal-tracking stack, no VDOM, no per-node effect objects.
