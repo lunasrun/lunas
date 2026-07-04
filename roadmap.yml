@@ -68,13 +68,13 @@ tree:
         - { id: fd-proto, title: "Reference implementation + fuzz tests", status: done }
     - id: reactivity
       title: Reactivity system
-      status: in_progress
+      status: done
       children:
         - { id: rx-state, title: "Reactive state (numbered vars)", status: done }
         - { id: rx-deep, title: "Deep reactivity (nested objects/arrays)", status: done }
-        - { id: rx-computed, title: "Computed / derived values", status: todo }
-        - { id: rx-watch, title: "Watchers / effects (watch, watchEffect)", status: todo }
-        - { id: rx-batch, title: "Batched updates + nextTick", status: todo }
+        - { id: rx-computed, title: "Computed / derived values", status: done }
+        - { id: rx-watch, title: "Watchers / effects (watch, watchEffect)", status: done }
+        - { id: rx-batch, title: "Batched updates + nextTick", status: done }
     - id: dom
       title: Template & DOM features
       status: todo
