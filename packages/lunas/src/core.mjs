@@ -1,0 +1,103 @@
+// core.mjs — Lunas reactive core: compile-time adjacency dispatch.
+// See crates/lunas_compiler/docs/output-design.md §4–5.
+//
+// Plain ESM, ES2015+ (Proxy floor is set elsewhere, in boxes.mjs). No BigInt.
+//
+// A component context `c` is:
+//   { root, deps: [], queue: [], pending: false, scope: null }
+// where deps[i] is the adjacency list of bind records that read reactive
+// variable i. `scope` is the currently-open collection scope used by control
+// flow blocks so their inner binds can be unregistered on teardown (see
+// for-diff-design.md §6).
+
+export function createContext(root) {
+  return { root, deps: [], queue: [], pending: false, scope: null };
+}
+
+// bind(c, deps, fn) — register an update function that reads the reactive
+// variable indices in `deps`. Runs fn once immediately (correct first paint,
+// no flush needed). Returns the bind record (needed for unbind).
+export function bind(c, deps, fn) {
+  const s = { fn, q: false, alive: true, deps };
+  fn();
+  for (const i of deps) (c.deps[i] || (c.deps[i] = [])).push(s);
+  if (c.scope) c.scope.subs.push(s);
+  return s;
+}
+
+// markVar(c, i) — reactive variable i changed: enqueue its dependents
+// (deduplicated via the per-record q flag) and schedule a microtask flush.
+export function markVar(c, i) {
+  const ds = c.deps[i];
+  if (ds) {
+    for (const s of ds) {
+      if (s.alive && !s.q) {
+        s.q = true;
+        c.queue.push(s);
+      }
+    }
+  }
+  if (!c.pending) {
+    c.pending = true;
+    queueMicrotask(() => flush(c));
+  }
+}
+
+// flush(c) — run every queued update once. Only affected parts run.
+export function flush(c) {
+  c.pending = false;
+  const q = c.queue;
+  c.queue = [];
+  for (const s of q) {
+    s.q = false;
+    if (s.alive) s.fn();
+  }
+}
+
+// unbind(c, s) — permanently unregister a bind record. Safe to call while a
+// flush containing `s` is pending (the dead record is skipped at flush).
+export function unbind(c, s) {
+  s.alive = false;
+  for (const i of s.deps) {
+    const ds = c.deps[i];
+    if (ds) {
+      const k = ds.indexOf(s);
+      if (k >= 0) ds.splice(k, 1);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Scopes — teardown bookkeeping for control-flow blocks.
+// beginScope/endScope bracket a block's `make()`; every bind created inside
+// (including nested blocks' binds, via nested scopes) is collected so
+// dropScope can unregister the whole subtree when the block content is
+// removed. Registration cost is one array push per bind.
+// ---------------------------------------------------------------------------
+
+export function beginScope(c) {
+  const scope = { subs: [], children: [], parent: c.scope };
+  if (c.scope) c.scope.children.push(scope);
+  c.scope = scope;
+  return scope;
+}
+
+export function endScope(c) {
+  c.scope = c.scope ? c.scope.parent : null;
+}
+
+export function dropScope(c, scope) {
+  for (const s of scope.subs) unbind(c, s);
+  for (const ch of scope.children) {
+    ch.parent = null; // avoid double-splice below
+    dropScope(c, ch);
+  }
+  scope.subs.length = 0;
+  scope.children.length = 0;
+  if (scope.parent) {
+    const sib = scope.parent.children;
+    const k = sib.indexOf(scope);
+    if (k >= 0) sib.splice(k, 1);
+    scope.parent = null;
+  }
+}
