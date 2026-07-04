@@ -11,7 +11,7 @@
 // for-diff-design.md §6).
 
 export function createContext(root) {
-  return { root, deps: [], queue: [], pending: false, scope: null };
+  return { root, deps: [], queue: [], pending: false, scope: null, post: null };
 }
 
 // bind(c, deps, fn) — register an update function that reads the reactive
@@ -44,6 +44,8 @@ export function markVar(c, i) {
 }
 
 // flush(c) — run every queued update once. Only affected parts run.
+// After the update pass, drain any post-flush callbacks registered via
+// `afterFlush` (used by nextTick): they observe the DOM already updated.
 export function flush(c) {
   c.pending = false;
   const q = c.queue;
@@ -51,6 +53,24 @@ export function flush(c) {
   for (const s of q) {
     s.q = false;
     if (s.alive) s.fn();
+  }
+  const post = c.post;
+  if (post) {
+    c.post = null;
+    for (const cb of post) cb();
+  }
+}
+
+// afterFlush(c, cb) — run `cb` once, after the next flush completes (i.e. after
+// the DOM update pass). If a flush is already pending the callback rides that
+// one; otherwise a flush is scheduled so the callback still fires this tick.
+// This is the primitive behind nextTick(); it keeps flush the single place that
+// knows when updates have landed.
+export function afterFlush(c, cb) {
+  (c.post || (c.post = [])).push(cb);
+  if (!c.pending) {
+    c.pending = true;
+    queueMicrotask(() => flush(c));
   }
 }
 
