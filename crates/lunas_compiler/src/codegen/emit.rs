@@ -958,11 +958,20 @@ impl<'a> Emitter<'a> {
                         format!("two-way binding `::{name}` on a component is not supported yet"),
                     ));
                 }
-                TemplateAttr::Event { event, .. } => {
-                    diags.push(Diagnostic::warning(
-                        range,
-                        format!("component event binding `@{event}` is not supported yet"),
-                    ));
+                TemplateAttr::Event { event, handler, .. } => {
+                    // `@save="h($event)"` on a component tag (or `<component :is>`)
+                    // becomes an `onSave` handler prop the child raises via
+                    // `emit(c, "save", payload)` (output-design.md §5, c-emits).
+                    // The handler body is `.v`-rewritten like an element handler;
+                    // `$event` is the payload parameter. Names camel-case:
+                    // `save-all` → `onSaveAll`.
+                    let body = rewrite_handler(
+                        &handler.text,
+                        &self.component.reactive_vars,
+                        frag.shadowed,
+                    );
+                    let key = event_prop_name(event);
+                    members.push(format!("{}: ($event) => {{ {body}; }}", prop_key(&key)));
                 }
             }
         }
@@ -1209,12 +1218,22 @@ impl<'a> Emitter<'a> {
             return;
         };
 
-        // Classify the remaining props (everything but `:is`) into an initial
-        // object + driving binds, reusing the child-prop machinery.
+        // A `:ref="name"` exposes the dynamic-component mount handle to the
+        // script (like `:ref` on a static component), NOT a forwarded prop. Pull
+        // it out before prop classification.
+        let ref_target = el.attrs.iter().find_map(|a| match a {
+            TemplateAttr::Bound { name, expr, .. } if name == "ref" => Some(expr.text.clone()),
+            _ => None,
+        });
+
+        // Classify the remaining props (everything but `:is` / `:ref`) into an
+        // initial object + driving binds, reusing the child-prop machinery.
         let props: Vec<TemplateAttr> = el
             .attrs
             .iter()
-            .filter(|a| !matches!(a, TemplateAttr::Bound { name, .. } if name == "is"))
+            .filter(
+                |a| !matches!(a, TemplateAttr::Bound { name, .. } if name == "is" || name == "ref"),
+            )
             .cloned()
             .collect();
         let (members, reactive) = self.build_child_props(&props, frag, el.open_tag_range, diags);
@@ -1259,6 +1278,11 @@ impl<'a> Emitter<'a> {
         }
         b.push_str("});\n");
         let _ = is_coupled;
+
+        // Component ref: assign the (stable) dynamicBlock handle into the box.
+        if let Some(target) = ref_target {
+            self.emit_ref_assign(b, &handle, &target, frag, el.open_tag_range, diags);
+        }
 
         for rp in &reactive {
             let stmt = format!("{handle}.setProp({}, {});", js_string(&rp.name), rp.expr);
@@ -3142,6 +3166,32 @@ fn push_dep_list(b: &mut String, deps: &[u32]) {
 fn js_string(s: &str) -> String {
     let mut out = String::new();
     push_js_string(&mut out, s);
+    out
+}
+
+/// Maps a component `@event` name to its handler-prop key: `save` → `onSave`,
+/// `save-all` → `onSaveAll` (kebab segments camel-cased). Mirrors the runtime's
+/// `eventPropName` (emits.mjs) so the child's `emit(c, "save", …)` finds the
+/// parent's `onSave` handler.
+fn event_prop_name(name: &str) -> String {
+    let mut camel = String::with_capacity(name.len());
+    let mut upper_next = false;
+    for ch in name.chars() {
+        if ch == '-' {
+            upper_next = true;
+        } else if upper_next {
+            camel.extend(ch.to_uppercase());
+            upper_next = false;
+        } else {
+            camel.push(ch);
+        }
+    }
+    let mut out = String::from("on");
+    let mut chars = camel.chars();
+    if let Some(first) = chars.next() {
+        out.extend(first.to_uppercase());
+        out.push_str(chars.as_str());
+    }
     out
 }
 

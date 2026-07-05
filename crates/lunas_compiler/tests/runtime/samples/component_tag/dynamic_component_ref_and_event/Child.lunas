@@ -1,0 +1,5 @@
+html:
+    <button @click="raise()">dyn</button>
+script:
+    let n = 7
+    function raise(){ props.onSave(n) }

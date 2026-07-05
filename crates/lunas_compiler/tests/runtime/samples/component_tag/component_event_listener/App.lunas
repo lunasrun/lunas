@@ -1,0 +1,6 @@
+@use Child from "./Child.lunas"
+html:
+    <div><p>${log}</p><Child @save="onSave($event)"/></div>
+script:
+    let log = "none"
+    function onSave(x){ log = "saved:" + x }

@@ -1,0 +1,8 @@
+@use Child from "./Child.lunas"
+html:
+    <div><p>${log}</p><component :is="view" @save="onSave($event)" :ref="r"/></div>
+script:
+    let view = Child
+    let r
+    let log = "none"
+    function onSave(x){ log = "got:" + x }

@@ -706,6 +706,63 @@ fn dynamic_component_uses_dynamicblock() {
 }
 
 #[test]
+fn component_event_becomes_on_handler_prop() {
+    // `@save="h($event)"` on a static component tag maps to an `onSave` handler
+    // prop the child raises via emit (no warning, no dropped listener).
+    let (js, diags) = compile(
+        "@use Child from \"./Child.lunas\"\nhtml:\n    <Child @save=\"onSave($event)\"/>\nscript:\n    let log = \"\"\n    function onSave(x){ log = x }\n",
+    );
+    let js = js.unwrap();
+    assert!(
+        js.contains("onSave: ($event) => { onSave($event); }"),
+        "@save -> onSave handler prop: {js}"
+    );
+    assert!(
+        !diags.iter().any(|d| d.message.contains("not supported")),
+        "no unsupported-event warning: {diags:?}"
+    );
+}
+
+#[test]
+fn component_kebab_event_camel_cases() {
+    // `@save-all` -> `onSaveAll`.
+    let js = emit(
+        "@use Child from \"./Child.lunas\"\nhtml:\n    <Child @save-all=\"go()\"/>\nscript:\n    let x = 1\n    function go(){ x = 2 }\n",
+    );
+    assert!(
+        js.contains("onSaveAll: ($event) => { go(); }"),
+        "kebab event camel-cased to onSaveAll: {js}"
+    );
+}
+
+#[test]
+fn dynamic_component_event_and_ref() {
+    // `@save` on `<component :is>` wires the onSave prop; `:ref` assigns the
+    // (stable) dynamicBlock handle to the box — NOT a forwarded prop.
+    let (js, diags) = compile(
+        "@use Foo from \"./Foo.lun\"\nhtml:\n    <component :is=\"view\" @save=\"h($event)\" :ref=\"box\"/>\nscript:\n    let view = Foo\n    let box\n    function h(x){ box = x }\n",
+    );
+    let js = js.unwrap();
+    assert!(
+        js.contains("onSave: ($event) => { h($event); }"),
+        "@save on <component :is> -> onSave prop: {js}"
+    );
+    // The ref box is assigned the dynamicBlock handle, and `ref` is NOT a prop.
+    assert!(
+        js.contains("box.v = ch0;"),
+        ":ref assigns the mount handle: {js}"
+    );
+    assert!(
+        !js.contains("ref: () =>") && !js.contains(".setProp(\"ref\""),
+        ":ref is not forwarded as a prop: {js}"
+    );
+    assert!(
+        !diags.iter().any(|d| d.message.contains("not supported")),
+        "no unsupported warnings: {diags:?}"
+    );
+}
+
+#[test]
 fn dynamic_component_without_is_is_voided() {
     let (js, diags) = compile("html:\n    <component/>\n");
     assert!(js.is_some());
