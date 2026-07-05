@@ -539,10 +539,178 @@ fn malformed_inputs_do_not_panic() {
         "@use X from \"./X.lunas\"\nhtml:\n    <X :p=\"a.(\" ::two=\"b\" @go=\"h()\" q=\"${z}\"/>\nscript:\n    let a=0\n    let b=0\n    let z=0",
         "@use X from \"./X.lunas\"\nhtml:\n    <X/>",
         "html:\n    <Undeclared :p=\"x\"/>\nscript:\n    let x = 0",
+        // DOM feature batch adversarial inputs (never-panic).
+        "html:\n    <div :class=\"{ a: (\" :style=\"[\" :html=\"x.(\"></div>\nscript:\n    let x=0\n    function f(){ x=1 }",
+        "html:\n    <input :ref=\"a.b\">\nscript:\n    let a=0",
+        "html:\n    <input :ref=\"notdeclared\">",
+        "html:\n    <component/>\n    <component :is=\"\"/>",
+        "html:\n    <component :is=\"v\" :p=\"q.(\"/>\nscript:\n    let v=0\n    let q=0",
+        "html:\n    <teleport></teleport>\n    <teleport to=\"\"><p></p></teleport>",
+        "html:\n    <teleport :to=\"t.(\"><div :if=\"x\">y</div></teleport>\nscript:\n    let x=0\n    let t=0\n    function f(){ x=1 }",
+        // Multi-root with mixed content / dynamics at top level.
+        "html:\n    <p>${a}</p>\n    <span :if=\"a\">x</span>\n    <b :for=\"i of a\">${i}</b>\nscript:\n    let a=[]\n    function f(){ a.push(1) }",
+        "html:\n    <component :is=\"v\"/>\n    <teleport to=\"#x\"><i></i></teleport>\nscript:\n    let v=0",
     ];
     for case in cases {
         let (_js, _diags) = compile(case);
     }
+}
+
+// --- DOM feature batch: class/style, refs, html, :is, teleport, fragments ----
+
+#[test]
+fn class_binding_merges_static_via_setclass() {
+    let js = emit(
+        "html:\n    <div class=\"base\" :class=\"{ active: on }\"></div>\nscript:\n    let on = true\n    function t(){ on = false }\n",
+    );
+    // Static class stays in the skeleton *and* is merged at runtime.
+    assert!(
+        js.contains("const HTML = \"<div class=\\\"base\\\"></div>\";"),
+        "{js}"
+    );
+    assert!(
+        js.contains("setClass(e0, \"base\", { active: on.v });"),
+        "class merge via setClass: {js}"
+    );
+    assert!(
+        js.contains("import { component") && js.contains("setClass"),
+        "{js}"
+    );
+}
+
+#[test]
+fn style_binding_uses_setstyle() {
+    let js = emit(
+        "html:\n    <div :style=\"{ color: hue }\"></div>\nscript:\n    let hue = \"red\"\n    function t(){ hue = \"blue\" }\n",
+    );
+    assert!(
+        js.contains("setStyle(e0, \"\", { color: hue.v });"),
+        "style via setStyle: {js}"
+    );
+}
+
+#[test]
+fn html_binding_sets_inner_html() {
+    let js = emit(
+        "html:\n    <div :html=\"raw\"></div>\nscript:\n    let raw = \"<b>x</b>\"\n    function t(){ raw = \"\" }\n",
+    );
+    assert!(js.contains("e0.innerHTML = raw.v;"), "raw html bind: {js}");
+    assert!(js.contains("bind(c, [0]"), "reactive: {js}");
+}
+
+#[test]
+fn html_binding_with_children_warns() {
+    let (js, diags) = compile(
+        "html:\n    <div :html=\"raw\"><span>ignored</span></div>\nscript:\n    let raw = \"x\"\n    function t(){ raw = \"y\" }\n",
+    );
+    assert!(js.is_some(), "still compiles");
+    assert!(
+        diags
+            .iter()
+            .any(|d| !d.is_error() && d.message.contains("both `:html` and children")),
+        "children+:html warns: {diags:?}"
+    );
+}
+
+#[test]
+fn ref_binding_assigns_element_into_box() {
+    let js = emit(
+        "html:\n    <input :ref=\"el\">\nscript:\n    let el\n    function t(){ el.focus() }\n",
+    );
+    // `el` is boxed (mutated by the ref) and receives the element at wire time.
+    assert!(js.contains("const el = box(c, 0, undefined)"), "{js}");
+    assert!(js.contains("el.v = e0;"), "ref assignment: {js}");
+    // No bind — the reference is fixed for the element's lifetime.
+    assert!(
+        js.contains("el.v = e0;") && !js.contains("() => { el.v"),
+        "{js}"
+    );
+}
+
+#[test]
+fn dynamic_component_uses_dynamicblock() {
+    let js = emit(
+        "@use Foo from \"./Foo.lun\"\n@use Bar from \"./Bar.lun\"\nhtml:\n    <component :is=\"view\" :label=\"txt\"/>\nscript:\n    let view = Foo\n    let txt = \"hi\"\n    function t(){ view = Bar; txt = \"yo\" }\n",
+    );
+    // All @use factories imported (a :is expr can name any of them).
+    assert!(js.contains("import Foo from \"./Foo.lun\";"), "{js}");
+    assert!(js.contains("import Bar from \"./Bar.lun\";"), "{js}");
+    assert!(
+        js.contains("dynamicBlock(c, a0, "),
+        "dynamicBlock emitted: {js}"
+    );
+    assert!(js.contains("() => (view.v)"), "factory getter: {js}");
+    assert!(js.contains("label: () => (txt.v)"), "prop getter: {js}");
+    assert!(
+        js.contains(".setProp(\"label\", txt.v)"),
+        "prop drive: {js}"
+    );
+}
+
+#[test]
+fn dynamic_component_without_is_is_voided() {
+    let (js, diags) = compile("html:\n    <component/>\n");
+    assert!(js.is_some());
+    assert!(
+        diags
+            .iter()
+            .any(|d| !d.is_error() && d.message.contains("requires an `:is`")),
+        "{diags:?}"
+    );
+}
+
+#[test]
+fn teleport_uses_teleportblock() {
+    let js = emit(
+        "html:\n    <teleport to=\"#modal\"><p>${msg}</p></teleport>\nscript:\n    let msg = \"hi\"\n    function t(){ msg = \"bye\" }\n",
+    );
+    assert!(
+        js.contains("teleportBlock(c, a0, () => (`#modal`)"),
+        "target selector: {js}"
+    );
+    assert!(js.contains("fromHTML(HTML_1, a0)"), "body fragment: {js}");
+    assert!(
+        js.contains("return Array.from(r0.childNodes);"),
+        "node group: {js}"
+    );
+}
+
+#[test]
+fn teleport_to_expression() {
+    let js = emit(
+        "html:\n    <teleport :to=\"target\"><span></span></teleport>\nscript:\n    let target = null\n    function t(){ target = 1 }\n",
+    );
+    assert!(
+        js.contains("teleportBlock(c, a0, () => (target.v)"),
+        "element target: {js}"
+    );
+}
+
+#[test]
+fn multi_root_template_uses_fragment() {
+    let js = emit(
+        "html:\n    <h1>${title}</h1>\n    <p>${body}</p>\nscript:\n    let title = \"T\"\n    let body = \"B\"\n    function t(){ title = \"x\"; body = \"y\" }\n",
+    );
+    assert!(js.contains("import { fragment"), "fragment imported: {js}");
+    assert!(
+        js.contains("export default fragment({}, HTML, (c, props) => {"),
+        "{js}"
+    );
+    assert!(!js.contains("component(\"div\""), "no wrapper: {js}");
+    assert!(
+        js.contains("const HTML = \"<h1></h1><p></p>\";"),
+        "both roots in HTML: {js}"
+    );
+}
+
+#[test]
+fn single_root_stays_on_component() {
+    let js = emit("html:\n    <p>${x}</p>\nscript:\n    let x = 0\n    function t(){ x = 1 }\n");
+    assert!(
+        js.contains("component(\"div\""),
+        "single root uses component: {js}"
+    );
+    assert!(!js.contains("fragment("), "{js}");
 }
 
 /// Fuzz: arbitrary nestings of `:if`/`:for` (plus a couple of adversarial

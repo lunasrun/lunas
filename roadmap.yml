@@ -77,14 +77,14 @@ tree:
         - { id: rx-batch, title: "Batched updates + nextTick", status: done }
     - id: dom
       title: Template & DOM features
-      status: todo
+      status: done
       children:
-        - { id: d-class-style, title: "Class & style bindings (object/array)", status: todo }
-        - { id: d-refs, title: "Template refs (element & component)", status: todo }
-        - { id: d-html, title: "Raw HTML insertion", status: todo }
-        - { id: d-dynamic, title: "Dynamic components (:is)", status: todo }
-        - { id: d-teleport, title: "Teleport / portal", status: todo }
-        - { id: d-fragment, title: "Fragments / multi-root components", status: todo }
+        - { id: d-class-style, title: "Class & style bindings (object/array)", status: done }
+        - { id: d-refs, title: "Template refs (element & component)", status: done }
+        - { id: d-html, title: "Raw HTML insertion", status: done }
+        - { id: d-dynamic, title: "Dynamic components (:is)", status: done }
+        - { id: d-teleport, title: "Teleport / portal", status: done }
+        - { id: d-fragment, title: "Fragments / multi-root components", status: done }
     - id: components
       title: Component model
       status: todo

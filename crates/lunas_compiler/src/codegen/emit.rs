@@ -61,6 +61,10 @@ const ALL_HELPERS: &[&str] = &[
     "forBlock",
     "fromHTML",
     "mountChild",
+    "dynamicBlock",
+    "teleportBlock",
+    "setClass",
+    "setStyle",
     // `component` is intentionally excluded: it is only referenced at module
     // scope (the default export), where user bindings — emitted inside the
     // setup closure — cannot shadow it.
@@ -97,13 +101,15 @@ pub fn compile(source: &str) -> (Option<String>, Vec<Diagnostic>) {
 /// Emits the module for a resolved component, or `None` if it has no template.
 fn emit_module(component: &ResolvedComponent, diags: &mut Vec<Diagnostic>) -> Option<String> {
     let template = component.template.as_ref()?;
+    warn_html_with_children(template, diags);
     let skeleton = build_skeleton(template);
 
     let mut e = Emitter::new(component);
     let setup_body = e.setup_body(&skeleton, diags);
+    let multi_root = is_multi_root(template);
 
     let mut out = String::new();
-    out.push_str(&e.import_line());
+    out.push_str(&e.import_line(multi_root));
     out.push('\n');
     // Child-component imports from the `@use` table (path as written). Emitted
     // in tag-name order after the runtime import, before the module body.
@@ -128,12 +134,44 @@ fn emit_module(component: &ResolvedComponent, diags: &mut Vec<Diagnostic>) -> Op
         out.push_str(";\n");
     }
     out.push('\n');
-    out.push_str("export default component(");
-    push_js_string(&mut out, ROOT_TAG);
-    out.push_str(", {}, HTML, (c, props) => {\n");
+    // Multi-root components (output-design.md §7): a template whose top level has
+    // more than one rendered node compiles WITHOUT the wrapper element, via the
+    // `fragment(...)` factory. It parses the same HTML into a throwaway host,
+    // wires against it (positional refs still navigate `c.root` = the host), and
+    // returns the child-node group as the mountable unit. Single-root stays on
+    // the cheap `component(...)` path.
+    if multi_root {
+        out.push_str("export default fragment({}, HTML, (c, props) => {\n");
+    } else {
+        out.push_str("export default component(");
+        push_js_string(&mut out, ROOT_TAG);
+        out.push_str(", {}, HTML, (c, props) => {\n");
+    }
     out.push_str(&setup_body);
     out.push_str("});\n");
     Some(out)
+}
+
+/// Whether the template has more than one rendered top-level node (elements,
+/// components, text with content, `:if`/`:for`/`<component>`/`<teleport>`).
+/// Insignificant whitespace and comments do not count. Such a template has no
+/// single wrapper and compiles as a multi-root fragment (§7).
+fn is_multi_root(template: &Template) -> bool {
+    let mut count = 0usize;
+    for node in &template.nodes {
+        let counts = match node {
+            TemplateNode::Text(t) => !t.is_whitespace(),
+            TemplateNode::Comment(_) => false,
+            _ => true,
+        };
+        if counts {
+            count += 1;
+            if count > 1 {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 /// The lexical context of one emitted fragment (the component root, an `:if`
@@ -154,6 +192,17 @@ struct Frag<'x> {
     /// the item ROOT node (not a scratch container), so the skeleton's `[0, …]`
     /// paths become `[…]` relative to it.
     strip: usize,
+}
+
+/// A reactive prop passed to a child/dynamic component: an initial getter plus
+/// a parent-side driving bind keyed on `deps` (or item-coupled for `:for`).
+struct ReactiveProp {
+    name: String,
+    expr: String,
+    deps: Vec<u32>,
+    /// Reads an enclosing `:for` loop binding: no reactive deps of its own, but
+    /// the item's patch path (`runScope`) must re-run its driving bind.
+    coupled: bool,
 }
 
 struct Emitter<'a> {
@@ -241,9 +290,20 @@ impl<'a> Emitter<'a> {
             import_reserved.insert(h.to_string());
         }
         import_reserved.insert("component".to_string());
+        // A `<component :is="expr"/>` in the template can reference ANY `@use`
+        // factory by name from script/expression, so the compiler cannot know
+        // which are used: when a dynamic component is present, import every
+        // `@use` entry. These imports keep their raw name (the `:is` expression
+        // refers to them by it), so they are added to the reserved set first.
+        let has_dynamic = component
+            .template
+            .as_ref()
+            .is_some_and(template_has_dynamic_component);
+
         let mut child_imports = std::collections::BTreeMap::new();
         for u in &component.imports {
-            if !used_component_tags.contains(&u.component_name) {
+            let used = used_component_tags.contains(&u.component_name) || has_dynamic;
+            if !used {
                 continue;
             }
             if child_imports.contains_key(&u.component_name) {
@@ -274,11 +334,14 @@ impl<'a> Emitter<'a> {
     /// `import { … } from "lunas";` covering every helper actually referenced.
     /// A helper whose canonical name collides with a user binding is imported
     /// under its alias (`on as _on$`).
-    fn import_line(&self) -> String {
-        // `component` is always used (the module's default export).
+    fn import_line(&self, multi_root: bool) -> String {
+        // The module's default export uses `fragment` for a multi-root
+        // component, else `component`. Both are only referenced at module scope,
+        // so user bindings inside the setup closure cannot shadow them.
+        let default_factory = if multi_root { "fragment" } else { "component" };
         let mut names: Vec<&str> = self.used.iter().copied().collect();
-        if !names.contains(&"component") {
-            names.insert(0, "component");
+        if !names.contains(&default_factory) {
+            names.insert(0, default_factory);
         }
         let specs: Vec<String> = names
             .iter()
@@ -528,6 +591,8 @@ impl<'a> Emitter<'a> {
                 SlotContent::Component(comp) => {
                     self.emit_component_slot(b, comp, &slot.pos, frag, diags)
                 }
+                SlotContent::Dynamic(el) => self.emit_dynamic_slot(b, el, &slot.pos, frag, diags),
+                SlotContent::Teleport(el) => self.emit_teleport_slot(b, el, &slot.pos, frag, diags),
             }
         }
     }
@@ -618,6 +683,86 @@ impl<'a> Emitter<'a> {
 
     // --- child components -------------------------------------------------
 
+    /// Classifies a list of component/dynamic-component props into the initial
+    /// props-object member strings and the reactive props that need a driving
+    /// bind (output-design.md §6). Shared by `mountChild` and `dynamicBlock`
+    /// emission. `range` is used for diagnostics on unsupported prop shapes.
+    fn build_child_props(
+        &mut self,
+        props: &[TemplateAttr],
+        frag: &Frag,
+        range: TextRange,
+        diags: &mut Vec<Diagnostic>,
+    ) -> (Vec<String>, Vec<ReactiveProp>) {
+        let mut members: Vec<String> = Vec::new();
+        let mut reactive: Vec<ReactiveProp> = Vec::new();
+        for attr in props {
+            match attr {
+                TemplateAttr::Bound { name, expr, .. } => {
+                    let deps =
+                        self.filter_deps(self.bound_attr_deps(name, &expr.text), frag.shadowed);
+                    let value =
+                        rewrite_expr(&expr.text, &self.component.reactive_vars, frag.shadowed);
+                    members.push(format!("{}: () => ({})", prop_key(name), value));
+                    let coupled = reads_any(&expr.text, frag.shadowed);
+                    if !deps.is_empty() || coupled {
+                        reactive.push(ReactiveProp {
+                            name: name.clone(),
+                            expr: value,
+                            deps,
+                            coupled,
+                        });
+                    }
+                }
+                TemplateAttr::Static {
+                    name,
+                    value: Some(v),
+                    ..
+                } if has_interpolation(v) => {
+                    let (lit, deps, coupled) = self.attr_text_value(name, v, frag);
+                    members.push(format!("{}: () => ({})", prop_key(name), lit));
+                    if !deps.is_empty() || coupled {
+                        reactive.push(ReactiveProp {
+                            name: name.clone(),
+                            expr: lit,
+                            deps,
+                            coupled,
+                        });
+                    }
+                }
+                TemplateAttr::Static { name, value, .. } => {
+                    let val = match value {
+                        Some(v) => {
+                            let mut s = String::from("`");
+                            for seg in &v.segments {
+                                if let TextSegment::Literal { text, .. } = seg {
+                                    push_template_literal_chunk(&mut s, text);
+                                }
+                            }
+                            s.push('`');
+                            s
+                        }
+                        None => "true".to_string(),
+                    };
+                    members.push(format!("{}: {}", prop_key(name), val));
+                }
+                TemplateAttr::TwoWay { name, .. } => {
+                    diags.push(Diagnostic::warning(
+                        range,
+                        format!("two-way binding `::{name}` on a component is not supported yet"),
+                    ));
+                }
+                TemplateAttr::Event { event, .. } => {
+                    diags.push(Diagnostic::warning(
+                        range,
+                        format!("component event binding `@{event}` is not supported yet"),
+                    ));
+                }
+            }
+        }
+        (members, reactive)
+    }
+
     /// Emits a child-component mount at a text anchor (output-design.md §6):
     /// an anchor, `mountChild(c, anchor, Child, initialProps)`, and one parent
     /// `bind` per reactive prop that drives the child via `setProp`. Reactive
@@ -645,94 +790,22 @@ impl<'a> Emitter<'a> {
             return;
         };
 
-        // Classify each prop into an initial-object entry and (for reactive
-        // props) a driving bind. `reactive` collects (prop_name, expr, deps).
-        struct ReactiveProp {
-            name: String,
-            expr: String,
-            deps: Vec<u32>,
-            /// Reads an enclosing `:for` loop binding: no reactive deps of its
-            /// own, but the item's patch path (`runScope`) must re-run it.
-            coupled: bool,
-        }
-        // Initial props object members: `name: <value-or-getter>`.
-        let mut members: Vec<String> = Vec::new();
-        let mut reactive: Vec<ReactiveProp> = Vec::new();
+        // A `:ref="name"` on a component exposes the mountChild handle to the
+        // script (output-design.md §6). Pull it out of the props so it is not
+        // passed as a child prop.
+        let ref_target = comp.props.iter().find_map(|a| match a {
+            TemplateAttr::Bound { name, expr, .. } if name == "ref" => Some(expr.text.clone()),
+            _ => None,
+        });
+        let props: Vec<TemplateAttr> = comp
+            .props
+            .iter()
+            .filter(|a| !matches!(a, TemplateAttr::Bound { name, .. } if name == "ref"))
+            .cloned()
+            .collect();
 
-        for attr in &comp.props {
-            match attr {
-                TemplateAttr::Bound { name, expr, .. } => {
-                    let deps =
-                        self.filter_deps(self.bound_attr_deps(name, &expr.text), frag.shadowed);
-                    let value =
-                        rewrite_expr(&expr.text, &self.component.reactive_vars, frag.shadowed);
-                    // Pass a getter so the child seeds from the current value;
-                    // a bind keeps it live if it has deps (or is item-coupled).
-                    members.push(format!("{}: () => ({})", prop_key(name), value));
-                    let coupled = reads_any(&expr.text, frag.shadowed);
-                    if !deps.is_empty() || coupled {
-                        reactive.push(ReactiveProp {
-                            name: name.clone(),
-                            expr: value,
-                            deps,
-                            coupled,
-                        });
-                    }
-                }
-                TemplateAttr::Static {
-                    name,
-                    value: Some(v),
-                    ..
-                } if has_interpolation(v) => {
-                    // `prop="a ${x}"` — an interpolated string prop.
-                    let (lit, deps, coupled) = self.attr_text_value(name, v, frag);
-                    members.push(format!("{}: () => ({})", prop_key(name), lit));
-                    if !deps.is_empty() || coupled {
-                        reactive.push(ReactiveProp {
-                            name: name.clone(),
-                            expr: lit,
-                            deps,
-                            coupled,
-                        });
-                    }
-                }
-                TemplateAttr::Static { name, value, .. } => {
-                    let val = match value {
-                        Some(v) => {
-                            let mut s = String::from("`");
-                            for seg in &v.segments {
-                                if let TextSegment::Literal { text, .. } = seg {
-                                    push_template_literal_chunk(&mut s, text);
-                                }
-                            }
-                            s.push('`');
-                            s
-                        }
-                        // Valueless attr `<Child flag/>` -> boolean true.
-                        None => "true".to_string(),
-                    };
-                    members.push(format!("{}: {}", prop_key(name), val));
-                }
-                TemplateAttr::TwoWay { name, .. } => {
-                    self.void_block(
-                        b,
-                        frag,
-                        comp.open_tag_range,
-                        &format!("two-way binding `::{name}` on a component is not supported yet"),
-                        diags,
-                    );
-                }
-                TemplateAttr::Event { event, .. } => {
-                    self.void_block(
-                        b,
-                        frag,
-                        comp.open_tag_range,
-                        &format!("component event binding `@{event}` is not supported yet"),
-                        diags,
-                    );
-                }
-            }
-        }
+        // Classify props into an initial-object + driving binds.
+        let (members, reactive) = self.build_child_props(&props, frag, comp.open_tag_range, diags);
 
         let anchor = self.alloc_anchor();
         self.emit_anchor(b, &anchor, pos, frag);
@@ -761,12 +834,237 @@ impl<'a> Emitter<'a> {
         }
         b.push_str("});\n");
 
+        // Component ref: assign the mount handle into the reactive box `name`.
+        if let Some(target) = ref_target {
+            self.emit_ref_assign(b, &handle, &target, frag, comp.open_tag_range, diags);
+        }
+
         // Drive each reactive prop from the parent. The bind's initial run seeds
         // the same value (a box no-ops on equal), later parent changes flow in.
         for rp in &reactive {
             let stmt = format!("{handle}.setProp({}, {});", js_string(&rp.name), rp.expr);
             self.emit_update(b, frag, &rp.deps, rp.coupled, &stmt);
         }
+    }
+
+    /// Emits `name.v = <handle>;` for a `:ref="name"` on a component, validating
+    /// that `name` is a reactive box (a plain `let name;` in script). Shared
+    /// shape with the element-ref path.
+    fn emit_ref_assign(
+        &mut self,
+        b: &mut String,
+        handle: &str,
+        target: &str,
+        frag: &Frag,
+        range: TextRange,
+        diags: &mut Vec<Diagnostic>,
+    ) {
+        let target = target.trim();
+        let is_reactive = self
+            .component
+            .reactive_vars
+            .iter()
+            .any(|v| v.name == target)
+            && !frag.shadowed.iter().any(|s| s == target);
+        if !is_reactive {
+            self.void_block(
+                b,
+                frag,
+                range,
+                &format!(
+                    "`:ref` target `{target}` is not a reactive variable \
+                     (declare it with `let {target};` in script)"
+                ),
+                diags,
+            );
+            return;
+        }
+        push_indent(b, frag.indent);
+        b.push_str(target);
+        b.push_str(".v = ");
+        b.push_str(handle);
+        b.push_str(";\n");
+    }
+
+    /// `<component :is="expr" :p="e" static="x"/>` (output-design.md §6): a
+    /// dynamic component. `dynamicBlock` remounts the child at the anchor when
+    /// the `:is` factory changes, and forwards reactive props via `setProp`.
+    fn emit_dynamic_slot(
+        &mut self,
+        b: &mut String,
+        el: &TemplateElement,
+        pos: &InsertPos,
+        frag: &Frag,
+        diags: &mut Vec<Diagnostic>,
+    ) {
+        // Find the `:is` binding (the factory expression). Without it there is
+        // nothing to mount.
+        let is_expr = el.attrs.iter().find_map(|a| match a {
+            TemplateAttr::Bound { name, expr, .. } if name == "is" => Some(expr.text.clone()),
+            _ => None,
+        });
+        let Some(is_expr) = is_expr else {
+            self.void_block(
+                b,
+                frag,
+                el.open_tag_range,
+                "`<component>` requires an `:is` binding (e.g. `:is=\"view\"`)",
+                diags,
+            );
+            return;
+        };
+
+        // Classify the remaining props (everything but `:is`) into an initial
+        // object + driving binds, reusing the child-prop machinery.
+        let props: Vec<TemplateAttr> = el
+            .attrs
+            .iter()
+            .filter(|a| !matches!(a, TemplateAttr::Bound { name, .. } if name == "is"))
+            .cloned()
+            .collect();
+        let (members, reactive) = self.build_child_props(&props, frag, el.open_tag_range, diags);
+
+        let anchor = self.alloc_anchor();
+        self.emit_anchor(b, &anchor, pos, frag);
+
+        let is_deps = self.filter_deps(self.bound_attr_deps("is", &is_expr), frag.shadowed);
+        let is_value = rewrite_expr(&is_expr, &self.component.reactive_vars, frag.shadowed);
+        let is_coupled = reads_any(&is_expr, frag.shadowed);
+        let mut all_deps = is_deps.clone();
+        all_deps.sort_unstable();
+        all_deps.dedup();
+
+        let handle = self.alloc_child();
+        self.use_helper("dynamicBlock");
+        push_indent(b, frag.indent);
+        b.push_str("const ");
+        b.push_str(&handle);
+        b.push_str(" = ");
+        b.push_str(self.helper("dynamicBlock"));
+        b.push_str("(c, ");
+        b.push_str(&anchor);
+        b.push_str(", ");
+        // When the :is expr is item-coupled but has no reactive deps, pass an
+        // empty dep list; the enclosing item's patch path re-runs the block.
+        push_dep_list(b, &all_deps);
+        b.push_str(", () => (");
+        b.push_str(&is_value);
+        b.push_str("), {");
+        for (i, m) in members.iter().enumerate() {
+            if i > 0 {
+                b.push(',');
+            }
+            b.push(' ');
+            b.push_str(m);
+        }
+        if !members.is_empty() {
+            b.push(' ');
+        }
+        b.push_str("});\n");
+        let _ = is_coupled;
+
+        for rp in &reactive {
+            let stmt = format!("{handle}.setProp({}, {});", js_string(&rp.name), rp.expr);
+            self.emit_update(b, frag, &rp.deps, rp.coupled, &stmt);
+        }
+    }
+
+    /// `<teleport to="selector">…children…</teleport>` (output-design.md §6):
+    /// the children are built as their own fragment and inserted into the
+    /// target (`document.querySelector(to)` or an element expression) rather
+    /// than inline. A permanent anchor marks the inline slot for teardown order.
+    fn emit_teleport_slot(
+        &mut self,
+        b: &mut String,
+        el: &TemplateElement,
+        pos: &InsertPos,
+        frag: &Frag,
+        diags: &mut Vec<Diagnostic>,
+    ) {
+        if frag.depth >= MAX_BLOCK_DEPTH {
+            self.void_block(
+                b,
+                frag,
+                el.open_tag_range,
+                "control flow nested too deeply",
+                diags,
+            );
+            return;
+        }
+        // The target: a static `to="selector"` (a string) or a bound `:to="e"`
+        // (an element/selector expression).
+        let target: String = el
+            .attrs
+            .iter()
+            .find_map(|a| match a {
+                TemplateAttr::Static {
+                    name,
+                    value: Some(v),
+                    ..
+                } if name == "to" => {
+                    let mut s = String::from("`");
+                    for seg in &v.segments {
+                        if let TextSegment::Literal { text, .. } = seg {
+                            push_template_literal_chunk(&mut s, text);
+                        }
+                    }
+                    s.push('`');
+                    Some(s)
+                }
+                TemplateAttr::Bound { name, expr, .. } if name == "to" => Some(rewrite_expr(
+                    &expr.text,
+                    &self.component.reactive_vars,
+                    frag.shadowed,
+                )),
+                _ => None,
+            })
+            .unwrap_or_else(|| "null".to_string());
+
+        let anchor = self.alloc_anchor();
+        self.emit_anchor(b, &anchor, pos, frag);
+
+        // Build the teleport body as a fragment: its own hoisted skeleton +
+        // recursive wiring, returning the node group (like an :if branch body).
+        let tpl = Template {
+            nodes: el.children.clone(),
+        };
+        let skel = build_skeleton(&tpl);
+        let html_name = self.hoist_html(skel.html.clone());
+        let root = self.alloc_root();
+
+        self.use_helper("teleportBlock");
+        push_indent(b, frag.indent);
+        b.push_str(self.helper("teleportBlock"));
+        b.push_str("(c, ");
+        b.push_str(&anchor);
+        b.push_str(", () => (");
+        b.push_str(&target);
+        b.push_str("), () => {\n");
+        self.use_helper("fromHTML");
+        push_indent(b, frag.indent + 1);
+        b.push_str("const ");
+        b.push_str(&root);
+        b.push_str(" = ");
+        b.push_str(self.helper("fromHTML"));
+        b.push('(');
+        b.push_str(&html_name);
+        b.push_str(", ");
+        b.push_str(&anchor);
+        b.push_str(");\n");
+        let inner = Frag {
+            base: &root,
+            shadowed: frag.shadowed,
+            indent: frag.indent + 1,
+            depth: frag.depth + 1,
+            strip: 0,
+        };
+        self.emit_fragment(b, &skel, &inner, diags);
+        push_indent(b, frag.indent + 1);
+        b.push_str("return Array.from(");
+        b.push_str(&root);
+        b.push_str(".childNodes);\n");
+        push_indent(b, frag.indent);
+        b.push_str("});\n");
     }
 
     /// Builds the template-literal value, deps, and item-coupling flag for an
@@ -1230,11 +1528,42 @@ impl<'a> Emitter<'a> {
         frag: &Frag,
         diags: &mut Vec<Diagnostic>,
     ) {
-        let _ = diags;
         for (i, el) in elems.iter().enumerate() {
             let name = &ref_names[i];
+            // Static `class`/`style` literal text of this element, merged into a
+            // `:class`/`:style` binding on the same element.
+            let static_class = static_attr_literal(&el.attrs, "class");
+            let static_style = static_attr_literal(&el.attrs, "style");
             for attr in &el.attrs {
                 match attr {
+                    TemplateAttr::Bound {
+                        name: attr_name,
+                        expr,
+                        ..
+                    } if attr_name == "class" => {
+                        self.emit_class_style(b, name, "class", &expr.text, &static_class, frag);
+                    }
+                    TemplateAttr::Bound {
+                        name: attr_name,
+                        expr,
+                        ..
+                    } if attr_name == "style" => {
+                        self.emit_class_style(b, name, "style", &expr.text, &static_style, frag);
+                    }
+                    TemplateAttr::Bound {
+                        name: attr_name,
+                        expr,
+                        ..
+                    } if attr_name == "html" => {
+                        self.emit_html_bind(b, name, &expr.text, frag);
+                    }
+                    TemplateAttr::Bound {
+                        name: attr_name,
+                        expr,
+                        ..
+                    } if attr_name == "ref" => {
+                        self.emit_ref(b, name, &expr.text, frag, diags);
+                    }
                     TemplateAttr::Bound {
                         name: attr_name,
                         expr,
@@ -1270,6 +1599,67 @@ impl<'a> Emitter<'a> {
         let value = rewrite_expr(expr, &self.component.reactive_vars, frag.shadowed);
         let set = attr_set_statement(node, attr, &value);
         self.emit_update(b, frag, &deps, reads_any(expr, frag.shadowed), &set);
+    }
+
+    /// `:class="e"` / `:style="e"` (output-design.md §6): the dynamic value is
+    /// normalized and merged with the element's static `class`/`style` literal
+    /// via the `setClass`/`setStyle` runtime helper. `helper` is `"class"` or
+    /// `"style"`; `static_lit` is the static attribute text (empty if none).
+    fn emit_class_style(
+        &mut self,
+        b: &mut String,
+        node: &str,
+        which: &str,
+        expr: &str,
+        static_lit: &str,
+        frag: &Frag,
+    ) {
+        let deps = self.filter_deps(self.bound_attr_deps(which, expr), frag.shadowed);
+        let value = rewrite_expr(expr, &self.component.reactive_vars, frag.shadowed);
+        let helper: &'static str = if which == "class" {
+            "setClass"
+        } else {
+            "setStyle"
+        };
+        self.use_helper(helper);
+        let fn_name = self.helper(helper).to_string();
+        let set = format!("{fn_name}({node}, {}, {value});", js_string(static_lit));
+        self.emit_update(b, frag, &deps, reads_any(expr, frag.shadowed), &set);
+    }
+
+    /// `:html="e"` (output-design.md §6): raw innerHTML insertion. XSS caveat is
+    /// on the author — the expression is inserted verbatim. Children of an
+    /// element carrying `:html` are diagnosed elsewhere (they would be clobbered
+    /// by the innerHTML write).
+    fn emit_html_bind(&mut self, b: &mut String, node: &str, expr: &str, frag: &Frag) {
+        // `html` is not a real bound-attr dep kind; look it up as an Attribute
+        // named "html" (the classifier stores it as a Bound attr).
+        let deps = self.filter_deps(self.bound_attr_deps("html", expr), frag.shadowed);
+        let value = rewrite_expr(expr, &self.component.reactive_vars, frag.shadowed);
+        let set = format!("{node}.innerHTML = {value};");
+        self.emit_update(b, frag, &deps, reads_any(expr, frag.shadowed), &set);
+    }
+
+    /// `:ref="name"` (output-design.md §6): expose the element to the script by
+    /// assigning it into the reactive box `name` (a plain `let name;` in the
+    /// script, numbered as a reactive var). Emitted as `name.v = node;` at wire
+    /// time — no bind, the reference is fixed for the element's lifetime.
+    fn emit_ref(
+        &mut self,
+        b: &mut String,
+        node: &str,
+        expr: &str,
+        frag: &Frag,
+        diags: &mut Vec<Diagnostic>,
+    ) {
+        self.emit_ref_assign(
+            b,
+            node,
+            expr,
+            frag,
+            TextRange::new(0.into(), 0.into()),
+            diags,
+        );
     }
 
     fn emit_attr_text(
@@ -1389,6 +1779,36 @@ impl<'a> Emitter<'a> {
 
 // --- template helpers ------------------------------------------------------
 
+/// Warns when an element carries a `:html="…"` binding *and* has non-whitespace
+/// children: the raw-HTML write clobbers those children, so writing both is
+/// almost certainly a mistake (output-design.md §6).
+fn warn_html_with_children(template: &Template, diags: &mut Vec<Diagnostic>) {
+    template.visit(&mut |node: &TemplateNode| {
+        if let TemplateNode::Element(e) = node {
+            let has_html = e
+                .attrs
+                .iter()
+                .any(|a| matches!(a, TemplateAttr::Bound { name, .. } if name == "html"));
+            if !has_html {
+                return;
+            }
+            let has_content = e.children.iter().any(|c| match c {
+                TemplateNode::Text(t) => !t.is_whitespace(),
+                TemplateNode::Comment(_) => false,
+                _ => true,
+            });
+            if has_content {
+                diags.push(Diagnostic::warning(
+                    e.open_tag_range,
+                    "element has both `:html` and children; the children are \
+                     overwritten by the raw-HTML insertion"
+                        .to_string(),
+                ));
+            }
+        }
+    });
+}
+
 /// The set of component tag names actually used anywhere in the template
 /// (branch/item bodies included). Drives which `@use` imports are emitted.
 fn component_tags_in_template(template: &Template) -> std::collections::HashSet<String> {
@@ -1399,6 +1819,21 @@ fn component_tags_in_template(template: &Template) -> std::collections::HashSet<
         }
     });
     out
+}
+
+/// Whether the template contains a `<component :is=…/>` dynamic component
+/// anywhere (branch/item bodies included). When true, every `@use` import is
+/// emitted, since a `:is` expression can reference any factory by name.
+fn template_has_dynamic_component(template: &Template) -> bool {
+    let mut found = false;
+    template.visit(&mut |node: &TemplateNode| {
+        if let TemplateNode::Element(e) = node {
+            if e.name == "component" {
+                found = true;
+            }
+        }
+    });
+    found
 }
 
 /// A collision-proof local import identifier for a child component. Its own tag
@@ -1431,6 +1866,33 @@ fn two_way_lvalues(template: &Template) -> Vec<String> {
         }
     });
     out
+}
+
+/// The concatenated static literal text of a plain `class`/`style` attribute on
+/// an element, or `""` if absent. Interpolations are ignored (a `:class`/`:style`
+/// binding on the same element handles the dynamic part; a static value with an
+/// interpolation is an unusual combination and its interpolated part is dropped
+/// from the merge base). Used to merge the static base with a `:class`/`:style`.
+fn static_attr_literal(attrs: &[TemplateAttr], name: &str) -> String {
+    for attr in attrs {
+        if let TemplateAttr::Static {
+            name: n,
+            value: Some(v),
+            ..
+        } = attr
+        {
+            if n == name {
+                let mut out = String::new();
+                for seg in &v.segments {
+                    if let TextSegment::Literal { text, .. } = seg {
+                        out.push_str(text);
+                    }
+                }
+                return out;
+            }
+        }
+    }
+    String::new()
 }
 
 /// Removes a `:key="expr"` bound attribute from a `:for` item root and returns

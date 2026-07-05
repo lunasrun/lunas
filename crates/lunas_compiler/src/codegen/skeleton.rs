@@ -45,6 +45,12 @@ pub enum SlotContent {
     If(IfChain),
     For(ForBlock),
     Component(ComponentUse),
+    /// `<component :is="expr" …/>` — a dynamic component mounted at an anchor,
+    /// remounted when `:is` changes.
+    Dynamic(TemplateElement),
+    /// `<teleport to="…">…</teleport>` — children rendered into a target
+    /// selector/element instead of inline.
+    Teleport(TemplateElement),
 }
 
 /// A dynamic slot: what goes there and where "there" is.
@@ -149,6 +155,15 @@ fn walk(children: &[TemplateNode], parent_path: &[u32], ctx: &mut Ctx) {
             }
 
             TemplateNode::Text(t) => pending.push(SlotContent::Text(t.clone())),
+
+            // `<component :is=…>` and `<teleport to=…>` are magic element tags:
+            // they do not render themselves, they become anchored slots.
+            TemplateNode::Element(e) if e.name == "component" => {
+                pending.push(SlotContent::Dynamic(e.clone()));
+            }
+            TemplateNode::Element(e) if e.name == "teleport" => {
+                pending.push(SlotContent::Teleport(e.clone()));
+            }
 
             TemplateNode::Element(e) => {
                 let path = child_path(parent_path, idx);

@@ -481,3 +481,297 @@ fn child_in_if_mounts_and_unmounts() {
         "child unmounts when the branch is removed: {out}"
     );
 }
+
+// --- DOM feature batch exec tests --------------------------------------------
+
+#[test]
+fn class_binding_reacts_and_merges_static() {
+    if !node_available() {
+        eprintln!("skipping codegen_exec: node not found at {NODE}");
+        return;
+    }
+    let source = "html:\n\
+        \x20   <div class=\"base\" :class=\"{ active: on }\" @click=\"toggle()\"></div>\n\
+        script:\n\
+        \x20   let on = false\n\
+        \x20   function toggle(){ on = !on }\n";
+    let driver = "\
+        const root = factory({});\n\
+        const div = root.childNodes[0];\n\
+        console.log('INITIAL:[' + div.getAttribute('class') + ']');\n\
+        div.dispatch('click'); await tick();\n\
+        console.log('AFTER:[' + div.getAttribute('class') + ']');\n";
+    let out = run_component("classbind", source, driver);
+    assert!(
+        out.contains("INITIAL:[base]"),
+        "static only when inactive: {out}"
+    );
+    assert!(
+        out.contains("AFTER:[base active]"),
+        "merged when active: {out}"
+    );
+}
+
+#[test]
+fn style_binding_reacts() {
+    if !node_available() {
+        eprintln!("skipping codegen_exec: node not found at {NODE}");
+        return;
+    }
+    let source = "html:\n\
+        \x20   <div :style=\"{ color: hue }\" @click=\"go()\"></div>\n\
+        script:\n\
+        \x20   let hue = \"red\"\n\
+        \x20   function go(){ hue = \"blue\" }\n";
+    let driver = "\
+        const root = factory({});\n\
+        const div = root.childNodes[0];\n\
+        console.log('INITIAL:[' + div.getAttribute('style') + ']');\n\
+        div.dispatch('click'); await tick();\n\
+        console.log('AFTER:[' + div.getAttribute('style') + ']');\n";
+    let out = run_component("stylebind", source, driver);
+    assert!(
+        out.contains("INITIAL:[color: red;]"),
+        "initial style: {out}"
+    );
+    assert!(
+        out.contains("AFTER:[color: blue;]"),
+        "reactive style: {out}"
+    );
+}
+
+#[test]
+fn html_binding_reacts() {
+    if !node_available() {
+        eprintln!("skipping codegen_exec: node not found at {NODE}");
+        return;
+    }
+    let source = "html:\n\
+        \x20   <div :html=\"raw\" @click=\"go()\"></div>\n\
+        script:\n\
+        \x20   let raw = \"<b>hi</b>\"\n\
+        \x20   function go(){ raw = \"<i>bye</i>\" }\n";
+    let driver = "\
+        const root = factory({});\n\
+        const div = root.childNodes[0];\n\
+        console.log('INITIAL:' + div.innerHTMLString());\n\
+        div.dispatch('click'); await tick();\n\
+        console.log('AFTER:' + div.innerHTMLString());\n";
+    let out = run_component("htmlbind", source, driver);
+    assert!(
+        out.contains("INITIAL:<b>hi</b>"),
+        "raw html rendered: {out}"
+    );
+    assert!(out.contains("AFTER:<i>bye</i>"), "raw html reacts: {out}");
+}
+
+#[test]
+fn ref_exposes_element_to_script() {
+    if !node_available() {
+        eprintln!("skipping codegen_exec: node not found at {NODE}");
+        return;
+    }
+    // The ref box receives the element; a handler reads it and mutates the DOM.
+    let source = "html:\n\
+        \x20   <div><input :ref=\"el\"><button @click=\"fill()\">f</button></div>\n\
+        script:\n\
+        \x20   let el\n\
+        \x20   function fill(){ el.value = \"set\" }\n";
+    let driver = "\
+        const root = factory({});\n\
+        const box = root.childNodes[0];\n\
+        const input = box.childNodes[0];\n\
+        const btn = box.childNodes[1];\n\
+        console.log('INITIAL:[' + input.value + ']');\n\
+        btn.dispatch('click'); await tick();\n\
+        console.log('AFTER:[' + input.value + ']');\n";
+    let out = run_component("refbind", source, driver);
+    assert!(out.contains("INITIAL:[]"), "empty before: {out}");
+    assert!(
+        out.contains("AFTER:[set]"),
+        "ref lets script reach the element: {out}"
+    );
+}
+
+#[test]
+fn multi_root_fragment_renders_all_roots() {
+    if !node_available() {
+        eprintln!("skipping codegen_exec: node not found at {NODE}");
+        return;
+    }
+    let source = "html:\n\
+        \x20   <h1>${title}</h1>\n\
+        \x20   <p @click=\"go()\">${body}</p>\n\
+        script:\n\
+        \x20   let title = \"T\"\n\
+        \x20   let body = \"B\"\n\
+        \x20   function go(){ body = \"B2\" }\n";
+    // A fragment factory returns an array of nodes; mount them into a container.
+    let driver = "\
+        const frag = factory({});\n\
+        const host = document.createElement('div');\n\
+        for (const n of frag) host.appendChild(n);\n\
+        console.log('COUNT:' + frag.length);\n\
+        console.log('INITIAL:' + host.innerHTMLString());\n\
+        host.childNodes[1].dispatch('click'); await tick();\n\
+        console.log('AFTER:' + host.innerHTMLString());\n";
+    let out = run_component("fragroot", source, driver);
+    assert!(out.contains("COUNT:2"), "two top-level roots: {out}");
+    assert!(
+        out.contains("INITIAL:<h1>T</h1><p>B</p>"),
+        "both roots render: {out}"
+    );
+    assert!(
+        out.contains("AFTER:<h1>T</h1><p>B2</p>"),
+        "fragment reacts: {out}"
+    );
+}
+
+#[test]
+fn teleport_renders_into_target() {
+    if !node_available() {
+        eprintln!("skipping codegen_exec: node not found at {NODE}");
+        return;
+    }
+    let source = "html:\n\
+        \x20   <div><teleport to=\"#portal\"><p @click=\"go()\">${msg}</p></teleport></div>\n\
+        script:\n\
+        \x20   let msg = \"hi\"\n\
+        \x20   function go(){ msg = \"bye\" }\n";
+    // A #portal target attached to document.body; the teleport content lands
+    // there, not inside the component's inline <div>.
+    let driver = "\
+        const portal = document.createElement('div');\n\
+        portal.setAttribute('id', 'portal');\n\
+        document.body.appendChild(portal);\n\
+        const root = factory({});\n\
+        const div = root.childNodes[0];\n\
+        console.log('INLINE:' + div.innerHTMLString());\n\
+        console.log('PORTAL:' + portal.innerHTMLString());\n\
+        portal.childNodes[0].dispatch('click'); await tick();\n\
+        console.log('REACT:' + portal.innerHTMLString());\n";
+    let out = run_component("teleport", source, driver);
+    assert!(
+        out.lines()
+            .any(|l| l.starts_with("INLINE:") && !l.contains("<p>")),
+        "content is not inline: {out}"
+    );
+    assert!(
+        out.contains("PORTAL:<p>hi</p>"),
+        "content rendered into #portal: {out}"
+    );
+    assert!(
+        out.contains("REACT:<p>bye</p>"),
+        "teleported content stays reactive: {out}"
+    );
+}
+
+#[test]
+fn dynamic_component_mounts_and_passes_prop() {
+    if !node_available() {
+        eprintln!("skipping codegen_exec: node not found at {NODE}");
+        return;
+    }
+    // Parent has a `<component :is="view">` where `view` starts as the @use
+    // child factory. mountChild-style prop passing must work through :is.
+    let parent = "@use Kid from \"./Kid.lunas\"\n\
+        html:\n\
+        \x20   <div><component :is=\"view\" :label=\"txt\"/></div>\n\
+        script:\n\
+        \x20   let view = Kid\n\
+        \x20   let txt = \"hello\"\n\
+        \x20   function drop(){ view = null }\n";
+    let child = "@input label:string = \"\"\n\
+        html:\n\
+        \x20   <b>${label}</b>\n";
+    let driver = "\
+        const root = factory({});\n\
+        const div = root.childNodes[0];\n\
+        console.log('INITIAL:' + div.innerHTMLString());\n";
+    let out = run_parent_child("dyncomp", parent, child, "./Kid.lunas", driver);
+    assert!(
+        out.lines()
+            .any(|l| l.starts_with("INITIAL:") && l.contains("<b>hello</b>")),
+        "dynamic component mounts the :is factory with its prop: {out}"
+    );
+}
+
+#[test]
+fn multi_root_fragment_with_top_level_if() {
+    if !node_available() {
+        eprintln!("skipping codegen_exec: node not found at {NODE}");
+        return;
+    }
+    // A top-level :if inside a fragment: its anchor is created against the host
+    // and must travel with the fragment node group (snapshot-after-setup), so
+    // the branch toggles correctly once the nodes are mounted elsewhere.
+    let source = "html:\n\
+        \x20   <h1 @click=\"go()\">${t}</h1>\n\
+        \x20   <p :if=\"show\">shown</p>\n\
+        script:\n\
+        \x20   let t = \"T\"\n\
+        \x20   let show = true\n\
+        \x20   function go(){ show = !show }\n";
+    let driver = "\
+        const frag = factory({});\n\
+        const host = document.createElement('div');\n\
+        for (const n of frag) host.appendChild(n);\n\
+        console.log('INITIAL:' + host.innerHTMLString());\n\
+        host.childNodes[0].dispatch('click'); await tick();\n\
+        console.log('HIDDEN:' + host.innerHTMLString());\n\
+        host.childNodes[0].dispatch('click'); await tick();\n\
+        console.log('SHOWN:' + host.innerHTMLString());\n";
+    let out = run_component("fragif", source, driver);
+    assert!(
+        out.contains("INITIAL:<h1>T</h1><p>shown</p>"),
+        "branch shown initially: {out}"
+    );
+    assert!(
+        out.lines()
+            .any(|l| l.starts_with("HIDDEN:") && !l.contains("shown")),
+        "branch removed on toggle: {out}"
+    );
+    assert!(
+        out.lines()
+            .any(|l| l.starts_with("SHOWN:") && l.contains("shown")),
+        "branch re-inserted at the right slot: {out}"
+    );
+}
+
+#[test]
+fn component_ref_exposes_mount_handle() {
+    if !node_available() {
+        eprintln!("skipping codegen_exec: node not found at {NODE}");
+        return;
+    }
+    // `:ref="kid"` on a child exposes the mountChild handle to the parent
+    // script, which can drive the child via setProp.
+    let parent = "@use Kid from \"./Kid.lunas\"\n\
+        html:\n\
+        \x20   <div><Kid :label=\"txt\" :ref=\"kid\"/><button @click=\"push()\">p</button></div>\n\
+        script:\n\
+        \x20   let txt = \"a\"\n\
+        \x20   let kid\n\
+        \x20   function push(){ kid.setProp(\"label\", \"b\") }\n";
+    let child = "@input label:string = \"\"\n\
+        html:\n\
+        \x20   <b>${label}</b>\n";
+    let driver = "\
+        const root = factory({});\n\
+        const div = root.childNodes[0];\n\
+        console.log('INITIAL:' + div.innerHTMLString());\n\
+        const btn = div.childNodes.find((n) => n.tag === 'button');\n\
+        btn.dispatch('click'); await tick();\n\
+        console.log('AFTER:' + div.innerHTMLString());\n";
+    let out = run_parent_child("compref", parent, child, "./Kid.lunas", driver);
+    assert!(
+        out.lines()
+            .any(|l| l.starts_with("INITIAL:") && l.contains("<b>a</b>")),
+        "child mounts: {out}"
+    );
+    assert!(
+        out.lines()
+            .any(|l| l.starts_with("AFTER:") && l.contains("<b>b</b>")),
+        "parent drives child through the ref handle: {out}"
+    );
+}
