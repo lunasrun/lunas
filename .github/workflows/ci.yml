@@ -123,6 +123,9 @@ jobs:
         working-directory: crates/lunas_wasm
         run: wasm-pack build --target nodejs
 
+      - name: release-pr script tests
+        run: node --test .github/scripts/release-pr.test.mjs
+
       - name: vite-plugin-lunas tests
         working-directory: packages/vite-plugin-lunas
         run: node test/run-all.mjs
