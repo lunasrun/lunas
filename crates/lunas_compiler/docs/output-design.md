@@ -236,6 +236,26 @@ export function routerLink(el, router, path, opts) { /* click -> preventDefault 
 //   const a = anchorBefore(placeholder);
 //   routerOutlet(c, a, appRouter);               // <router-outlet/>
 //   routerLink(linkEl, appRouter, "/users/1");   // <a :href="/users/1">
+
+// --- async / lazy components + suspense boundaries ---
+export function asyncComponent(loader, opts) { /* wrap `() => import("./Heavy.mjs")`
+                                                  into a child factory; resolves default
+                                                  export or bare factory, caches after
+                                                  first load (later mounts sync); opts
+                                                  { loading?, error?, delay=200, timeout? }
+                                                  — Vue-style: loading only after `delay`,
+                                                  error on reject/timeout */ }
+export function mountAsyncChild(c, before, AsyncChild, props) { /* mountChild contract; threads
+                                                                   c so the child registers with
+                                                                   the nearest suspense boundary;
+                                                                   unmount() cancels in-flight loads */ }
+export function suspenseBlock(c, anchor, content, fallback) { /* boundary at a text anchor: builds
+                                                                 content (async kids start loading),
+                                                                 shows fallback until every async dep
+                                                                 registered via c._suspense settles,
+                                                                 then reveals content (batched via
+                                                                 afterFlush — no flash on sync subtrees);
+                                                                 nested boundaries own their subtree */ }
 ```
 
 No signal-tracking stack, no VDOM, no per-node effect objects.

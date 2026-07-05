@@ -95,6 +95,9 @@ main repo for the calling contract.
 | `historyAdapter(win)` | `lunas/router` | Default History-API adapter (pushState/replaceState/popstate). |
 | `routerOutlet(c, anchor, router, opts)` | `lunas/router` | Mount the matched route's component at an anchor, swapping on navigation; params passed as props. |
 | `routerLink(el, router, path, opts)` | `lunas/router` | Wire an element's click to a client-side navigation (preventDefault + push). |
+| `asyncComponent(loader, opts?)` | `lunas/async` | Wrap a lazy module loader (`() => import(...)`) into a mountable child factory; resolves default export or bare factory, caches after first load, optional `loading`/`error`/`delay`/`timeout`. |
+| `mountAsyncChild(c, anchor, factory, props?)` | `lunas/async` | Mount an async component at an anchor (mountChild contract + suspense registration); `unmount()` cancels any in-flight load. |
+| `suspenseBlock(c, anchor, contentFactory, fallbackFactory?)` | `lunas/async` | Async boundary at an anchor: shows `fallback` while any async child under it is pending, reveals `content` once all resolve (batched, no flash); nested boundaries are independent. |
 
 ## Testing
 
