@@ -1,0 +1,3 @@
+{
+  "description": "falsy number 0 in a :class array is dropped (not emitted as literal \"0\"), matching Vue :class semantics"
+}
