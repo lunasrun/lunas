@@ -1,0 +1,9 @@
+html:
+    <div>
+        <p>host</p>
+        <teleport to="#portal">
+            <article class="ported-html-binding" :html="markup"></article>
+        </teleport>
+    </div>
+script:
+    let markup = "<b>bold ported</b>"

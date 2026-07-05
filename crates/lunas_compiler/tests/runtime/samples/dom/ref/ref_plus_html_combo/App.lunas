@@ -1,0 +1,12 @@
+html:
+    <div>
+        <article :ref="box" :html="markup"></article>
+        <button @click="grow()">grow</button>
+    </div>
+script:
+    let markup = "<b>bold</b>"
+    let box
+    function grow() {
+        markup = markup + "<i>more</i>"
+        box.setAttribute("data-grown", "yes")
+    }

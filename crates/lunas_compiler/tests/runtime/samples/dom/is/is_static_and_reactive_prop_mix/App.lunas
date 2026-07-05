@@ -1,0 +1,10 @@
+@use Card from "./Card.lunas"
+html:
+    <div>
+        <component :is="view" kind="info" :title="heading"/>
+        <button @click="rename()">rename</button>
+    </div>
+script:
+    let view = Card
+    let heading = "A"
+    function rename() { heading = "B" }

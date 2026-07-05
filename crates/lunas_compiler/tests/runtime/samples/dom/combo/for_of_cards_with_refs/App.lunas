@@ -1,0 +1,11 @@
+@use Card from "./Card.lunas"
+html:
+    <div>
+        <ul>
+            <li :for="card of cards" :key="card.id">
+                <Card :label="card.label"/>
+            </li>
+        </ul>
+    </div>
+script:
+    let cards = [{id:1,label:"one"},{id:2,label:"two"},{id:3,label:"three"}]

@@ -1,0 +1,9 @@
+html:
+    <div>
+        <span>${name}</span>
+        <teleport to="#portal">
+            <input class="ported-two-way-input" :value="name">
+        </teleport>
+    </div>
+script:
+    let name = "a"

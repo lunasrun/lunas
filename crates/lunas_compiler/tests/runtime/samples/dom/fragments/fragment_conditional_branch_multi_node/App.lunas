@@ -1,0 +1,11 @@
+html:
+    <div>
+        <button @click="toggle()">toggle</button>
+        <template :if="show">
+            <h2 class="head">heading</h2>
+            <p class="body">body text</p>
+        </template>
+    </div>
+script:
+    let show = false
+    function toggle() { show = !show }

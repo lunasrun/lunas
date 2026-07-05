@@ -1,0 +1,5 @@
+@use Child from "./Child.lunas"
+html:
+    <div><Child :markup="content"/></div>
+script:
+    let content = "<b>from parent</b>"

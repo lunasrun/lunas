@@ -1,0 +1,4 @@
+@input title:string = ""
+@input subtitle:string = ""
+html:
+    <div><h3>${title}</h3><p>${subtitle}</p></div>

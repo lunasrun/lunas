@@ -1,0 +1,15 @@
+html:
+    <div>
+        <p :if="show" :ref="inner">visible</p>
+        <button @click="toggle()">toggle</button>
+        <button @click="mark()">mark</button>
+    </div>
+script:
+    let show = true
+    let inner
+    function toggle() {
+        show = !show
+    }
+    function mark() {
+        if (inner) inner.setAttribute("data-marked", "yes")
+    }

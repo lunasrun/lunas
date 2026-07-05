@@ -1,0 +1,25 @@
+@use Foo from "./Foo.lunas"
+@use Bar from "./Bar.lunas"
+html:
+    <h1 :ref="heading">Shell</h1>
+    <ul>
+        <li class="row" :for="item of items" :key="item.id">${item.label}</li>
+    </ul>
+    <component :is="view"/>
+    <button class="swap" @click="swap()">swap</button>
+    <button class="mark" @click="mark()">mark</button>
+    <teleport to="#portal">
+        <article class="ported-stress" :html="markup"></article>
+    </teleport>
+script:
+    let view = Foo
+    let items = [{id:1,label:"one"},{id:2,label:"two"}]
+    let heading
+    let markup = "<b>stress init</b>"
+    function swap() {
+        view = Bar
+        markup = "<i>stress swapped</i>"
+    }
+    function mark() {
+        heading.setAttribute("data-marked", "yes")
+    }

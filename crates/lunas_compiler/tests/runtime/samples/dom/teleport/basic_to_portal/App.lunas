@@ -1,0 +1,7 @@
+html:
+    <div>
+        <p>host content</p>
+        <teleport to="#portal">
+            <p class="ported-basic-to-portal">teleported content</p>
+        </teleport>
+    </div>

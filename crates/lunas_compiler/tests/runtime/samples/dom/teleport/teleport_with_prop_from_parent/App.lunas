@@ -1,0 +1,9 @@
+@use Modal from "./Modal.lunas"
+html:
+    <div>
+        <button @click="rename()">rename</button>
+        <Modal :label="title"/>
+    </div>
+script:
+    let title = "Hello"
+    function rename() { title = "Renamed" }

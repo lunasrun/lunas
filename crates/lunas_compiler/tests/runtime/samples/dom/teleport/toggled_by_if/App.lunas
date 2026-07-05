@@ -1,0 +1,10 @@
+html:
+    <div>
+        <button @click="toggle()">toggle</button>
+        <teleport to="#portal">
+            <p class="ported-toggled-by-if" :if="open">modal content</p>
+        </teleport>
+    </div>
+script:
+    let open = false
+    function toggle() { open = !open }

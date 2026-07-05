@@ -1,0 +1,14 @@
+html:
+    <div>
+        <button @click="mark()">mark</button>
+        <teleport to="#portal">
+            <p class="ported-reactive-ref" :ref="portedEl">${label}</p>
+        </teleport>
+    </div>
+script:
+    let label = "hi"
+    let portedEl
+    function mark() {
+        label = "bye"
+        portedEl.setAttribute("data-marked", "yes")
+    }

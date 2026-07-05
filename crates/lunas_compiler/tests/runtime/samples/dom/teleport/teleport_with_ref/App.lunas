@@ -1,0 +1,12 @@
+html:
+    <div>
+        <button @click="mark()">mark</button>
+        <teleport to="#portal">
+            <p class="ported-with-ref" :ref="portedEl">unmarked</p>
+        </teleport>
+    </div>
+script:
+    let portedEl
+    function mark() {
+        portedEl.setAttribute("data-marked", "yes")
+    }

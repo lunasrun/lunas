@@ -1,0 +1,11 @@
+html:
+    <div>
+        <article :ref="box" :html="markup"></article>
+        <button @click="mark()">mark</button>
+    </div>
+script:
+    let markup = "<b>bold</b>"
+    let box
+    function mark() {
+        box.setAttribute("data-touched", "yes")
+    }

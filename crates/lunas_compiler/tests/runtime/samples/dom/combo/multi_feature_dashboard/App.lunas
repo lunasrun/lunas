@@ -1,0 +1,22 @@
+@use ChartView from "./ChartView.lunas"
+@use TableView from "./TableView.lunas"
+html:
+    <div>
+        <h1 :ref="heading">Dashboard</h1>
+        <button class="chart" @click="pick('chart')">chart</button>
+        <button class="table" @click="pick('table')">table</button>
+        <component :is="view === 'chart' ? ChartView : TableView" :data="rows"/>
+        <teleport to="#portal">
+            <p class="ported-dashboard-status">${status}</p>
+        </teleport>
+    </div>
+script:
+    let view = "chart"
+    let rows = ["a", "b"]
+    let status = "ready"
+    let heading
+    function pick(v) {
+        view = v
+        status = "showing " + v
+        heading.setAttribute("data-view", v)
+    }

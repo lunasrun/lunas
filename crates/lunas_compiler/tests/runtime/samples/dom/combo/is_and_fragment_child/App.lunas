@@ -1,0 +1,10 @@
+@use MultiA from "./MultiA.lunas"
+@use MultiB from "./MultiB.lunas"
+html:
+    <div>
+        <component :is="view"/>
+        <button @click="swap()">swap</button>
+    </div>
+script:
+    let view = MultiA
+    function swap() { view = MultiB }

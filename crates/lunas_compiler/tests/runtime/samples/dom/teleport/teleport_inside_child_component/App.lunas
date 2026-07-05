@@ -1,0 +1,6 @@
+@use Modal from "./Modal.lunas"
+html:
+    <div>
+        <p>parent</p>
+        <Modal/>
+    </div>

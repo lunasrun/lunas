@@ -1,0 +1,5 @@
+html:
+    <p><button class="inc" @click="bump()">bump</button> <span>${count}</span></p>
+script:
+    let count = 0
+    function bump() { count++ }

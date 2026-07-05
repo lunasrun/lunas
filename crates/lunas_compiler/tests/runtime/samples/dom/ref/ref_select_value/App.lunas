@@ -1,0 +1,13 @@
+html:
+    <div>
+        <select :ref="sel">
+            <option value="a">A</option>
+            <option value="b">B</option>
+        </select>
+        <button @click="pick()">pick b</button>
+    </div>
+script:
+    let sel
+    function pick() {
+        sel.value = "b"
+    }

@@ -1,0 +1,12 @@
+@use Counter from "./Counter.lunas"
+@use Notice from "./Notice.lunas"
+html:
+    <div>
+        <component :is="view"/>
+        <button class="swap" @click="swap()">swap</button>
+        <button class="back" @click="back()">back</button>
+    </div>
+script:
+    let view = Counter
+    function swap() { view = Notice }
+    function back() { view = Counter }

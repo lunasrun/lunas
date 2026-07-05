@@ -1,0 +1,7 @@
+html:
+    <article :html="render()"></article>
+    <button @click="bump()">bump</button>
+script:
+    let n = 0
+    function render() { return "<b>" + n + "</b>" }
+    function bump() { n++ }

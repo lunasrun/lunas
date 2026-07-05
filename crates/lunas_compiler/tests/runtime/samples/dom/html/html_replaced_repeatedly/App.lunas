@@ -1,0 +1,10 @@
+html:
+    <article :html="markup"></article>
+    <button @click="next()">next</button>
+script:
+    let step = 0
+    let markup = "<b>0</b>"
+    function next() {
+        step++
+        markup = "<b>" + step + "</b>"
+    }

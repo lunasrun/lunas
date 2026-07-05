@@ -1,0 +1,4 @@
+@use Inner from "./Inner.lunas"
+html:
+    <h1>outer heading</h1>
+    <Inner/>

@@ -1,0 +1,8 @@
+html:
+    <button class="save" @click="save()">save</button>
+    <button class="cancel" @click="cancel()">cancel</button>
+    <span class="status">${status}</span>
+script:
+    let status = "idle"
+    function save() { status = "saved" }
+    function cancel() { status = "cancelled" }

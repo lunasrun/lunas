@@ -1,0 +1,6 @@
+html:
+    <article :html="markup"></article>
+    <button @click="clear()">clear</button>
+script:
+    let markup = "<b>bold</b>"
+    function clear() { markup = "" }

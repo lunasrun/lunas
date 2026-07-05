@@ -1,0 +1,10 @@
+html:
+    <div>
+        <p :ref="label">before</p>
+        <button @click="rename()">rename</button>
+    </div>
+script:
+    let label
+    function rename() {
+        label.setAttribute("data-marker", "renamed")
+    }

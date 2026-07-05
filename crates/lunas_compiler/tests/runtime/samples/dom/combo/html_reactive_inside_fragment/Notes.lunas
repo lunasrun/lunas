@@ -1,0 +1,7 @@
+html:
+    <h2>Notes</h2>
+    <article :html="body"></article>
+    <button @click="edit()">edit</button>
+script:
+    let body = "<p>first note</p>"
+    function edit() { body = "<p>edited note</p>" }

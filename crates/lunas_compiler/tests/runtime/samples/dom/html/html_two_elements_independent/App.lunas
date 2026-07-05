@@ -1,0 +1,10 @@
+html:
+    <div>
+        <article :html="a"></article>
+        <section :html="b"></section>
+        <button @click="changeA()">change a</button>
+    </div>
+script:
+    let a = "<b>A0</b>"
+    let b = "<b>B0</b>"
+    function changeA() { a = "<b>A1</b>" }

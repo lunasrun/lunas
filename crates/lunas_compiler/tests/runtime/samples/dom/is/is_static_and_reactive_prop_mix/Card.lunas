@@ -1,0 +1,4 @@
+@input kind:string = ""
+@input title:string = ""
+html:
+    <div class="card"><span class="kind">${kind}</span><span class="title">${title}</span></div>

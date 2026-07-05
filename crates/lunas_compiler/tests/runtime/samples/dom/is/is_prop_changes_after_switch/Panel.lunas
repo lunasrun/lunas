@@ -1,0 +1,3 @@
+@input label:string = ""
+html:
+    <span class="panel-label">${label}</span>

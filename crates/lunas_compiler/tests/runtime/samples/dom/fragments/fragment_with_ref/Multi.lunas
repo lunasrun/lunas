@@ -1,0 +1,9 @@
+html:
+    <p :ref="first">first</p>
+    <p>second</p>
+    <button @click="mark()">mark</button>
+script:
+    let first
+    function mark() {
+        first.setAttribute("data-marked", "yes")
+    }

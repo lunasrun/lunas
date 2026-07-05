@@ -1,0 +1,6 @@
+html:
+    <article :html="markup"></article>
+    <button @click="fill()">fill</button>
+script:
+    let markup = "<b>bold</b>"
+    function fill() { markup = "<i>italic</i>" }

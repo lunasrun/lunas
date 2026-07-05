@@ -1,0 +1,14 @@
+html:
+    <div>
+        <div :if="outer">
+            <p :if="inner" :ref="deep">deep node</p>
+        </div>
+        <button @click="mark()">mark</button>
+    </div>
+script:
+    let outer = true
+    let inner = true
+    let deep
+    function mark() {
+        if (deep) deep.setAttribute("data-marked", "yes")
+    }

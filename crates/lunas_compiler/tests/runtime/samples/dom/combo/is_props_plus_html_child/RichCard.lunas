@@ -1,0 +1,5 @@
+@input title:string = ""
+@input body:string = ""
+html:
+    <h3>${title}</h3>
+    <article :html="body"></article>

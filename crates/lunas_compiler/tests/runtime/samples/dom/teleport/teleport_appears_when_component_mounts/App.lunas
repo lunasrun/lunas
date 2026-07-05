@@ -1,0 +1,10 @@
+@use Modal from "./Modal.lunas"
+@use Blank from "./Blank.lunas"
+html:
+    <div>
+        <component :is="view"/>
+        <button @click="show()">show</button>
+    </div>
+script:
+    let view = Blank
+    function show() { view = Modal }

@@ -1,0 +1,10 @@
+html:
+    <div>
+        <span>${status}</span>
+        <teleport to="#portal">
+            <button class="ported-btn-click" @click="mark()">mark</button>
+        </teleport>
+    </div>
+script:
+    let status = "idle"
+    function mark() { status = "marked" }

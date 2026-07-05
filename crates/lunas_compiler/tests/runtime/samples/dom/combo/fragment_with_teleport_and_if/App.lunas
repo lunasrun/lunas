@@ -1,0 +1,3 @@
+@use Panel from "./Panel.lunas"
+html:
+    <div><Panel/></div>

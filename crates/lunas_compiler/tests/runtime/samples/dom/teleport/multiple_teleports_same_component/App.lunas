@@ -1,0 +1,10 @@
+html:
+    <div>
+        <p>host</p>
+        <teleport to="#portal">
+            <p class="ported-multi-a">first</p>
+        </teleport>
+        <teleport to="#portal">
+            <p class="ported-multi-b">second</p>
+        </teleport>
+    </div>

@@ -1,0 +1,8 @@
+html:
+    <div>
+        <h2>${title}</h2>
+        <article :html="markup"></article>
+    </div>
+script:
+    let title = "Heading"
+    let markup = "<p>body</p>"

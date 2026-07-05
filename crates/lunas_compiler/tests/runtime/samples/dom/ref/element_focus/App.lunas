@@ -1,0 +1,10 @@
+html:
+    <div>
+        <input :ref="field">
+        <button @click="fill()">fill</button>
+    </div>
+script:
+    let field
+    function fill() {
+        field.value = "typed"
+    }

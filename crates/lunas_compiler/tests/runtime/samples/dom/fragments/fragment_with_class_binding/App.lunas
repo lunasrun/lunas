@@ -1,0 +1,3 @@
+@use Toggler from "./Toggler.lunas"
+html:
+    <div><Toggler/></div>
