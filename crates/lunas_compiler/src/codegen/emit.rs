@@ -1721,11 +1721,16 @@ impl<'a> Emitter<'a> {
         frag: &Frag,
         diags: &mut Vec<Diagnostic>,
     ) {
+        // A bare `<template>` body (`<template :if="…">a b</template>`) is a
+        // grouping wrapper, not a real element: unwrap it so its children become
+        // the branch content directly, rather than leaving a literal `<template>`
+        // node in the live DOM. A multi-child unwrap is a multi-root branch.
+        let nodes = unwrap_template_body(body);
         let tpl = Template {
-            nodes: vec![body.clone()],
+            nodes: nodes.clone(),
         };
         let skel = build_skeleton(&tpl);
-        let multi_root = has_top_level_slot(&skel);
+        let multi_root = has_top_level_slot(&skel) || count_rendered_top_level(&nodes) != 1;
         let html_name = self.hoist_html(skel.html.clone());
         let root = self.alloc_root();
         self.use_helper("fromHTML");
@@ -2588,6 +2593,44 @@ fn reads_any(expr: &str, names: &[String]) -> bool {
         Ok(free) => free.iter().any(|n| names.contains(n)),
         Err(_) => true,
     }
+}
+
+/// Unwraps a bare `<template>` grouping element used as a control-flow body
+/// (`<template :if="…">a b</template>`): returns its children as the real
+/// content nodes. A `<template>` carrying a slot marker (`slot=` / `#name`) is
+/// NOT unwrapped here (those are handled by slot partitioning); a plain element
+/// or component body is returned as a single-node list unchanged.
+fn unwrap_template_body(body: &TemplateNode) -> Vec<TemplateNode> {
+    if let TemplateNode::Element(e) = body {
+        if e.name == "template" && !is_slot_marked_template(e) {
+            return e.children.clone();
+        }
+    }
+    vec![body.clone()]
+}
+
+/// Whether a `<template>` element marks a named/scoped slot (so it must not be
+/// unwrapped as a plain grouping wrapper).
+fn is_slot_marked_template(el: &TemplateElement) -> bool {
+    el.attrs.iter().any(|a| match a {
+        TemplateAttr::Static { name, .. } => name == "slot" || name.starts_with('#'),
+        _ => false,
+    })
+}
+
+/// Counts the rendered top-level nodes of a node list (elements, components,
+/// control flow, magic tags, non-whitespace text). Insignificant whitespace and
+/// comments do not count. Used to decide whether an unwrapped branch body is a
+/// multi-root node group.
+fn count_rendered_top_level(nodes: &[TemplateNode]) -> usize {
+    nodes
+        .iter()
+        .filter(|n| match n {
+            TemplateNode::Text(t) => !t.is_whitespace(),
+            TemplateNode::Comment(_) => false,
+            _ => true,
+        })
+        .count()
 }
 
 /// Whether a fragment skeleton has slots inserted at its top level (the

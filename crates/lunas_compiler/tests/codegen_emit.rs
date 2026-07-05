@@ -222,6 +222,29 @@ fn plain_if_emits_ifblock() {
 }
 
 #[test]
+fn template_if_with_multiple_children_unwraps_to_fragment() {
+    // A bare `<template :if>` with several children must NOT leave a literal
+    // `<template>` element in the DOM: its children become the branch content
+    // directly, mounted as a multi-root node group.
+    let js = emit(
+        "html:\n    <div><template :if=\"show\"><span>a</span><span>b</span></template></div>\nscript:\n    let show = true\n    function t(){ show = !show }\n",
+    );
+    assert!(
+        js.contains("const HTML_1 = \"<span>a</span><span>b</span>\";"),
+        "the template wrapper is unwrapped out of the branch skeleton: {js}"
+    );
+    assert!(
+        !js.contains("<template>"),
+        "no literal <template> element survives into the HTML: {js}"
+    );
+    // Multi-root branch: the whole child node group travels together.
+    assert!(
+        js.contains("return Array.from(r0.childNodes);"),
+        "multi-child branch returns the node group: {js}"
+    );
+}
+
+#[test]
 fn if_elseif_else_emits_ifchain() {
     let js = emit(
         "html:\n    <div><p :if=\"n > 0\">pos ${n}</p><p :elseif=\"n < 0\">neg</p><p :else>zero</p></div>\nscript:\n    let n = 0\n    function set(x){ n = x }\n",
