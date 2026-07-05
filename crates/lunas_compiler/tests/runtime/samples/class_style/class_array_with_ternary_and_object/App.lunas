@@ -1,0 +1,5 @@
+html:
+    <div :class="[mode === 'a' ? 'mode-a' : 'mode-b', {loading: busy}]"></div>
+script:
+    let mode = "a"
+    let busy = false

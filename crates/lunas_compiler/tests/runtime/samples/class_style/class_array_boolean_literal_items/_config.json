@@ -1,0 +1,3 @@
+{
+  "description": "bare boolean literal true in an array -- non-string/array/object goes through String(value) so `true` leaks as literal text; false is dropped"
+}

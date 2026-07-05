@@ -1,0 +1,3 @@
+html:
+    <div :style="{content: '\';\''}"></div>
+script:

@@ -1,0 +1,3 @@
+{
+  "description": "custom properties preserve case; only plain camelCase CSS prop names get kebab-cased"
+}

@@ -1,0 +1,4 @@
+html:
+    <div :class="['base', cond ? 'on' : 'off']"></div>
+script:
+    let cond = false

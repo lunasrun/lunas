@@ -1,0 +1,3 @@
+html:
+    <div :style="{margin: 0}"></div>
+script:

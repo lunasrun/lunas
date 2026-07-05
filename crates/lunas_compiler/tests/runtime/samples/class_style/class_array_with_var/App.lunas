@@ -1,0 +1,4 @@
+html:
+    <div :class="['a', cls]"></div>
+script:
+    let cls = "b"

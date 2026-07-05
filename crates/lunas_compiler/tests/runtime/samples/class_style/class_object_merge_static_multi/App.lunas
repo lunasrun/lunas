@@ -1,0 +1,5 @@
+html:
+    <div class="base extra" :class="{active: on, hidden: off}"></div>
+script:
+    let on = true
+    let off = false

@@ -1,0 +1,3 @@
+html:
+    <div :class="{'2fast': true}"></div>
+script:

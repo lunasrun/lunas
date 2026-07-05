@@ -1,0 +1,4 @@
+html:
+    <div :class="['a', cond && 'b']"></div>
+script:
+    let cond = false

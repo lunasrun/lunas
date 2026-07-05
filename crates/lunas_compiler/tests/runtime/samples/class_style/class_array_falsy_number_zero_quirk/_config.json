@@ -1,0 +1,3 @@
+{
+  "description": "known quirk: falsy number 0 leaks as literal \"0\" text in :class arrays (normClass only filters null/false, not 0)"
+}

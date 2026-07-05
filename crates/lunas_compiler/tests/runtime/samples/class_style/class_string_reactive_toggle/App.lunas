@@ -1,0 +1,5 @@
+html:
+    <div class="tgt" :class="cls" @click="swap()"></div>
+script:
+    let cls = "a"
+    function swap(){ cls = "b" }

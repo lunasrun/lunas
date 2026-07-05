@@ -1,0 +1,8 @@
+html:
+    <ul>
+        <li class="item" :class="{selected: sel === 1}" @click="pick(1)">one</li>
+        <li class="item" :class="{selected: sel === 2}" @click="pick(2)">two</li>
+    </ul>
+script:
+    let sel = 1
+    function pick(n){ sel = n }

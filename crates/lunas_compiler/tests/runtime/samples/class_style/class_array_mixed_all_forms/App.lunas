@@ -1,0 +1,5 @@
+html:
+    <div :class="['a', {b: true}, ['c', cond && 'd'], count > 0 && 'e']"></div>
+script:
+    let cond = true
+    let count = 1

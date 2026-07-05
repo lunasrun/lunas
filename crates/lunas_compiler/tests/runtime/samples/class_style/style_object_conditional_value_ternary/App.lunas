@@ -1,0 +1,4 @@
+html:
+    <div :style="{color: big ? 'red' : 'blue'}"></div>
+script:
+    let big = true

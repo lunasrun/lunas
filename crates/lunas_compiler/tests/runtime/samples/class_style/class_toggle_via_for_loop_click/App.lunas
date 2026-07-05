@@ -1,0 +1,7 @@
+html:
+    <ul>
+        <li class="row" :for="item of items" :key="item.id" :class="{done: item.done}" @click="toggle(item.id)">${item.label}</li>
+    </ul>
+script:
+    let items = [{id:1,label:"a",done:false},{id:2,label:"b",done:true}]
+    function toggle(id){ items = items.map(it => it.id === id ? {...it, done: !it.done} : it) }

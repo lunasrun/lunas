@@ -1,0 +1,3 @@
+html:
+    <div :class="['a', [{b: true}, ['c', {d: false, e: true}]]]"></div>
+script:

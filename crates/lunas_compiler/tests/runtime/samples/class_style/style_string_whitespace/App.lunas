@@ -1,0 +1,3 @@
+html:
+    <div :style="'  color:   red;  '"></div>
+script:
