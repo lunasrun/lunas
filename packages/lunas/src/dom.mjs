@@ -136,6 +136,12 @@ export function normClass(value) {
   if (Array.isArray(value)) {
     let out = "";
     for (const v of value) {
+      // A falsy bare array item (0, NaN, "", null, undefined, false) is
+      // dropped outright, matching Vue's :class array semantics — without
+      // this, normClass(0) stringifies to "0" and leaks a bogus class token
+      // (see dom.norm.test.mjs). This only affects bare array ITEMS; object
+      // values (e.g. `:style="{width: 0}"`) are untouched.
+      if (!v) continue;
       const s = normClass(v);
       if (s) out = out ? out + " " + s : s;
     }

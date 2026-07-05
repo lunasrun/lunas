@@ -318,6 +318,25 @@ export function dynamicBlock(c, anchor, deps, factoryOf, props) {
 //
 // Content binds are collected in a scope homed at creation, so destroying the
 // block tears down every inner bind (no leaks), exactly like ifBlock.
+//
+// The teleported nodes live under an external target, NOT under `anchor`'s
+// parent — so a plain :for/:if item removal (which only walks its own subtree
+// and drops its own scope) never touches them, and neither does an owning
+// component's own unmount (mountChild's unmount() only fires onDestroy
+// callbacks + removes the component's OWN root's nodes — it never sees the
+// teleport's target-side nodes). Both would leak the teleported content
+// forever without explicit teardown wiring. So destroy() is registered two
+// ways, mirroring mountChild's own dual wiring (addDisposer + onDestroy):
+//   - addDisposer(c, destroy) — runs when the enclosing :if/:for item's scope
+//     is dropped (the teleport call site sits inside that item's content).
+//   - onDestroy(c, destroy) — runs when the OWNING component's context itself
+//     is torn down (mountChild(...).unmount() -> runDestroy(childCtx)), which
+//     covers a top-level teleport call (no scope open, addDisposer is a
+//     no-op) whose owning component unmounts directly.
+// destroy() guards against running twice since both paths can fire (e.g. a
+// component with a top-level teleport nested inside a removed :for item hits
+// dropScope's disposer first; onDestroy would otherwise double-fire when the
+// child context's own destroy also runs as part of the same teardown).
 export function teleportBlock(c, anchor, targetOf, build) {
   const home = c.scope;
   const r = inScopeAt(c, home, build);
@@ -337,12 +356,20 @@ export function teleportBlock(c, anchor, targetOf, build) {
   const target = resolveTarget();
   if (target) for (const n of nodes) target.appendChild(n);
 
+  let destroyed = false;
+  const destroy = () => {
+    if (destroyed) return;
+    destroyed = true;
+    for (const n of nodes) n.remove();
+    dropScope(c, scope);
+  };
+
+  addDisposer(c, destroy);
+  onDestroy(c, destroy);
+
   return {
     nodes,
-    destroy() {
-      for (const n of nodes) n.remove();
-      dropScope(c, scope);
-    },
+    destroy,
   };
 }
 
