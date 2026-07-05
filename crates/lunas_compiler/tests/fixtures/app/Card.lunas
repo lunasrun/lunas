@@ -1,0 +1,11 @@
+@input tone:string = "plain"
+
+html:
+    <section class="card ${tone}">
+        <header><slot name="head">untitled</slot></header>
+        <main><slot>empty</slot></main>
+        <footer><slot name="foot" :count="rows"></slot></footer>
+    </section>
+
+script:
+    let rows = 3

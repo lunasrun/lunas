@@ -1,0 +1,11 @@
+html:
+    <div>
+        <button @click="bump()">step</button>
+        <p :if="n == 0">zero</p>
+        <p :elseif="n > 3">big ${n}</p>
+        <p :else>small ${n}</p>
+    </div>
+
+script:
+    let n = 0
+    function bump() { n = n + 1 }

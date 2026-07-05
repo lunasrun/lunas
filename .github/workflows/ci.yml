@@ -133,3 +133,44 @@ jobs:
       - name: create-lunas tests
         working-directory: packages/create-lunas
         run: node test/run-all.mjs
+
+  smoke:
+    name: e2e browser smoke (headless Chrome)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install toolchain (from rust-toolchain.toml)
+        working-directory: crates
+        run: rustup show active-toolchain || rustup toolchain install
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            crates/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('crates/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      # Ubuntu runners ship a headless-capable Chrome via this action; export its
+      # path so the smoke harness drives the real engine (it skips loudly if
+      # CHROME is unset and no Chrome is found on PATH).
+      - name: Install Chrome
+        uses: browser-actions/setup-chrome@v1
+        id: setup-chrome
+
+      # The browser smoke suite compiles fixtures, serves them with a tiny node
+      # server, and asserts the post-interaction DOM in real Chrome. `node` on
+      # PATH (setup-node) satisfies the harness's server; CHROME points it at the
+      # installed engine.
+      - name: End-to-end browser smoke tests
+        working-directory: crates
+        env:
+          CHROME: ${{ steps.setup-chrome.outputs.chrome-path }}
+        run: cargo test -p lunas_compiler --test browser_smoke -- --nocapture

@@ -1,0 +1,14 @@
+html:
+    <div>
+        <input :ref="field">
+        <article :html="markup"></article>
+        <button @click="fill()">fill</button>
+    </div>
+
+script:
+    let field
+    let markup = "<b>bold</b>"
+    function fill() {
+        field.value = "typed"
+        markup = "<i>italic</i>"
+    }

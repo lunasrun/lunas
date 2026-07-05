@@ -236,6 +236,14 @@ struct Emitter<'a> {
     n_html: usize,   // HTML_{n}
     n_child: usize,  // c{n} (child-component instance handle)
     n_slots: usize,  // s{n} (per-child slots object)
+    n_target: usize, // g{n} (pristine anchor-target snapshot node)
+    /// Stack of pre-captured anchor-target local names, one deque per fragment
+    /// currently being emitted. `emit_fragment` snapshots every slot's anchor
+    /// target against the *pristine* parse (before any content is inserted) and
+    /// pushes the resulting locals here; `emit_anchor` pops them in slot order.
+    /// This makes positional anchor navigation immune to sibling index shifts
+    /// caused by earlier dynamic insertions into the same parent.
+    anchor_target_stack: Vec<std::collections::VecDeque<String>>,
 }
 
 impl<'a> Emitter<'a> {
@@ -332,6 +340,8 @@ impl<'a> Emitter<'a> {
             n_html: 0,
             n_child: 0,
             n_slots: 0,
+            n_target: 0,
+            anchor_target_stack: Vec::new(),
         }
     }
 
@@ -383,6 +393,11 @@ impl<'a> Emitter<'a> {
         let n = self.n_anchor;
         self.n_anchor += 1;
         format!("a{n}")
+    }
+    fn alloc_target(&mut self) -> String {
+        let n = self.n_target;
+        self.n_target += 1;
+        format!("g{n}")
     }
     fn alloc_root(&mut self) -> String {
         let n = self.n_root;
@@ -551,8 +566,61 @@ impl<'a> Emitter<'a> {
         diags: &mut Vec<Diagnostic>,
     ) {
         let ref_names = self.emit_refs(b, &skeleton.dynamic_elements, frag);
+        self.emit_anchor_targets(b, &skeleton.slots, frag);
         self.emit_slots(b, &skeleton.slots, frag, diags);
+        self.anchor_target_stack.pop();
         self.emit_attr_and_event_wiring(b, &skeleton.dynamic_elements, &ref_names, frag, diags);
+    }
+
+    /// Snapshots every slot's anchor-target node against the *pristine* fragment
+    /// tree (before any content is inserted) and pushes the resulting locals as
+    /// a fresh deque for this fragment. Consumed in slot order by `emit_anchor`.
+    ///
+    /// Without this, a positional navigation like `base.childNodes[0].childNodes[2]`
+    /// re-evaluated after an earlier sibling slot inserted content would resolve
+    /// to the wrong node — inserted siblings shift `childNodes` indices. Capturing
+    /// the target node reference once, up front, keeps every anchor stable.
+    fn emit_anchor_targets(&mut self, b: &mut String, slots: &[Slot], frag: &Frag) {
+        let paths: Vec<&[u32]> = slots
+            .iter()
+            .map(|s| match &s.pos {
+                InsertPos::Before(p)
+                | InsertPos::BeforeSplit { path: p, .. }
+                | InsertPos::Append(p) => strip_path(p, frag.strip),
+            })
+            .collect();
+
+        let mut names = std::collections::VecDeque::with_capacity(paths.len());
+        if paths.is_empty() {
+            self.anchor_target_stack.push(names);
+            return;
+        }
+
+        self.use_helper("refs");
+        let refs_fn = self.helper("refs").to_string();
+        let locals: Vec<String> = paths.iter().map(|_| self.alloc_target()).collect();
+        push_indent(b, frag.indent);
+        b.push_str("const [");
+        for (i, name) in locals.iter().enumerate() {
+            if i > 0 {
+                b.push_str(", ");
+            }
+            b.push_str(name);
+        }
+        b.push_str("] = ");
+        b.push_str(&refs_fn);
+        b.push('(');
+        b.push_str(frag.base);
+        b.push_str(", [");
+        for (i, path) in paths.iter().enumerate() {
+            if i > 0 {
+                b.push_str(", ");
+            }
+            push_path(b, path);
+        }
+        b.push_str("]);\n");
+        names.extend(locals);
+        self.anchor_target_stack.push(names);
     }
 
     // --- refs -------------------------------------------------------------
@@ -661,41 +729,45 @@ impl<'a> Emitter<'a> {
     /// Emits the anchor-creation statement for a slot, binding it to a local
     /// const named `name`.
     fn emit_anchor(&mut self, b: &mut String, name: &str, pos: &InsertPos, frag: &Frag) {
+        // The anchor's target node was pre-captured against the pristine tree in
+        // `emit_anchor_targets`; consume the next snapshot local in slot order.
+        // (Fallback to live positional navigation if — defensively — the queue is
+        // empty, though `emit_fragment` always fills one per slot.)
+        let target = self
+            .anchor_target_stack
+            .last_mut()
+            .and_then(|q| q.pop_front());
+
         push_indent(b, frag.indent);
-        match pos {
-            InsertPos::Before(path) => {
-                self.use_helper("anchorBefore");
-                b.push_str("const ");
-                b.push_str(name);
-                b.push_str(" = ");
-                b.push_str(self.helper("anchorBefore"));
-                b.push('(');
-                push_node_at(b, frag.base, strip_path(path, frag.strip));
-                b.push_str(");\n");
+        let (helper, split_offset) = match pos {
+            InsertPos::Before(_) => ("anchorBefore", None),
+            InsertPos::BeforeSplit { utf16_offset, .. } => {
+                ("anchorBeforeSplit", Some(*utf16_offset))
             }
-            InsertPos::BeforeSplit { path, utf16_offset } => {
-                self.use_helper("anchorBeforeSplit");
-                b.push_str("const ");
-                b.push_str(name);
-                b.push_str(" = ");
-                b.push_str(self.helper("anchorBeforeSplit"));
-                b.push('(');
+            InsertPos::Append(_) => ("anchorAppend", None),
+        };
+        self.use_helper(helper);
+        b.push_str("const ");
+        b.push_str(name);
+        b.push_str(" = ");
+        b.push_str(self.helper(helper));
+        b.push('(');
+        match &target {
+            Some(local) => b.push_str(local),
+            None => {
+                let path = match pos {
+                    InsertPos::Before(p)
+                    | InsertPos::BeforeSplit { path: p, .. }
+                    | InsertPos::Append(p) => p,
+                };
                 push_node_at(b, frag.base, strip_path(path, frag.strip));
-                b.push_str(", ");
-                b.push_str(&utf16_offset.to_string());
-                b.push_str(");\n");
-            }
-            InsertPos::Append(path) => {
-                self.use_helper("anchorAppend");
-                b.push_str("const ");
-                b.push_str(name);
-                b.push_str(" = ");
-                b.push_str(self.helper("anchorAppend"));
-                b.push('(');
-                push_node_at(b, frag.base, strip_path(path, frag.strip));
-                b.push_str(");\n");
             }
         }
+        if let Some(off) = split_offset {
+            b.push_str(", ");
+            b.push_str(&off.to_string());
+        }
+        b.push_str(");\n");
     }
 
     // --- child components -------------------------------------------------

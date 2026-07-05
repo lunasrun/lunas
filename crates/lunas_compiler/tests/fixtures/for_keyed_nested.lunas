@@ -1,0 +1,24 @@
+html:
+    <div>
+        <button @click="add()">add</button>
+        <button @click="toggleFirst()">toggle</button>
+        <ul>
+            <li :for="group of groups" :key="group.id">
+                <b>${group.name}</b>
+                <em :if="group.open">(open)</em>
+                <ol>
+                    <li :for="tag of group.tags" :key="tag">${tag}</li>
+                </ol>
+            </li>
+        </ul>
+    </div>
+
+script:
+    let groups = [
+        { id: 1, name: "a", open: true, tags: ["x", "y"] },
+        { id: 2, name: "b", open: false, tags: ["z"] }
+    ]
+    function add() {
+        groups.push({ id: groups.length + 1, name: "n", open: false, tags: ["t"] })
+    }
+    function toggleFirst() { groups[0].open = !groups[0].open }
