@@ -1,0 +1,4 @@
+html:
+    <div><input ::value="text"><span>${text.toUpperCase()}</span></div>
+script:
+    let text = "abc"

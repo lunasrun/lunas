@@ -1,0 +1,5 @@
+html:
+    <a @click="visit()">${visited}</a>
+script:
+    let visited = false
+    function visit(){ visited = true }

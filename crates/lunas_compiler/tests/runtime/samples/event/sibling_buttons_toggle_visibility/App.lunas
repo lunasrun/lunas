@@ -1,0 +1,10 @@
+html:
+    <div>
+        <button class="show" @click="show()">show</button>
+        <button class="hide" @click="hide()">hide</button>
+        <p :if="visible">shown</p>
+    </div>
+script:
+    let visible = false
+    function show(){ visible = true }
+    function hide(){ visible = false }

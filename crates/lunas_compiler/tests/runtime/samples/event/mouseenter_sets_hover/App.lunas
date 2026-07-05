@@ -1,0 +1,6 @@
+html:
+    <div class="box" @mouseenter="enter()" @mouseleave="leave()">${hover}</div>
+script:
+    let hover = false
+    function enter(){ hover = true }
+    function leave(){ hover = false }

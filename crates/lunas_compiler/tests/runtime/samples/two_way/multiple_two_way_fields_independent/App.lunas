@@ -1,0 +1,9 @@
+html:
+    <div>
+        <input class="first" ::value="first">
+        <input class="last" ::value="last">
+        <p>${first} ${last}</p>
+    </div>
+script:
+    let first = "a"
+    let last = "b"

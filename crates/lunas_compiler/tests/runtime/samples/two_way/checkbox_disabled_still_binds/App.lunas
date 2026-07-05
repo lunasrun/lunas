@@ -1,0 +1,8 @@
+html:
+    <div>
+        <input type="checkbox" :disabled="locked" ::checked="on">
+        <span>${on}</span>
+    </div>
+script:
+    let locked = false
+    let on = false

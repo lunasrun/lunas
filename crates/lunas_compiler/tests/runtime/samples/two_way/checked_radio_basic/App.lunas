@@ -1,0 +1,9 @@
+html:
+    <div>
+        <input type="radio" value="a" ::checked="pickedA">
+        <input type="radio" value="b" ::checked="pickedB">
+        <span>a=${pickedA} b=${pickedB}</span>
+    </div>
+script:
+    let pickedA = false
+    let pickedB = false

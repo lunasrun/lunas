@@ -1,0 +1,9 @@
+html:
+    <div>
+        <input class="a" type="checkbox" ::checked="a">
+        <input class="b" type="checkbox" ::checked="b">
+        <span>a=${a} b=${b}</span>
+    </div>
+script:
+    let a = false
+    let b = false

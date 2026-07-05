@@ -1,0 +1,5 @@
+html:
+    <button @click="inc()">n=${n} sq=${n*n} even=${n % 2 == 0}</button>
+script:
+    let n = 0
+    function inc(){ n = n + 1 }

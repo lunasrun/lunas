@@ -1,0 +1,7 @@
+html:
+    <div>
+        <input type="checkbox" ::checked="agree">
+        <span>${agree ? "agreed" : "not agreed"}</span>
+    </div>
+script:
+    let agree = false

@@ -1,0 +1,8 @@
+html:
+    <div>
+        <input @keydown="bump()">
+        <span>${n}</span>
+    </div>
+script:
+    let n = 0
+    function bump(){ n = n + 1 }

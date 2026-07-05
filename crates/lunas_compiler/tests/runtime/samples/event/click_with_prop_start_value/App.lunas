@@ -1,0 +1,6 @@
+@input start:number = 10
+html:
+    <button @click="inc()">n=${n}</button>
+script:
+    let n = start
+    function inc(){ n = n + 1 }

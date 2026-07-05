@@ -1,0 +1,8 @@
+html:
+    <div>
+        <input type="checkbox" @change="bump()">
+        <span>${toggles}</span>
+    </div>
+script:
+    let toggles = 0
+    function bump(){ toggles = toggles + 1 }

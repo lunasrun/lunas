@@ -1,0 +1,10 @@
+html:
+    <div>
+        <input ::value="text">
+        <button @click="save()">save</button>
+        <p>saved: ${saved}</p>
+    </div>
+script:
+    let text = ""
+    let saved = ""
+    function save(){ saved = text }

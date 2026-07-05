@@ -1,0 +1,10 @@
+html:
+    <div class="outer" @click="bumpOuter()">
+        <button class="inner" @click="bumpInner()">btn</button>
+        <span>o=${outerClicks} i=${innerClicks}</span>
+    </div>
+script:
+    let outerClicks = 0
+    let innerClicks = 0
+    function bumpOuter(){ outerClicks = outerClicks + 1 }
+    function bumpInner(){ innerClicks = innerClicks + 1 }

@@ -1,0 +1,4 @@
+html:
+    <div><input placeholder="type here" ::value="text"><span>${text}</span></div>
+script:
+    let text = ""

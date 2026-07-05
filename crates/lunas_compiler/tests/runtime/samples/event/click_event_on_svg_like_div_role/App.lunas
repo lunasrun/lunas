@@ -1,0 +1,5 @@
+html:
+    <div class="clickable" role="button" @click="inc()">${n}</div>
+script:
+    let n = 0
+    function inc(){ n = n + 1 }

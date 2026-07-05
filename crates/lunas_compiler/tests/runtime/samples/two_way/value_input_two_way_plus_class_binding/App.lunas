@@ -1,0 +1,4 @@
+html:
+    <div><input class="fld" ::value="text" :class="{ filled: text.length > 0 }"></div>
+script:
+    let text = ""

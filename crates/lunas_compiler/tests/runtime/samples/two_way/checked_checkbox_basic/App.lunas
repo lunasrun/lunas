@@ -1,0 +1,4 @@
+html:
+    <div><input type="checkbox" ::checked="on"><span>${on}</span></div>
+script:
+    let on = false

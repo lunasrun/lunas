@@ -1,0 +1,4 @@
+html:
+    <div><input type="number" ::value="n"><span>double=${Number(n) * 2}</span></div>
+script:
+    let n = "1"

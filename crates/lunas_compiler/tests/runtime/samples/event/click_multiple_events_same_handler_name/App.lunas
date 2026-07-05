@@ -1,0 +1,9 @@
+html:
+    <div>
+        <button class="a" @click="bump()">a</button>
+        <button class="b" @click="bump()">b</button>
+        <span>${n}</span>
+    </div>
+script:
+    let n = 0
+    function bump(){ n = n + 1 }

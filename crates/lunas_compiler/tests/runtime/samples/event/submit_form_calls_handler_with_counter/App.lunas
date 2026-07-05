@@ -1,0 +1,7 @@
+html:
+    <form @submit="onSubmit()">
+        <span>submits=${n}</span>
+    </form>
+script:
+    let n = 0
+    function onSubmit(){ n = n + 1 }

@@ -1,0 +1,5 @@
+@input start:string = "x"
+html:
+    <div><input ::value="text"><span>${text}</span></div>
+script:
+    let text = start

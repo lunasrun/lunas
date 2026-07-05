@@ -1,0 +1,7 @@
+html:
+    <button @click="bump(); log()">n=${n} c=${calls}</button>
+script:
+    let n = 0
+    let calls = 0
+    function bump(){ n = n + 1 }
+    function log(){ calls = calls + 1 }

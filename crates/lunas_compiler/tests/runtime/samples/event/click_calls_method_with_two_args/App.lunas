@@ -1,0 +1,5 @@
+html:
+    <button @click="setSum(2, 3)">sum=${sum}</button>
+script:
+    let sum = 0
+    function setSum(a, b){ sum = a + b }

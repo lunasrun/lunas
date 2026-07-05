@@ -1,0 +1,6 @@
+html:
+    <div class="btn" @mousedown="down()" @mouseup="up()">${pressed}</div>
+script:
+    let pressed = false
+    function down(){ pressed = true }
+    function up(){ pressed = false }

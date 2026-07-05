@@ -1,0 +1,9 @@
+html:
+    <div>
+        <input @focus="onFocus()" @blur="onBlur()">
+        <span>${state}</span>
+    </div>
+script:
+    let state = "idle"
+    function onFocus(){ state = "focused" }
+    function onBlur(){ state = "blurred" }

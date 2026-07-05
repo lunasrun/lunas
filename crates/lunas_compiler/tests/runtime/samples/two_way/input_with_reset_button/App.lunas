@@ -1,0 +1,8 @@
+html:
+    <div>
+        <input ::value="text">
+        <button @click="reset()">reset</button>
+    </div>
+script:
+    let text = "default"
+    function reset(){ text = "default" }

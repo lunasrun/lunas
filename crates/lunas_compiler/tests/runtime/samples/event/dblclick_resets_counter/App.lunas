@@ -1,0 +1,6 @@
+html:
+    <button @click="inc()" @dblclick="reset()">n=${n}</button>
+script:
+    let n = 0
+    function inc(){ n = n + 1 }
+    function reset(){ n = 0 }

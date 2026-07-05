@@ -1,0 +1,9 @@
+html:
+    <div>
+        <input ::value="text" @input="bump()">
+        <span>e=${edits} t=${text}</span>
+    </div>
+script:
+    let text = ""
+    let edits = 0
+    function bump(){ edits = edits + 1 }
