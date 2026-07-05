@@ -954,3 +954,156 @@ fn slot_and_template_arbitrary_nesting_never_panics() {
         }
     }
 }
+
+// --- #149 anchor-shift regression: sibling dynamic insertion points ---------
+// Multiple dynamic slots in the SAME parent must each resolve to their correct
+// node. The emitter snapshots every slot's anchor target against the *pristine*
+// parse (before any content is inserted) via a single `refs(base, [...])`
+// destructuring, so a later slot's positional navigation is immune to
+// `childNodes` index shifts caused by earlier dynamic insertions.
+
+#[test]
+fn sibling_slots_precapture_distinct_targets() {
+    // Four sibling dynamic slots in one <div>: a text run, an :if, another text,
+    // and a child mount. Each must get its own pre-captured target local, all
+    // captured up front against the pristine tree in ONE refs() call.
+    let js = emit(
+        "@use Kid from \"./Kid.lunas\"\nhtml:\n    <div>${a}<span :if=\"b\">x</span>${a}<Kid/></div>\nscript:\n    let a=0\n    let b=0\n    function f(){ a=1; b=2 }\n",
+    );
+    // One refs() destructuring binding all four pristine targets (g0..g3), each
+    // navigating from the same base with the same `[0]` path (the host <div>).
+    assert!(
+        js.contains("const [g0, g1, g2, g3] = refs(c.root, [[0], [0], [0], [0]]);"),
+        "all sibling anchor targets pre-captured together: {js}"
+    );
+    // Each anchor is built from its OWN captured target, in slot order.
+    assert!(js.contains("anchorAppend(g0)"), "slot 0 uses g0: {js}");
+    assert!(js.contains("anchorAppend(g1)"), "slot 1 uses g1: {js}");
+    assert!(js.contains("anchorAppend(g2)"), "slot 2 uses g2: {js}");
+    assert!(js.contains("anchorAppend(g3)"), "slot 3 uses g3: {js}");
+    // Crucially, no anchor is created by re-navigating live childNodes of the
+    // host (which would shift after the first insertion).
+    assert!(
+        !js.contains("anchorAppend(c.root.childNodes"),
+        "no live re-navigation of the host: {js}"
+    );
+}
+
+#[test]
+fn three_sibling_ifs_each_get_own_anchor() {
+    // Three sibling :if blocks in the same parent: distinct pre-captured
+    // targets, distinct anchors, correct per-branch deps.
+    let js = emit(
+        "html:\n    <div><p :if=\"a\">1</p><p :if=\"b\">2</p><p :if=\"a\">3</p></div>\nscript:\n    let a=0\n    let b=0\n    function f(){ a=1; b=2 }\n",
+    );
+    assert!(
+        js.contains("const [g0, g1, g2] = refs(c.root, [[0], [0], [0]]);"),
+        "three pristine targets captured together: {js}"
+    );
+    // Three anchors a0/a1/a2, each from its own target.
+    assert!(js.contains("const a0 = anchorAppend(g0);"), "{js}");
+    assert!(js.contains("const a1 = anchorAppend(g1);"), "{js}");
+    assert!(js.contains("const a2 = anchorAppend(g2);"), "{js}");
+    // Each ifBlock is keyed to its own anchor and dep.
+    assert!(js.contains("ifBlock(c, a0, [0]"), "first :if on a: {js}");
+    assert!(js.contains("ifBlock(c, a1, [1]"), "second :if on b: {js}");
+    assert!(js.contains("ifBlock(c, a2, [0]"), "third :if on a: {js}");
+}
+
+#[test]
+fn leading_text_slot_before_static_sibling_keeps_stable_target() {
+    // A dynamic text slot as the FIRST child, followed by a static element:
+    // the text anchor's target must be pre-captured so inserting the text node
+    // does not shift the later static sibling's identity.
+    let js = emit(
+        "html:\n    <div>${a}<b>static</b>${a}</div>\nscript:\n    let a=0\n    function f(){ a=1 }\n",
+    );
+    // Two text runs (slots), captured together up front in ONE refs() call
+    // against the pristine tree (the leading run is a before-insertion at the
+    // first child, the trailing run appends).
+    assert!(
+        js.contains("const [g0, g1] = refs(c.root, [[0, 0], [0]]);"),
+        "text-run targets captured together against pristine indices: {js}"
+    );
+    // The leading slot inserts before its pristine target; the trailing appends.
+    assert!(js.contains("anchorBefore(g0)"), "leading run: {js}");
+    assert!(js.contains("anchorAppend(g1)"), "trailing run: {js}");
+}
+
+// --- never-panic fuzz over arbitrary sources into compile() -----------------
+
+#[test]
+fn arbitrary_sources_never_panic_in_compile() {
+    // A broad grab-bag of adversarial / malformed / unusual sources. compile()
+    // must never panic; diagnostics are allowed, and any emitted module must be
+    // non-empty. This complements the resolve-layer fuzz with the full emit path.
+    let cases = [
+        "",
+        "\n\n\n",
+        "html:",
+        "html:\n",
+        "script:\n    let",
+        "html:\n    <",
+        "html:\n    <>",
+        "html:\n    </p>",
+        "html:\n    <p>${</p>",
+        "html:\n    <p>${{{{}}}}</p>",
+        "html:\n    <p>${a ? b : }</p>\nscript:\n    let a=0",
+        "html:\n    <div :=\"x\"></div>",
+        "html:\n    <div ::=\"\"></div>",
+        "html:\n    <div @=\"\"></div>",
+        "html:\n    <div :class=\"{\" :style=\"[\" :html=\"(\"></div>\nscript:\n    let x=0\n    function f(){ x=1 }",
+        "html:\n    <input :ref=\"1\">",
+        "html:\n    <input :ref=\"a.b.c\">\nscript:\n    let a={}",
+        "html:\n    <li :for=\"\">x</li>",
+        "html:\n    <li :for=\"of\">x</li>",
+        "html:\n    <li :for=\"a b c d\">x</li>",
+        "html:\n    <li :for=\"e0 of xs\" :key=\"e0\">x</li>\nscript:\n    let xs=[]",
+        "html:\n    <li :for=\"item of items\" :key=\"\">${item}</li>\nscript:\n    let items=[]\n    function f(){ items.push(1) }",
+        "html:\n    <component/>",
+        "html:\n    <component :is=\"\"/>",
+        "html:\n    <component :is=\"x.(\"/>\nscript:\n    let x=0",
+        "html:\n    <teleport/>",
+        "html:\n    <teleport to=\"\"></teleport>",
+        "html:\n    <slot name=\"\"></slot>",
+        "html:\n    <slot :x=\"(\"></slot>",
+        "@input\nhtml:\n    <p>${undefinedVar}</p>",
+        "@input x:number\n@input x:number\nhtml:\n    <p>${x}</p>",
+        "@use\n@use A\nhtml:\n    <A/>",
+        "@use A from\nhtml:\n    <A/>",
+        "html:\n    <日本語>${値}</日本語>\nscript:\n    let 値=0\n    function f(){ 値=1 }",
+        "html:\n    <p>${\u{1f980}}</p>",
+        "html:\n    <div>\u{0}\u{1}\u{2}</div>",
+        "html:\n    <p>*/</p>",
+        "html:\n    <div :title=\"`nested`\"></div>",
+        "html:\n    <div title=\"${a}${b}${c}\"></div>\nscript:\n    let a=0\n    let b=0\n    let c=0\n    function f(){ a=1; b=1; c=1 }",
+        "html:\n    <input ::value=\"a\" ::checked=\"a\">\nscript:\n    let a=0",
+        "html:\n    <div :for=\"i of x\" :if=\"y\">z</div>\nscript:\n    let x=[]\n    let y=0\n    function f(){ x.push(1); y=1 }",
+        "html:\n    <p :if=\"a\">1</p>\n    <p :elseif=\"b\">2</p>\n    <p :else>3</p>\nscript:\n    let a=0\n    let b=0\n    function f(){ a=1; b=1 }",
+    ];
+    for case in cases {
+        let (js, _diags) = compile(case);
+        if let Some(js) = js {
+            assert!(!js.is_empty(), "emitted empty module for source: {case:?}");
+        }
+    }
+}
+
+#[test]
+fn deeply_nested_interpolation_and_attrs_never_panic() {
+    // Build increasingly nested element structures with a dynamic at each level.
+    for depth in 0..30usize {
+        let mut body = String::from("${x}");
+        for _ in 0..depth {
+            body = format!("<div :title=\"x\" class=\"c ${{x}}\">{body}</div>");
+        }
+        let source =
+            format!("html:\n    {body}\nscript:\n    let x=0\n    function f(){{ x=1 }}\n");
+        let (js, diags) = compile(&source);
+        assert!(
+            !diags.iter().any(|d| d.is_error()),
+            "depth {depth} unexpected error: {diags:?}"
+        );
+        let _ = js;
+    }
+}
