@@ -67,3 +67,21 @@ export {
 } from "./router.mjs";
 
 export { asyncComponent, mountAsyncChild, suspenseBlock } from "./async.mjs";
+
+export {
+  onMount,
+  onDestroy,
+  onUpdate,
+  onActivated,
+  onDeactivated,
+  attach,
+  isLive,
+} from "./lifecycle.mjs";
+
+export { emit, registerEmits, eventPropName } from "./emits.mjs";
+
+export { provide, inject, hasInjection } from "./provide.mjs";
+
+export { withTransition, runPhase } from "./transition.mjs";
+
+export { keepAlive } from "./keepalive.mjs";

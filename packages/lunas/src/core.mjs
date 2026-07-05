@@ -11,7 +11,21 @@
 // for-diff-design.md §6).
 
 export function createContext(root) {
-  return { root, deps: [], queue: [], pending: false, scope: null, post: null };
+  // `parent` links a child component context to the one that mounted it
+  // (additive; set by mountChild) so provide/inject (provide.mjs) can walk the
+  // chain. `onUpdate` (lifecycle.mjs) is an optional per-context hook the flush
+  // loop invokes after an update pass actually ran. All new fields default to
+  // null so contexts stay cheap and existing paths are untouched.
+  return {
+    root,
+    deps: [],
+    queue: [],
+    pending: false,
+    scope: null,
+    post: null,
+    parent: null,
+    onUpdate: null,
+  };
 }
 
 // bind(c, deps, fn) — register an update function that reads the reactive
@@ -50,10 +64,16 @@ export function flush(c) {
   c.pending = false;
   const q = c.queue;
   c.queue = [];
+  const ran = q.length > 0;
   for (const s of q) {
     s.q = false;
     if (s.alive) s.fn();
   }
+  // onUpdate (lifecycle.mjs) — a lightweight per-context post-update hook that
+  // fires only when an update pass actually ran, distinct from the one-shot
+  // `post` callbacks (afterFlush/nextTick) drained below. Additive: null unless
+  // a component registered onUpdate.
+  if (ran && c.onUpdate) c.onUpdate();
   const post = c.post;
   if (post) {
     c.post = null;

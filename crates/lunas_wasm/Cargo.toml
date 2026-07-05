@@ -1,0 +1,17 @@
+[package]
+name = "lunas_wasm"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Thin wasm-bindgen bindings over the Lunas compiler: compile a .lunas source string to JS + diagnostics from JavaScript."
+repository = "https://github.com/lunasrun/lunas"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+lunas_compiler = { path = "../lunas_compiler" }
+lunas_span = { path = "../lunas_span" }
+serde = { version = "1", features = ["derive"] }
+wasm-bindgen = "0.2"
+serde-wasm-bindgen = "0.6"

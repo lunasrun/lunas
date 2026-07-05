@@ -286,6 +286,63 @@ export function suspenseBlock(c, anchor, content, fallback) { /* boundary at a t
                                                                  then reveals content (batched via
                                                                  afterFlush — no flash on sync subtrees);
                                                                  nested boundaries own their subtree */ }
+
+// --- lifecycle hooks (c-lifecycle) ------------------------------------------
+// component() returns a DETACHED root; the caller attaches it (§7). So onMount
+// cannot fire at construction — it is queued on the context and drained when the
+// root becomes live. mountChild links childCtx.parent = c and registers the child
+// under c._children so a single top-level attach() fires the whole subtree, and a
+// parent teardown recurses into children.
+export function onMount(c, fn) { /* run fn after the root attaches to a live tree; queued on
+                                    c._mountQ, drained by attach()/mountChild; fires once */ }
+export function onDestroy(c, fn) { /* run fn on teardown; every unmount path (mountChild.unmount,
+                                      block item teardown, keep-alive eviction) funnels through
+                                      runDestroy(c) → fires exactly once */ }
+export function onUpdate(c, fn) { /* run fn after each flush of c that ran updates (core flush
+                                     invokes c.onUpdate when the queue was non-empty) */ }
+export function onActivated(c, fn) { /* keep-alive: fires on (re)activation from the cache */ }
+export function onDeactivated(c, fn) { /* keep-alive: fires on deactivation (cached, not destroyed) */ }
+export function attach(root, host) { /* append a detached component root to a live host and fire the
+                                        subtree's onMount callbacks; the top-level mount entry (§7) */ }
+
+// --- emits: child → parent events (c-emits) ---------------------------------
+// A `@name` listener on a component tag compiles to an `on<Name>` prop on the
+// mountChild props object (see §6). The child calls emit(c, "name", payload),
+// which looks up on<Name> in the props it was constructed with and calls it.
+// emit does NOT mark the parent dirty — the handler decides (a box setter in the
+// handler marks the parent as usual). Names camel-case: `save-all` → `onSaveAll`.
+export function registerEmits(c, props, declared) { /* at the top of a child setup: stash props so
+                                                       emit can find on<Name> handlers; optional
+                                                       declared[] enables warn-only validation */ }
+export function emit(c, name, payload) { /* invoke the parent's on<Name> handler if present; returns
+                                            whether one ran; no-op (false) when no listener/parent */ }
+export function eventPropName(name) { /* "save" → "onSave"; the codegen's @name→onName mapping */ }
+
+// --- provide / inject: DI down the tree (c-provide) --------------------------
+// Walks the childCtx.parent chain that mountChild links. Nearest ancestor wins
+// (shadowing); string or Symbol keys; inject returns a default when unprovided.
+export function provide(c, key, value) { /* register key→value on c._provides (a Map) */ }
+export function inject(c, key, def) { /* resolve from the nearest ancestor that provided key, else def */ }
+export function hasInjection(c, key) { /* whether any ancestor provides key (provided-undefined vs absent) */ }
+
+// --- transitions (c-transition) ---------------------------------------------
+// CSS-class enter/leave choreography composing with a block's insert/remove:
+//   enter: +n-enter-from +n-enter-active → (raf) −n-enter-from +n-enter-to →
+//          (transitionend/timeout) −n-enter-active −n-enter-to
+//   leave: symmetric; the node is removed only after the leave phase finishes.
+// Degrades to immediate insert/remove outside a browser (no requestAnimationFrame),
+// with the class sequence still applied synchronously.
+export function withTransition(opts) { /* { name, duration? } → { enter(nodes, insert),
+                                          leave(nodes, remove) } wrapping a block's insert/remove */ }
+export function runPhase(el, base, phase, opts, done) { /* one enter|leave class phase on one element */ }
+
+// --- keep-alive: instance caching (c-keepalive) -----------------------------
+// keepAlive({ max? }).show(c, anchor, key, factory, props) caches mountChild
+// instances by key: switching away DEACTIVATES (detach nodes, keep ctx + reactive
+// state) instead of destroying; switching back ACTIVATES (re-attach, no rebuild).
+// LRU `max`; overflow/destroy() is the only path that fires onDestroy. Activation
+// fires onActivated, deactivation onDeactivated.
+export function keepAlive(opts) { /* → { show(c,anchor,key,factory,props), has(key), size, destroy() } */ }
 ```
 
 No signal-tracking stack, no VDOM, no per-node effect objects.
@@ -305,6 +362,7 @@ No signal-tracking stack, no VDOM, no per-node effect objects.
 | `:if` / `:elseif` / `:else` | one `ifBlock` chain per cascade, anchored; branch built by its own `innerHTML` when shown |
 | `:for="n of items"` | `forBlock`; **initial render = one `innerHTML` of the concatenated items**, updates = keyed diff |
 | `<Child :p="e"/>` | `mountChild(c, anchor, Child, { p: () => e, static: "x" })` at an anchor; reactive props are getters, static props are values (see below) |
+| `<Child @save="h($event)"/>` | an `onSave: ($event) => h($event)` entry on the mountChild props object; the child raises it with `emit(c, "save", payload)` (§5, c-emits). `@save-all` → `onSaveAll` (camel-cased). Handler runs in the parent; it does not auto-mark the parent dirty |
 | `@input name:type = v` | `const name = prop(c, "name", i, props.name, v)` at the top of `setup` — every prop is a reactive box (see below) |
 | `:class="e"` | `setClass(el, "<static class>", e)` — `e` is `string \| { cls: bool } \| array` (nested), normalized and merged with the static `class` attr (`normClass`) |
 | `:style="e"` | `setStyle(el, "<static style>", e)` — `e` is `string \| { camelCaseProp: v }` (arrays merge), camelCase → kebab, merged with the static `style` attr (`normStyle`) |

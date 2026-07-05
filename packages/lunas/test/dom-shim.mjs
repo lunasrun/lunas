@@ -20,6 +20,34 @@ class FakeNode {
     this.attributes = {};
     this._listeners = {};
     this._props = {}; // IDL properties set via `el.value = …` etc.
+    this._classes = new Set(); // backs classList
+  }
+  // Minimal classList (add/remove/contains) for transition class sequencing.
+  get classList() {
+    const set = this._classes;
+    const self = this;
+    return {
+      add: (...cs) => {
+        for (const c of cs) set.add(c);
+        self.attributes.class = Array.from(set).join(" ");
+      },
+      remove: (...cs) => {
+        for (const c of cs) set.delete(c);
+        self.attributes.class = Array.from(set).join(" ");
+      },
+      contains: (c) => set.has(c),
+      toArray: () => Array.from(set),
+    };
+  }
+  // isConnected: reachable from a node flagged `_lunasAttached` (attach() sets
+  // it on a mounted root), matching the runtime's liveness fallback.
+  get isConnected() {
+    let n = this;
+    while (n) {
+      if (n._lunasAttached) return true;
+      n = n.parentNode;
+    }
+    return false;
   }
   insertBefore(n, ref) {
     if (ref !== null && ref !== undefined && ref.parentNode !== this) {
@@ -72,8 +100,18 @@ class FakeNode {
   addEventListener(ev, fn) {
     (this._listeners[ev] || (this._listeners[ev] = [])).push(fn);
   }
-  dispatch(ev) {
-    for (const fn of this._listeners[ev] || []) fn({ type: ev });
+  removeEventListener(ev, fn) {
+    const ls = this._listeners[ev];
+    if (ls) {
+      const i = ls.indexOf(fn);
+      if (i >= 0) ls.splice(i, 1);
+    }
+  }
+  // dispatch(name) fires listeners with a { type, target } event, so
+  // transitionend handlers that check `ev.target === el` work.
+  dispatch(ev, detail) {
+    const event = Object.assign({ type: ev, target: this }, detail);
+    for (const fn of (this._listeners[ev] || []).slice()) fn(event);
   }
   // IDL-property reflection so `el.value`, `el.checked`, `el.disabled` behave.
   get value() {
