@@ -1,0 +1,4 @@
+html:
+    <p>${arr.length}</p>
+script:
+    let arr = new Array(1000).fill(0)

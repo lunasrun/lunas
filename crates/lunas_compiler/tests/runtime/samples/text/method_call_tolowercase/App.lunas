@@ -1,0 +1,4 @@
+html:
+    <p>${name.toLowerCase()}</p>
+script:
+    let name = "WORLD"

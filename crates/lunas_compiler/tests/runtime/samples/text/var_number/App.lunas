@@ -1,0 +1,4 @@
+html:
+    <p>${count}</p>
+script:
+    let count = 10

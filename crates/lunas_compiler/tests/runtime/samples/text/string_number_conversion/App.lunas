@@ -1,0 +1,4 @@
+html:
+    <p>${String(n)}</p>
+script:
+    let n = 42

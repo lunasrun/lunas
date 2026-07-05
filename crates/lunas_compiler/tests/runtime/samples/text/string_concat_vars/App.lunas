@@ -1,0 +1,5 @@
+html:
+    <p>${first + " " + last}</p>
+script:
+    let first = "John"
+    let last = "Doe"

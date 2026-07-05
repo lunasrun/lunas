@@ -1,0 +1,4 @@
+html:
+    <p>${count >= 3}</p>
+script:
+    let count = 5

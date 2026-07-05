@@ -1,0 +1,4 @@
+html:
+    <p>${user?.address?.city}</p>
+script:
+    let user = { address: null }

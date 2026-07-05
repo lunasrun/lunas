@@ -1,0 +1,4 @@
+html:
+    <p>${name.length}</p>
+script:
+    let name = "hello"

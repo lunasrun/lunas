@@ -1,0 +1,5 @@
+html:
+    <p>${a && b}</p>
+script:
+    let a = "left"
+    let b = "right"

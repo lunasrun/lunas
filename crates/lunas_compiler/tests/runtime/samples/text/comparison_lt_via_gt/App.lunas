@@ -1,0 +1,5 @@
+html:
+    <p>${b > a}</p>
+script:
+    let a = 5
+    let b = 3

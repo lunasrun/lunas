@@ -1,0 +1,5 @@
+html:
+    <button @click="toggle()">${on}</button>
+script:
+    let on = false
+    function toggle(){ on = !on }

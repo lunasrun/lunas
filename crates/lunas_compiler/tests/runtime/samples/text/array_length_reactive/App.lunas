@@ -1,0 +1,5 @@
+html:
+    <div><button @click="add()">add</button><p>${items.length}</p></div>
+script:
+    let items = []
+    function add(){ items = [...items, items.length] }

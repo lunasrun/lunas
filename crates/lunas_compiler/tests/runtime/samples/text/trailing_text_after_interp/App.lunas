@@ -1,0 +1,4 @@
+html:
+    <p>${name}, welcome</p>
+script:
+    let name = "Ann"

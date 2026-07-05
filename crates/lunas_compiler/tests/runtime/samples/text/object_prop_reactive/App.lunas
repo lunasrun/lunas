@@ -1,0 +1,5 @@
+html:
+    <div><button @click="rename()">go</button><p>${user.name}</p></div>
+script:
+    let user = { name: "A" }
+    function rename(){ user = { name: "B" } }

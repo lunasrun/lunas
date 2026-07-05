@@ -1,0 +1,5 @@
+html:
+    <div><p>${a}</p><span>${b}</span></div>
+script:
+    let a = "one"
+    let b = "two"

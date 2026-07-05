@@ -1,0 +1,4 @@
+html:
+    <p>${msg}</p>
+script:
+    let msg = "1 < 2 and 3 > 2"

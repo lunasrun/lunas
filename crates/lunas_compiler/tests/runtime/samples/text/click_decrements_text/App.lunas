@@ -1,0 +1,5 @@
+html:
+    <button @click="dec()">count: ${count}</button>
+script:
+    let count = 5
+    function dec(){ count-- }

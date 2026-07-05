@@ -1,0 +1,4 @@
+html:
+    <p>${items.length}</p>
+script:
+    let items = ["a", "b", "c"]

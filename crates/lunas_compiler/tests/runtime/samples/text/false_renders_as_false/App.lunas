@@ -1,0 +1,4 @@
+html:
+    <p>${val}</p>
+script:
+    let val = false

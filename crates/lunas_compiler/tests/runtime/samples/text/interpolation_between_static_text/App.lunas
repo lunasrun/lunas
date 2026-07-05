@@ -1,0 +1,4 @@
+html:
+    <p>before ${mid} after</p>
+script:
+    let mid = "MIDDLE"

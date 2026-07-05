@@ -1,0 +1,2 @@
+html:
+    <p>${"it's fine"}</p>

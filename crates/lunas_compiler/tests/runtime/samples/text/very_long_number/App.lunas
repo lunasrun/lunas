@@ -1,0 +1,4 @@
+html:
+    <p>${bigNum}</p>
+script:
+    let bigNum = 123456789012345
