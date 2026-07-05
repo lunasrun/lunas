@@ -645,6 +645,7 @@ dependencies = [
  "lunas_parser",
  "lunas_script",
  "lunas_span",
+ "serde_json",
 ]
 
 [[package]]

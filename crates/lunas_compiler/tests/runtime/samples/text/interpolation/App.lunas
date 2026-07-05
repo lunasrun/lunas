@@ -1,0 +1,4 @@
+html:
+    <p>hello ${name}!</p>
+script:
+    let name = "world"

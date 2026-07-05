@@ -1,0 +1,4 @@
+html:
+    <div><input ::value="name"><input :value="name"></div>
+script:
+    let name = "x"

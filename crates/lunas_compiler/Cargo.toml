@@ -10,3 +10,8 @@ repository = "https://github.com/lunasrun/lunas"
 lunas_span = { path = "../lunas_span" }
 lunas_parser = { path = "../lunas_parser" }
 lunas_script = { path = "../lunas_script" }
+
+[dev-dependencies]
+# Used only by the sample-directory E2E runner (tests/runtime_samples.rs) to
+# read `_config.json` and build/parse the node driver's manifest + results.
+serde_json = "1.0.140"

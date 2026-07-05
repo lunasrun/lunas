@@ -25,6 +25,15 @@ jobs:
           rustup show active-toolchain || rustup toolchain install
           rustup component add rustfmt clippy
 
+      # Node is needed so the sample-directory E2E runner
+      # (tests/runtime_samples.rs) actually executes here instead of skipping.
+      # setup-node puts `node` on PATH; the runner picks it up via its PATH
+      # fallback when the pinned local path and $LUNAS_NODE are absent.
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
       - name: Cache cargo registry and target
         uses: actions/cache@v4
         with:
@@ -41,8 +50,22 @@ jobs:
       - name: Clippy
         run: cargo clippy --all-targets -- -D warnings
 
+      # `cargo test --all` includes the sample runner; with node on PATH it runs
+      # for real (rather than skipping) alongside the rest of the suite.
       - name: Test
         run: cargo test --all
+
+      # Belt-and-suspenders: run the sample E2E suite explicitly so a regression
+      # in it is a named, obvious CI failure, and to fail loudly if it ever
+      # *skips* (node genuinely missing) rather than silently passing.
+      - name: Sample-directory E2E runner
+        run: |
+          out="$(cargo test -p lunas_compiler --test runtime_samples -- --nocapture 2>&1)"
+          echo "$out"
+          if echo "$out" | grep -q "skipping runtime_samples: no node found"; then
+            echo "::error::sample runner skipped — node was not detected in CI"
+            exit 1
+          fi
 
   wasm:
     name: wasm32 build

@@ -1,0 +1,12 @@
+html:
+    <div>
+        <button @click="push3()">p</button>
+        <button @click="drop2()">d</button>
+        <button @click="reorder()">r</button>
+        <ul><li :for="item of items" :key="item.id">${item.label}</li></ul>
+    </div>
+script:
+    let items = [{id:1,label:"a"},{id:2,label:"b"}]
+    function push3(){ items.push({id:3,label:"c"}) }
+    function drop2(){ items.splice(1, 1) }
+    function reorder(){ items = [items[1], items[0]] }
