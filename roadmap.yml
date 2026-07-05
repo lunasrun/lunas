@@ -108,7 +108,7 @@ tree:
         - { id: a-store, title: "Global state / stores", status: done }
     - id: tooling
       title: Tooling
-      status: todo
+      status: done
       children:
-        - { id: to-plugin, title: "Bundler plugin (Vite)", status: todo }
-        - { id: to-cli, title: "Project scaffolding CLI", status: todo }
+        - { id: to-plugin, title: "Bundler plugin (Vite)", status: done }
+        - { id: to-cli, title: "Project scaffolding CLI", status: done }
