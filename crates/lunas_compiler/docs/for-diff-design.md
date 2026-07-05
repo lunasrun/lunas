@@ -235,6 +235,17 @@ handle.scope = scope;                 // { subs: [...], children: [...] }
   then recurse into child scopes (nested `:if`/`:for` items). A queued-but-
   dropped record is skipped at flush via its `q`/alive flag, so removal during
   a pending flush is safe.
+  - **Child components in an item**: a `<Child/>` mounted inside the item body
+    calls `mountChild(c, …)` with the enclosing component context `c` (not the
+    item datum). Because a scope is open when the item is built, `mountChild`
+    registers the child's `unmount` as a **disposer** on that item scope
+    (`scope.disposers`); `dropScope` runs disposers after unbinding, so removing
+    the item unmounts the child — its `onDestroy` fires and it is unlinked from
+    `c._children`. Without this, removed items would leak child contexts on the
+    parent's `_children` list even though their DOM was gone. mountChild also
+    hardens the link write: it never sets `_children` on a non-object `c`, so a
+    primitive slipping through can never throw "Cannot create property
+    '_children' on number" (never-panic).
 - **Move**: no scope work at all — registration is per-component, not
   per-position.
 - **Patch**: the item's data cell is a per-item slot (`handle.data` or an

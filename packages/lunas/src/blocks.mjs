@@ -19,6 +19,7 @@ import {
   endScope,
   dropScope,
   runScope,
+  addDisposer,
 } from "./core.mjs";
 import { createForState, seedForState, reconcile, extractKeys } from "./for_diff.mjs";
 import { isLive, runMount, runDestroy, onDestroy } from "./lifecycle.mjs";
@@ -375,13 +376,43 @@ export function mountChild(c, anchor, childFactory, props) {
   const p = anchor.parentNode;
   for (const n of nodes) p.insertBefore(n, anchor);
   const childCtx = root && root.__lunasCtx;
+  // Guard the `_children` link: only a real context object can carry it. If the
+  // caller passes a non-object `c` (a primitive :for item slipping through, a
+  // bad handle), we still mount and drive the child — we just skip the parent
+  // link rather than throwing "Cannot create property '_children' on number".
+  const canLink = childCtx && c != null && (typeof c === "object" || typeof c === "function");
   if (childCtx) {
-    childCtx.parent = c;
-    (c._children || (c._children = [])).push(childCtx);
+    if (canLink) {
+      childCtx.parent = c;
+      (c._children || (c._children = [])).push(childCtx);
+    }
     // If the child landed in a live tree, fire its mount hooks now; otherwise a
     // later attach() on an ancestor drains them.
     if (isLive(root)) runMount(childCtx);
   }
+
+  let unmounted = false;
+  const unmount = () => {
+    if (unmounted) return;
+    unmounted = true;
+    if (childCtx) {
+      runDestroy(childCtx);
+      const kids = canLink ? c._children : null;
+      if (kids) {
+        const k = kids.indexOf(childCtx);
+        if (k >= 0) kids.splice(k, 1);
+      }
+    }
+    // Multi-root children remove every node of the group.
+    for (const n of nodes) n.remove();
+  };
+
+  // Tie the child's teardown to the enclosing control-flow scope (a `:for`/`:if`
+  // item), if any: when that item is removed, dropScope runs this and the child
+  // is unmounted (onDestroy fires, `_children` link cleared). A top-level mount
+  // has no open scope; the caller owns unmount via the returned handle.
+  addDisposer(c, unmount);
+
   return {
     root,
     ctx: childCtx,
@@ -390,18 +421,7 @@ export function mountChild(c, anchor, childFactory, props) {
       const b = boxes && boxes[name];
       if (b) b.v = value;
     },
-    unmount() {
-      if (childCtx) {
-        runDestroy(childCtx);
-        const kids = c._children;
-        if (kids) {
-          const k = kids.indexOf(childCtx);
-          if (k >= 0) kids.splice(k, 1);
-        }
-      }
-      // Multi-root children remove every node of the group.
-      for (const n of nodes) n.remove();
-    },
+    unmount,
   };
 }
 
