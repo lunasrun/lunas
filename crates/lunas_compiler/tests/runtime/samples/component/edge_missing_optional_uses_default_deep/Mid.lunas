@@ -1,0 +1,4 @@
+@use Leaf from "./Leaf.lunas"
+@input tag:string = "midDef"
+html:
+    <section><Leaf/></section>

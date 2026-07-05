@@ -1,0 +1,3 @@
+@input w:number = 0
+html:
+    <b>${w}</b>

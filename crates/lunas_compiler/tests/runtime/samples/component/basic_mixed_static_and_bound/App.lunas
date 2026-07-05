@@ -1,0 +1,5 @@
+@use Child from "./Child.lunas"
+html:
+    <div><Child kind="lead" :count="n"/></div>
+script:
+    let n = 9

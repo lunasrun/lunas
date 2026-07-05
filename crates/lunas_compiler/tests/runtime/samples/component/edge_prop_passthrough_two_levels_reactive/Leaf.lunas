@@ -1,0 +1,3 @@
+@input msg:string = ""
+html:
+    <b>${msg}</b>

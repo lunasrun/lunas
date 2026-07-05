@@ -1,0 +1,6 @@
+@use Item from "./Item.lunas"
+html:
+    <div><button @click="add()">p</button><ul><li :for="it of items" :key="it.id"><Item :label="it.label"/></li></ul></div>
+script:
+    let items = [{id:1,label:"a"}]
+    function add(){ items.push({id: items.length + 1, label: "x"}) }

@@ -1,0 +1,3 @@
+@use Clock from "./Clock.lunas"
+html:
+    <div><Clock/></div>

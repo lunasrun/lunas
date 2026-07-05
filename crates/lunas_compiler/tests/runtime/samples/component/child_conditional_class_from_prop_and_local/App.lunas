@@ -1,0 +1,5 @@
+@use Child from "./Child.lunas"
+html:
+    <div><Child :featured="f"/></div>
+script:
+    let f = true

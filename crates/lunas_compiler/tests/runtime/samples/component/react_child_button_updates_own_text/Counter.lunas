@@ -1,0 +1,6 @@
+@input start:number = 0
+html:
+    <button @click="inc()">count: ${value}</button>
+script:
+    let value = start
+    function inc(){ value++ }

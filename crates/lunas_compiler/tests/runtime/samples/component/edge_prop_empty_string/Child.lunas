@@ -1,0 +1,3 @@
+@input label:string = "def"
+html:
+    <span>[${label}]</span>

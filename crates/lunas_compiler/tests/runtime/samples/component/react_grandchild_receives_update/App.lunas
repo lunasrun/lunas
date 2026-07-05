@@ -1,0 +1,6 @@
+@use Child from "./Child.lunas"
+html:
+    <div><button @click="inc()">p</button><Child :v="n"/></div>
+script:
+    let n = 1
+    function inc(){ n++ }

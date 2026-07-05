@@ -1,0 +1,3 @@
+@input title:string = ""
+html:
+    <section class="panel"><header>${title}</header><main>content</main></section>

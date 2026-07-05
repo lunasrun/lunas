@@ -1,0 +1,3 @@
+@input name:string = ""
+html:
+    <span>hi ${name}</span>

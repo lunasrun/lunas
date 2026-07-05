@@ -1,0 +1,5 @@
+@use Child from "./Child.lunas"
+html:
+    <div><Child :url="link"/></div>
+script:
+    let link = "/home"

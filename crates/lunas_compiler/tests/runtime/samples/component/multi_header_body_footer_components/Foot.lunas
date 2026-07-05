@@ -1,0 +1,3 @@
+@input note:string = ""
+html:
+    <footer>${note}</footer>

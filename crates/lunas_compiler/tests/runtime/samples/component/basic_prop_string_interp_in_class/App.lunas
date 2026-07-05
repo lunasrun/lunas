@@ -1,0 +1,5 @@
+@use Child from "./Child.lunas"
+html:
+    <div><Child :tone="t"/></div>
+script:
+    let t = "warn"

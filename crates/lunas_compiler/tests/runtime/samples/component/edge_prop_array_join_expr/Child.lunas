@@ -1,0 +1,3 @@
+@input csv:string = ""
+html:
+    <span>${csv}</span>

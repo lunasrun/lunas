@@ -1,0 +1,7 @@
+@use Head from "./Head.lunas"
+@use Body from "./Body.lunas"
+html:
+    <div><Head :title="t"/><Body :text="b"/></div>
+script:
+    let t = "Title"
+    let b = "Body text"

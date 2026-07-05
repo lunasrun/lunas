@@ -1,0 +1,6 @@
+@use Child from "./Child.lunas"
+html:
+    <div><Child :count="a * b + 1"/></div>
+script:
+    let a = 3
+    let b = 4

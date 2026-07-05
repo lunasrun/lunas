@@ -1,0 +1,6 @@
+@use Link from "./Link.lunas"
+html:
+    <div><Link :href="url" :text="label"/></div>
+script:
+    let url = "/docs"
+    let label = "Docs"

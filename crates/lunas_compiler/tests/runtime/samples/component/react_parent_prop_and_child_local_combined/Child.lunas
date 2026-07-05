@@ -1,0 +1,6 @@
+@input base:number = 0
+html:
+    <button @click="add()">go</button><span>${base + extra}</span>
+script:
+    let extra = 0
+    function add(){ extra = extra + 5 }

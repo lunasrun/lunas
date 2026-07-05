@@ -1,0 +1,5 @@
+@use L1 from "./L1.lunas"
+html:
+    <div><L1 :v="n"/></div>
+script:
+    let n = 1

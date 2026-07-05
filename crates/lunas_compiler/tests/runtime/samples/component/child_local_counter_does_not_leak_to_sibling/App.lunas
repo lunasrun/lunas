@@ -1,0 +1,3 @@
+@use Counter from "./Counter.lunas"
+html:
+    <div><Counter/><Counter/></div>

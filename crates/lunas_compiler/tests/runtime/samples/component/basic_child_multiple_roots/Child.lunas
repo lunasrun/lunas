@@ -1,0 +1,4 @@
+@input a:string = ""
+@input b:string = ""
+html:
+    <span>${a}</span><span>${b}</span>

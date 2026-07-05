@@ -1,0 +1,3 @@
+@use Mid from "./Mid.lunas"
+html:
+    <div><Mid/></div>

@@ -1,0 +1,3 @@
+@input doubled:number = 0
+html:
+    <span>${doubled}</span>

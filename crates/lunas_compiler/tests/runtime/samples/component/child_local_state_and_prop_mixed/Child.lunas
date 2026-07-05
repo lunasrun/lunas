@@ -1,0 +1,5 @@
+@input prefix:string = ""
+html:
+    <span>${prefix}-${suffix}</span>
+script:
+    let suffix = "S"

@@ -1,0 +1,5 @@
+@use Child from "./Child.lunas"
+html:
+    <div><Child :tag="label"/></div>
+script:
+    let label = "hi"

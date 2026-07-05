@@ -1,0 +1,3 @@
+@input tag:string = "leafDef"
+html:
+    <b>${tag}</b>

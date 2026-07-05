@@ -1,0 +1,3 @@
+@input value:number = 0
+html:
+    <span>n:${value}</span>

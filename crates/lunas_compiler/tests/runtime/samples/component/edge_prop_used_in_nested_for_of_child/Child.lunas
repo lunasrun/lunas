@@ -1,0 +1,3 @@
+@input rows:array = []
+html:
+    <div :for="row of rows" :key="row" class="r"><b :for="c of row" :key="c">${c}</b></div>

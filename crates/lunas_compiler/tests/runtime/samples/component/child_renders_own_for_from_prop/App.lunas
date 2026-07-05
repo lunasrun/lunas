@@ -1,0 +1,5 @@
+@use Child from "./Child.lunas"
+html:
+    <div><Child :items="list"/></div>
+script:
+    let list = ["x", "y", "z"]

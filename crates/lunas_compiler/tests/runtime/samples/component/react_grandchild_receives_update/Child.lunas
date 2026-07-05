@@ -1,0 +1,4 @@
+@use Grand from "./Grand.lunas"
+@input v:number = 0
+html:
+    <section><Grand :w="v"/></section>

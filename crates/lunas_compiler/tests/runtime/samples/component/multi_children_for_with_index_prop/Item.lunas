@@ -1,0 +1,4 @@
+@input label:string = ""
+@input n:number = 0
+html:
+    <span>${n}=${label}</span>

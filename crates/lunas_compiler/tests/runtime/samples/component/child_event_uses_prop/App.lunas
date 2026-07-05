@@ -1,0 +1,5 @@
+@use Child from "./Child.lunas"
+html:
+    <div><Child :step="s"/></div>
+script:
+    let s = 3

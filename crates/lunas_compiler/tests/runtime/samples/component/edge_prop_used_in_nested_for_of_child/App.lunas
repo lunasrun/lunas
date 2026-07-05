@@ -1,0 +1,5 @@
+@use Child from "./Child.lunas"
+html:
+    <div><Child :rows="data"/></div>
+script:
+    let data = [[1,2],[3,4]]

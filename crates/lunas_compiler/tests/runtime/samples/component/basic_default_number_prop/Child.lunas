@@ -1,0 +1,3 @@
+@input count:number = 100
+html:
+    <span>${count}</span>
