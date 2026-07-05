@@ -27,6 +27,20 @@ export function ifBlock(
   make: () => BlockNodes
 ): BlockHandle;
 
+/**
+ * ifChain(c, anchor, deps, which, makes) — one :if/:elseif/:else cascade at a
+ * single permanent anchor. `which()` returns the index of the branch that
+ * should be shown, or -1 for "no branch". Exactly one branch is alive at a
+ * time; switching tears the old branch down and builds the new one.
+ */
+export function ifChain(
+  c: Context,
+  anchor: Node,
+  deps: number[],
+  which: () => number,
+  makes: Array<() => BlockNodes>
+): BlockHandle;
+
 /** Options for forBlock; all fields besides `make` are optional. */
 export interface ForBlockOpts<T = unknown> {
   /** Build one item; returns node or node array. */
@@ -75,3 +89,77 @@ export function mountChild<P = Record<string, unknown>>(
   childFactory: ChildFactory<P>,
   props?: P
 ): MountedChild;
+
+/**
+ * dynamicBlock(c, anchor, deps, factoryOf, props) — dynamic component
+ * (`:is`). `factoryOf()` returns the current child factory, or a falsy value
+ * for "render nothing". Whenever the factory identity changes, the old child
+ * is unmounted and the new one is mounted at the same anchor via mountChild.
+ */
+export interface DynamicBlockHandle<P = Record<string, unknown>> {
+  readonly handle: MountedChild | null;
+  update(): void;
+  setProp(name: string, value: unknown): void;
+  destroy(): void;
+}
+export function dynamicBlock<P = Record<string, unknown>>(
+  c: Context,
+  anchor: Node,
+  deps: number[],
+  factoryOf: () => ChildFactory<P> | null | undefined | false,
+  props?: P
+): DynamicBlockHandle<P>;
+
+/**
+ * teleportBlock(c, anchor, targetOf, build) — teleport/portal. `build()`
+ * returns the content node(s) (like an :if branch make()). `targetOf()`
+ * resolves the mount target: a selector string or an Element. The content is
+ * inserted into the target instead of inline at `anchor`.
+ */
+export interface TeleportHandle {
+  nodes: Node[];
+  destroy(): void;
+}
+export function teleportBlock(
+  c: Context,
+  anchor: Node,
+  targetOf: () => string | Element | null | undefined,
+  build: () => BlockNodes
+): TeleportHandle;
+
+/** onCleanup registrar passed to a parent-provided slot content factory. */
+export type SlotOnCleanup = (fn: () => void) => void;
+
+/** The parent-provided factory for a slot's content. */
+export type SlotFactory<S = unknown> = (
+  slotProps: S | undefined,
+  onCleanup: SlotOnCleanup
+) => BlockNodes | null | undefined;
+
+/**
+ * slotBlock(childCtx, anchor, factory, fallback, slotPropsOf) — render slot
+ * content at a `<slot>` anchor inside a CHILD component. `factory` is the
+ * parent-provided slot content factory (wired against the parent's
+ * context); `fallback` is the child's own fallback, shown only when
+ * `factory` is absent.
+ */
+export function slotBlock<S = unknown>(
+  childCtx: Context,
+  anchor: Node,
+  factory: SlotFactory<S> | null | undefined,
+  fallback: ((slotProps: S | undefined) => BlockNodes) | null | undefined,
+  slotPropsOf?: () => S
+): { nodes: Node[] };
+
+/**
+ * slotContent(parentCtx, build, slotProps, onCleanup) — build the PARENT
+ * half of a slot factory. Opens a fresh scope on the parent context, runs
+ * `build(slotProps)` to create and wire the content against the parent, and
+ * registers the scope's teardown through `onCleanup`.
+ */
+export function slotContent<S = unknown>(
+  parentCtx: Context,
+  build: (slotProps: S | undefined) => BlockNodes,
+  slotProps: S | undefined,
+  onCleanup: SlotOnCleanup
+): BlockNodes;

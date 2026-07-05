@@ -96,3 +96,11 @@ export function endScope(c: Context): void;
  * nested child scopes) and detach `scope` from its parent.
  */
 export function dropScope(c: Context, scope: Scope): void;
+
+/**
+ * Re-run every live bind registered in `scope` and its child scopes
+ * (nested blocks' content). Used by forBlock's patch path: after an item's
+ * data cell is updated, re-running the item's scope refreshes every
+ * item-local bind, including nested ifBlock/forBlock binds.
+ */
+export function runScope(c: Context, scope: Scope): void;
