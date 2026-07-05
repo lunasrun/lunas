@@ -263,12 +263,29 @@ export function forBlock(c, anchor, deps, items, opts) {
 }
 
 // mountChild(c, anchor, childFactory, props) — instantiate a child component
-// and insert its root before the anchor. Returns { root, unmount }.
+// and insert its root before the anchor (output-design.md §6).
+//
+// `props` seeds the child once: static props are plain values; reactive props
+// are getter functions (`{ p: () => expr }`) invoked once at construction to
+// seed the child's reactive prop box. The parent keeps a reactive prop live by
+// calling the returned handle's `setProp(name, value)` inside its own bind —
+// that writes the child's `_props[name]` box, so the child's own template
+// binds react. The two contexts are independent (§6): pushing a prop marks the
+// CHILD dirty, a child event marks only the child.
+//
+// Returns a handle: { root, ctx, setProp(name, value), unmount() }.
 export function mountChild(c, anchor, childFactory, props) {
   const root = childFactory(props);
   anchor.parentNode.insertBefore(root, anchor);
+  const childCtx = root && root.__lunasCtx;
   return {
     root,
+    ctx: childCtx,
+    setProp(name, value) {
+      const boxes = childCtx && childCtx._props;
+      const b = boxes && boxes[name];
+      if (b) b.v = value;
+    },
     unmount() {
       root.remove();
     },

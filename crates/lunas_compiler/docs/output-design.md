@@ -168,6 +168,10 @@ export function box(c, i, v) {               // reassign-only var at reactive in
   return { get v() { return v; }, set v(x) { if (x !== v) { v = x; markVar(c, i); } } };
 }
 export function deepBox(c, i, v) { /* Proxy wrapping arrays/objects; markVar(c,i) on mutation */ }
+export function prop(c, name, i, raw, def, deep) { /* adopt an @input prop as a reactive box at index
+                                                      i; seed from raw (getter or value) or def;
+                                                      register under c._props[name] for the parent's
+                                                      mountChild.setProp bridge (§6) */ }
 
 // --- derived values, watchers, batching (compile-time deps, no auto-tracking) ---
 export function computed(c, i, deps, fn) { /* lazy derived value at index i reading `deps`;
@@ -197,7 +201,10 @@ export const on = (el, ev, fn) => el.addEventListener(ev, fn);
 // --- control flow (anchors are runtime text nodes) ---
 export function ifBlock(c, before, deps, cond, make) { /* insert/remove make() at a text anchor */ }
 export function forBlock(c, into, deps, items, make) { /* keyed list at a text anchor */ }
-export function mountChild(c, before, Child, props) { /* Child(props) inserted at a text anchor */ }
+export function mountChild(c, before, Child, props) { /* Child(props) inserted at a text anchor;
+                                                          returns { root, ctx, setProp(name,value),
+                                                          unmount() } — setProp drives a reactive
+                                                          prop box in the child (§6) */ }
 
 // --- module-level stores (state outside any component; §4's "shared" concept
 //     generalized to N components importing the same module, instead of one
@@ -274,8 +281,54 @@ No signal-tracking stack, no VDOM, no per-node effect objects.
 | static `class="a ${x}"` | text nodes / attr set; interpolations become `bind`s |
 | `:if` / `:elseif` / `:else` | one `ifBlock` chain per cascade, anchored; branch built by its own `innerHTML` when shown |
 | `:for="n of items"` | `forBlock`; **initial render = one `innerHTML` of the concatenated items**, updates = keyed diff |
-| `<Child :p="e"/>` | `mountChild` at an anchor; `p` passed as a getter so the child can `bind` to it |
-| `@input name:type = v` | `props.name ?? v` at the top of `setup` |
+| `<Child :p="e"/>` | `mountChild(c, anchor, Child, { p: () => e, static: "x" })` at an anchor; reactive props are getters, static props are values (see below) |
+| `@input name:type = v` | `const name = prop(c, "name", i, props.name, v)` at the top of `setup` — every prop is a reactive box (see below) |
+
+### Child components & props (concretized)
+
+`@input` props are **reactive**: a parent can change a prop after init, so a
+child's template reads of a prop must re-run. The generator numbers each prop as
+a reactive variable (after the script's reactive vars) and adopts it with the
+`prop` helper:
+
+```js
+const name = prop(c, "name", i, props.name, defaultExpr /*, deep */);
+```
+
+`prop` seeds the box from `props.name` (calling it if the parent passed a getter,
+else using the value), or from `defaultExpr` when the prop is omitted. It
+registers the box under its name in `c._props` so a parent can drive it. The
+optional `deep` flag selects a `deepBox` when the child deeply mutates the prop
+locally.
+
+The **parent** mounts a child and drives its reactive props:
+
+```js
+const a0 = anchorBefore(hostNode.childNodes[k]);
+const ch0 = mountChild(c, a0, Child, { p: () => e, static: "x" });
+bind(c, [deps of e], () => ch0.setProp("p", e));   // one per reactive prop
+```
+
+- **Reactive props** (`:p="e"`, or a static value with an interpolation) are
+  passed as **getters** in the initial object (so the child seeds correctly at
+  construction) *and* driven by a parent-side `bind` that calls
+  `ch0.setProp("p", e)` on the expression's compile-time deps. The bind's initial
+  run re-seeds the same value (the box no-ops on an equal write). Inside a `:for`
+  item the driving bind is item-coupled (`bind(c, [], …)`), so `runScope`
+  refreshes it when the item's data changes.
+- **Static props** (`static="x"`, valueless `flag` → `true`) are plain values in
+  the initial object; no driving bind is emitted.
+- `mountChild` returns `{ root, ctx, setProp(name, value), unmount() }`.
+  `setProp` writes `child._props[name].v`, which marks the **child** dirty and
+  flushes the child. The two contexts are independent: a child event marks only
+  the child, a parent prop push marks only the child — parent and child never
+  cross-contaminate reactive state.
+
+Child modules are imported from the `@use` table: `import Child from "path"`
+with the path written verbatim (extension handling is the module resolver's
+job — the compiler does not rewrite it). Only components actually used in the
+template are imported; a colliding tag name (e.g. a component literally named
+`bind`) is imported under a `$`-suffixed alias.
 
 ---
 

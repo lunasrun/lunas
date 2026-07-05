@@ -43,8 +43,13 @@ fn reactive_var_is_mutated_binding() {
     assert!(c.is_reactive("count"));
     // `label` is a const never mutated → not reactive.
     assert!(!c.is_reactive("label"));
-    // `start` is a prop, not a script binding → not numbered here.
-    assert!(!c.is_reactive("start"));
+    // `start` is an `@input` prop: a parent can change it after init, so it is
+    // reactive too, numbered after the script vars.
+    assert!(c.is_reactive("start"));
+    assert!(
+        c.reactive_index("start").unwrap() > c.reactive_index("count").unwrap(),
+        "props are numbered after script reactive vars"
+    );
 }
 
 #[test]

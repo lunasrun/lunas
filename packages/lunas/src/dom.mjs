@@ -16,6 +16,11 @@ export function component(tag, attrs, HTML, setup) {
     for (const k in attrs) root.setAttribute(k, attrs[k]);
     root.innerHTML = HTML; // ★ one native parse, detached
     const c = createContext(root);
+    // Expose the context on the root so a parent's mountChild can push
+    // reactive prop updates into the child's own reactive prop boxes
+    // (output-design.md §6). The two contexts stay separate: a child event
+    // mutates only the child's boxes, never the parent's.
+    root.__lunasCtx = c;
     setup(c, props || {});
     return root;
   };
