@@ -6,13 +6,14 @@
 //! * **Soundness** (holds for *any* input, well-formed or not): every node range
 //!   is within the source bounds and lands on a valid UTF-8 char boundary, so
 //!   `.slice` always succeeds. A rebasing or off-by-one bug trips this even when
-//!   no panic occurs. Asserted by [`assert_sound`].
+//!   no panic occurs.
 //! * **Containment** (parent-child nesting): a child's range sits inside its
-//!   parent's, and an attribute's range inside the open tag. This only holds for
-//!   *well-formed* input — an unterminated open tag (e.g. `<a b="x"` at EOF)
-//!   currently emits an attribute range that runs past the truncated
-//!   `open_tag_range`, so containment is asserted only on the balanced-nesting
-//!   generator, matching `tests/span_invariants.rs`.
+//!   parent's, and an attribute's range inside the open tag. This now holds for
+//!   *any* input, including recovery cases: an unterminated open tag
+//!   (e.g. `<a b="x"` at EOF) extends its `open_tag_range`/element `range` to
+//!   cover all parsed attributes, so parent ⊇ child is maintained everywhere.
+//!
+//! Both are checked together for every fuzz input by [`assert_sound`].
 
 use lunas_html_parser::{parse_html, Element, Node};
 use lunas_span::TextRange;
@@ -22,12 +23,24 @@ fn within(inner: TextRange, outer: TextRange) -> bool {
     outer.start() <= inner.start() && inner.end() <= outer.end()
 }
 
-/// Soundness for one element subtree: in-bounds and on char boundaries.
+/// Soundness *and* containment for one element subtree. Both invariants now
+/// hold for any input (well-formed or recovery), so they are checked together:
+///
+/// * soundness — every range is in-bounds and on a valid char boundary;
+/// * containment — the open tag sits inside the element, every attribute inside
+///   the open tag, every value inside its attribute, and every child inside its
+///   parent.
 fn check_element_sound(el: &Element, file: TextRange, source: &str) {
     assert!(within(el.range, file), "element out of file bounds");
     assert!(
         el.range.slice(source).is_some(),
         "element range off char boundary"
+    );
+    assert!(
+        within(el.open_tag_range, el.range),
+        "open tag not within element: {:?} vs {:?}",
+        el.open_tag_range,
+        el.range
     );
     for attr in &el.attributes {
         assert!(within(attr.range, file), "attr out of file bounds");
@@ -35,44 +48,30 @@ fn check_element_sound(el: &Element, file: TextRange, source: &str) {
             attr.range.slice(source).is_some(),
             "attr range off char boundary"
         );
+        assert!(
+            within(attr.range, el.open_tag_range),
+            "attr {:?} not within open tag {:?} (element {:?})",
+            attr.range,
+            el.open_tag_range,
+            el.name
+        );
         if let Some(vr) = attr.value_range {
             assert!(vr.slice(source).is_some(), "value range off char boundary");
+            assert!(within(vr, attr.range), "value not within attr");
         }
     }
     for child in &el.children {
         assert!(within(child.range(), file), "child out of file bounds");
+        assert!(within(child.range(), el.range), "child escapes parent");
         if let Node::Element(c) = child {
             check_element_sound(c, file, source);
         }
     }
 }
 
-/// Parent-child containment for one element subtree (well-formed input only).
-fn check_element_containment(el: &Element, file: TextRange) {
-    assert!(within(el.range, file), "element out of file bounds");
-    assert!(
-        within(el.open_tag_range, el.range),
-        "open tag not within element"
-    );
-    for attr in &el.attributes {
-        assert!(
-            within(attr.range, el.open_tag_range),
-            "attr not within open tag"
-        );
-        if let Some(vr) = attr.value_range {
-            assert!(within(vr, attr.range), "value not within attr");
-        }
-    }
-    for child in &el.children {
-        assert!(within(child.range(), el.range), "child escapes parent");
-        if let Node::Element(c) = child {
-            check_element_containment(c, file);
-        }
-    }
-}
-
-/// Parse `input`, asserting it neither panics nor violates the always-true
-/// soundness invariant (in-bounds ranges on valid char boundaries).
+/// Parse `input`, asserting it neither panics nor violates the soundness and
+/// span-containment invariants — both of which now hold for *every* input,
+/// including error-recovery cases like an unterminated open tag.
 fn assert_sound(input: &str) {
     let ok = catch_unwind(AssertUnwindSafe(|| {
         let dom = parse_html(input).dom;
@@ -223,13 +222,7 @@ fn balanced_random_nesting_has_no_diagnostics() {
             "unexpected diagnostics on {src:?}: {:?}",
             r.diagnostics
         );
+        // `assert_sound` now checks parent-child containment too.
         assert_sound(&src);
-        // Well-formed: the stronger parent-child containment invariant holds.
-        let file = TextRange::at(0, src.len() as u32);
-        for node in &r.dom.children {
-            if let Node::Element(e) = node {
-                check_element_containment(e, file);
-            }
-        }
     }
 }

@@ -163,6 +163,11 @@ impl<'a> Builder<'a> {
     fn collect_attributes(&mut self) -> (Vec<Attribute>, TextRange, bool) {
         let mut attributes: Vec<Attribute> = Vec::new();
         // Fall back to the previous token's end if the stream ends abruptly.
+        // `end_range` tracks the furthest point the open tag is known to cover.
+        // When the tag is never properly closed (EOF or a stray tag mid-tag),
+        // it must still extend past every attribute we parsed, otherwise the
+        // element's `open_tag_range` would fail to contain its own attributes
+        // and violate the span-containment invariant.
         let mut end_range = self.tokens[self.pos.saturating_sub(1)].range;
 
         while self.pos < self.tokens.len() {
@@ -170,6 +175,8 @@ impl<'a> Builder<'a> {
             match token.kind {
                 TokenKind::Attribute { name, value } => {
                     self.pos += 1;
+                    // An attribute always advances the open tag's known extent.
+                    end_range = token.range;
                     let attr_name = slice_owned(self.source, name);
                     let lowered = attr_name.to_ascii_lowercase();
                     if attributes
@@ -200,6 +207,7 @@ impl<'a> Builder<'a> {
                     return (attributes, end_range, true);
                 }
                 TokenKind::Error => {
+                    end_range = token.range;
                     self.pos += 1;
                 }
                 // Any other token means the open tag was never properly closed

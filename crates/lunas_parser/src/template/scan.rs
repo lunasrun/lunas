@@ -66,6 +66,54 @@ pub(super) fn scan_segments(
     segments
 }
 
+/// Produces a copy of `source` in which the *contents* of every balanced
+/// `${…}` interpolation have their HTML-significant ASCII bytes (`<`, `>`, `"`,
+/// `'`, `&`, `=`) overwritten with `b'x'`. The `${` and `}` delimiters and every
+/// other byte are left untouched, so the copy is byte-for-byte the same length
+/// as `source` — spans computed against it are valid against the original.
+///
+/// This is the layering fix for `<`/`>` inside interpolations: the HTML
+/// tokenizer would otherwise see `${b < a}` and treat `<` as the start of a
+/// tag, splitting the interpolation. By masking those bytes *before*
+/// tokenization, the whole `${…}` stays a single run of text/attribute-value
+/// content; the real (unmasked) source is what the interpolation scanner and
+/// every `Dom` value are ultimately sliced from.
+///
+/// Only single-byte ASCII markup characters are replaced, so multi-byte UTF-8
+/// sequences inside an interpolation are never split. An unterminated `${` masks
+/// nothing (there is no balanced span to protect); the tokenizer and the
+/// interpolation scanner then handle it identically to before. Never panics.
+pub(crate) fn mask_interpolations(source: &str) -> Option<String> {
+    let bytes = source.as_bytes();
+    let mut masked: Option<Vec<u8>> = None;
+    let mut i = 0usize;
+    while i < bytes.len() {
+        if bytes[i] == b'$' && bytes.get(i + 1) == Some(&b'{') {
+            let expr_start = i + 2;
+            if let Some(close) = find_close(bytes, expr_start) {
+                // Mask HTML-significant bytes inside the expression region.
+                for (j, &b) in bytes.iter().enumerate().take(close).skip(expr_start) {
+                    if matches!(b, b'<' | b'>' | b'"' | b'\'' | b'&' | b'=') {
+                        if let Some(slot) = masked.get_or_insert_with(|| bytes.to_vec()).get_mut(j)
+                        {
+                            *slot = b'x';
+                        }
+                    }
+                }
+                i = close + 1;
+                continue;
+            }
+            // Unterminated `${`: nothing balanced to protect; skip past `${`.
+            i = expr_start;
+            continue;
+        }
+        i += 1;
+    }
+    // `masked` is only allocated (and thus `Some`) if a byte actually changed;
+    // by construction it is valid UTF-8 (only ASCII bytes were substituted).
+    masked.map(|v| String::from_utf8(v).unwrap_or_else(|_| source.to_string()))
+}
+
 fn literal_segment(text: &str, base: TextSize, start: usize, end: usize) -> TextSegment {
     TextSegment::Literal {
         text: text[start..end].to_string(),

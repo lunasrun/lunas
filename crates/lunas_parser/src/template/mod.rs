@@ -9,6 +9,8 @@
 mod ir;
 mod scan;
 
+pub(crate) use scan::mask_interpolations;
+
 pub use ir::Interpolation;
 pub use ir::{
     BranchKind, ComponentUse, Expr, ForBlock, ForHeader, IfBranch, IfChain, StaticValue, Template,

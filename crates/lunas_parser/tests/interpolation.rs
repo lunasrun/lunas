@@ -406,6 +406,122 @@ fn literal_segment_ranges_slice_back() {
     }
 }
 
+// --- `<` / `>` inside interpolations (must not be read as HTML tags) ---
+
+#[test]
+fn less_than_inside_interpolation() {
+    assert_eq!(first_interp(&html("<div>${a < b}</div>")), "a < b");
+}
+
+#[test]
+fn greater_than_inside_interpolation() {
+    assert_eq!(first_interp(&html("<div>${a > b}</div>")), "a > b");
+}
+
+#[test]
+fn less_than_or_equal_with_logical_and() {
+    assert_eq!(
+        first_interp(&html("<div>${a <= b && c}</div>")),
+        "a <= b && c"
+    );
+}
+
+#[test]
+fn left_shift_inside_interpolation() {
+    assert_eq!(first_interp(&html("<div>${x << 2}</div>")), "x << 2");
+}
+
+#[test]
+fn both_angle_brackets_in_call_args() {
+    // `f(a<b, c>d)` — two comparisons in one call; neither angle is markup.
+    assert_eq!(
+        first_interp(&html("<div>${f(a<b, c>d)}</div>")),
+        "f(a<b, c>d)"
+    );
+}
+
+#[test]
+fn angle_brackets_inside_string_in_ternary() {
+    // The `"<x>"` string literal inside the interpolation must survive verbatim.
+    assert_eq!(
+        first_interp(&html("<div>${cond ? \"<x>\" : \"\"}</div>")),
+        "cond ? \"<x>\" : \"\""
+    );
+}
+
+#[test]
+fn angle_bracket_operators_produce_no_errors() {
+    for body in [
+        "<div>${a < b}</div>",
+        "<div>${a > b}</div>",
+        "<div>${a <= b && c}</div>",
+        "<div>${x << 2}</div>",
+        "<div>${f(a<b, c>d)}</div>",
+        "<div>${cond ? \"<x>\" : \"\"}</div>",
+    ] {
+        let (_ns, diags) = parse_template(&html(body));
+        assert!(
+            !diags.iter().any(|d| d.is_error()),
+            "unexpected errors for {body:?}: {diags:?}"
+        );
+    }
+}
+
+#[test]
+fn less_than_inside_attribute_interpolation() {
+    // `<` inside an interpolation in a *quoted attribute value* must not close
+    // the value or start a tag either.
+    let ns = nodes_ok(&html("<div title=\"${a < b ? 'x' : 'y'}\"></div>"));
+    let el = first_element(&ns);
+    match &el.attrs[0] {
+        TemplateAttr::Static { value, .. } => {
+            let segs = &value.as_ref().unwrap().segments;
+            assert!(segs.iter().any(
+                |s| matches!(s, TextSegment::Interpolation(i) if i.expr == "a < b ? 'x' : 'y'")
+            ));
+        }
+        other => panic!("got {:?}", other),
+    }
+}
+
+#[test]
+fn interp_with_angle_bracket_ranges_slice_back() {
+    // Span fidelity is preserved by the length-preserving mask: the recorded
+    // expr slices back to the exact original source (with the real `<`).
+    let src = html("<div>${ a < b }</div>");
+    let (file, diags) = parse(&src);
+    assert!(!diags.iter().any(|d| d.is_error()), "{:?}", diags);
+    let ns = file.html.as_ref().unwrap().template.nodes.clone();
+    let el = first_element(&ns);
+    let text = match &el.children[0] {
+        TemplateNode::Text(t) => t,
+        other => panic!("expected text, got {:?}", other),
+    };
+    let interp = text
+        .segments
+        .iter()
+        .find_map(|s| match s {
+            TextSegment::Interpolation(i) => Some(i),
+            _ => None,
+        })
+        .expect("interpolation");
+    assert_eq!(interp.expr_range.slice(&src), Some(interp.expr.as_str()));
+    assert_eq!(interp.expr, " a < b ");
+}
+
+#[test]
+fn static_angle_brackets_outside_interpolation_stay_markup() {
+    // Don't over-correct: a real `<x>` in static text is still tokenized as an
+    // element, not swallowed as interpolation text.
+    let ns = nodes_ok(&html("<div>a <x>b</x> c</div>"));
+    let el = first_element(&ns);
+    // The div has an inner <x> element child (proving `<x>` was markup).
+    assert!(el
+        .children
+        .iter()
+        .any(|c| matches!(c, TemplateNode::Element(e) if e.name == "x")));
+}
+
 // --- Multi-byte / unicode inside interpolations ---
 
 #[test]

@@ -95,7 +95,20 @@ pub(crate) fn lower(source: &str) -> (ParsedFile, Vec<Diagnostic>) {
     // no reason to strip.
     let html = html_raw.map(|block| {
         let source_block = extract_block_source(source, block.body_range);
-        let mut result = parse_html(&source_block.text);
+
+        // Layering fix for `<`/`>` inside `${…}`: mask the HTML-significant
+        // bytes inside balanced interpolations so the HTML tokenizer never
+        // reads a `<` inside an interpolation as the start of a tag. Masking
+        // preserves byte length (only single-byte ASCII is substituted), so
+        // every `Dom` range is identical to what the original text would yield.
+        // The tree is then parsed from the masked copy but its `value` strings
+        // are restored from the original so interpolation contents stay intact.
+        let masked = crate::template::mask_interpolations(&source_block.text);
+        let tokenize_input = masked.as_deref().unwrap_or(source_block.text.as_str());
+        let mut result = parse_html(tokenize_input);
+        if masked.is_some() {
+            restore_dom_values(&mut result.dom, &source_block.text);
+        }
 
         let offset = block.body_range.start();
         result.dom.shift_ranges(offset);
@@ -139,6 +152,47 @@ fn extract_block_source(source: &str, range: TextRange) -> BlockSource {
     BlockSource {
         text: range.slice(source).unwrap_or("").to_string(),
         range,
+    }
+}
+
+/// Rewrites every `Text`/`Comment`/`Attribute` value in `dom` to the exact slice
+/// of `original` at that node's (still block-relative) range. The tree was
+/// tokenized from a masked copy where interpolation contents were rewritten; the
+/// ranges are byte-identical, so slicing `original` recovers the true text
+/// (`${b < a}` rather than `${b x a}`). Never panics; an unsliceable range keeps
+/// the existing value.
+fn restore_dom_values(dom: &mut lunas_html_parser::Dom, original: &str) {
+    for child in &mut dom.children {
+        restore_node_values(child, original);
+    }
+}
+
+fn restore_node_values(node: &mut lunas_html_parser::Node, original: &str) {
+    use lunas_html_parser::Node;
+    match node {
+        Node::Text(t) => {
+            if let Some(s) = t.range.slice(original) {
+                t.value = s.to_string();
+            }
+        }
+        Node::Comment(_) => {
+            // Comment `value` excludes the `<!-- -->` delimiters; its inner
+            // range is not stored on the node, so it is left as-is. Interpolation
+            // masking never targets comment bodies (a `<` inside a comment is
+            // already inert to the tokenizer), so nothing needs restoring here.
+        }
+        Node::Element(e) => {
+            for attr in &mut e.attributes {
+                if let (Some(vr), Some(_)) = (attr.value_range, attr.value.as_ref()) {
+                    if let Some(s) = vr.slice(original) {
+                        attr.value = Some(s.to_string());
+                    }
+                }
+            }
+            for child in &mut e.children {
+                restore_node_values(child, original);
+            }
+        }
     }
 }
 
