@@ -272,6 +272,49 @@ fn template_if_with_multiple_children_unwraps_to_fragment() {
 }
 
 #[test]
+fn if_on_component_mounts_child_in_branch() {
+    // `:if` on a component tag mounts the child only while the branch is live,
+    // inside the ifBlock make closure (so teardown rides the branch scope).
+    let (js, diags) = compile(
+        "@use Child from \"./Child.lunas\"\nhtml:\n    <div><Child :if=\"show\" :n=\"k\"/></div>\nscript:\n    let show = true\n    let k = 3\n    function t(){ show = !show }\n",
+    );
+    let js = js.unwrap();
+    assert!(
+        js.contains("ifBlock(c, a0, [0], () => (show.v), () => {"),
+        "component :if uses ifBlock: {js}"
+    );
+    assert!(
+        js.contains("const ch0 = mountChild(c, a0, Child, { n: () => (k) });"),
+        "child mounted at the branch anchor: {js}"
+    );
+    assert!(
+        js.contains("return ch0.root;"),
+        "branch returns the child root node group: {js}"
+    );
+    assert!(
+        !diags.iter().any(|d| d.message.contains("not supported")),
+        "no unsupported warning: {diags:?}"
+    );
+}
+
+#[test]
+fn if_on_component_reactive_prop_drives_in_branch_scope() {
+    // A reactive prop of a component `:if` branch is driven by a bind emitted
+    // INSIDE the make closure — scoped to the live branch.
+    let js = emit(
+        "@use Child from \"./Child.lunas\"\nhtml:\n    <div><Child :if=\"k > 0\" :n=\"k\"/></div>\nscript:\n    let k = 1\n    function bump(){ k = k + 1 }\n",
+    );
+    // The setProp driving bind appears after the child mount, inside the make.
+    assert!(
+        js.contains("bind(c, [0], () => { ch0.setProp(\"n\", k.v); });"),
+        "driving bind emitted for the reactive prop: {js}"
+    );
+    let mount = js.find("mountChild(c, a0, Child").expect("child mounted");
+    let drive = js.find("ch0.setProp(\"n\"").expect("setProp bind");
+    assert!(drive > mount, "driving bind follows the mount in the make: {js}");
+}
+
+#[test]
 fn if_elseif_else_emits_ifchain() {
     let js = emit(
         "html:\n    <div><p :if=\"n > 0\">pos ${n}</p><p :elseif=\"n < 0\">neg</p><p :else>zero</p></div>\nscript:\n    let n = 0\n    function set(x){ n = x }\n",

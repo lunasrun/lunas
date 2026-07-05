@@ -1,0 +1,7 @@
+@use Child from "./Child.lunas"
+html:
+    <div><button @click="t()">x</button><Child :if="show" :label="msg"/></div>
+script:
+    let show = true
+    let msg = "hi"
+    function t(){ show = !show }

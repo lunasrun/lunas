@@ -992,6 +992,25 @@ impl<'a> Emitter<'a> {
         frag: &Frag,
         diags: &mut Vec<Diagnostic>,
     ) {
+        let anchor = self.alloc_anchor();
+        self.emit_anchor(b, &anchor, pos, frag);
+        self.emit_child_mount(b, comp, &anchor, frag, diags);
+    }
+
+    /// Mounts a child component at an already-emitted `anchor`: classifies props,
+    /// emits the `$slots` object, `mountChild(c, anchor, Child, initialProps)`, a
+    /// `:ref` handle assignment, and one driving `bind` per reactive prop. Shared
+    /// by the plain component slot, the `:if`-on-a-component branch, and the
+    /// `:for`-over-a-component item. Returns the mount-handle local, or `None`
+    /// when the tag has no `@use` import (voided).
+    fn emit_child_mount(
+        &mut self,
+        b: &mut String,
+        comp: &ComponentUse,
+        anchor: &str,
+        frag: &Frag,
+        diags: &mut Vec<Diagnostic>,
+    ) -> Option<String> {
         // Resolve the child factory local. An unknown tag (not in the `@use`
         // table) is voided: nothing to mount.
         let Some((local, _)) = self.child_imports.get(&comp.name).cloned() else {
@@ -1002,7 +1021,7 @@ impl<'a> Emitter<'a> {
                 "child component tag has no matching `@use` import",
                 diags,
             );
-            return;
+            return None;
         };
 
         // A `:ref="name"` on a component exposes the mountChild handle to the
@@ -1025,9 +1044,6 @@ impl<'a> Emitter<'a> {
 
         // Slot content: the component's children become slot factories wired in
         // THIS (parent) scope and passed to the child via a `$slots` object.
-        let anchor = self.alloc_anchor();
-        self.emit_anchor(b, &anchor, pos, frag);
-
         if let Some(slots_local) = self.emit_slot_factories(b, &comp.children, frag, diags) {
             members.push(format!("$slots: {slots_local}"));
         }
@@ -1042,7 +1058,7 @@ impl<'a> Emitter<'a> {
         b.push('(');
         b.push_str(self.ctx());
         b.push_str(", ");
-        b.push_str(&anchor);
+        b.push_str(anchor);
         b.push_str(", ");
         b.push_str(&local);
         b.push_str(", {");
@@ -1069,6 +1085,7 @@ impl<'a> Emitter<'a> {
             let stmt = format!("{handle}.setProp({}, {});", js_string(&rp.name), rp.expr);
             self.emit_update(b, frag, &rp.deps, rp.coupled, &stmt);
         }
+        Some(handle)
     }
 
     /// Emits the parent-side `$slots` object for a component's children
@@ -1638,16 +1655,19 @@ impl<'a> Emitter<'a> {
             );
             return;
         }
-        // Every branch body must be an element (the parser guarantees this for
-        // plain cascades; a component body means child-component mounting,
-        // which is a later wave).
+        // A branch body is either a plain element or a component tag (`:if` on a
+        // component mounts the child only while the branch is live). Any other
+        // node shape here is unexpected and voided.
         for branch in &chain.branches {
-            if !matches!(&*branch.body, TemplateNode::Element(_)) {
+            if !matches!(
+                &*branch.body,
+                TemplateNode::Element(_) | TemplateNode::Component(_)
+            ) {
                 self.void_block(
                     b,
                     frag,
                     branch.range,
-                    "`:if` on a component is not supported yet",
+                    "unsupported `:if` branch body (expected an element or component)",
                     diags,
                 );
                 return;
@@ -1752,6 +1772,30 @@ impl<'a> Emitter<'a> {
         frag: &Frag,
         diags: &mut Vec<Diagnostic>,
     ) {
+        // `:if` on a component tag: the branch body is the component itself.
+        // Mount the child at the branch anchor and return its root node group.
+        // The mount runs inside the branch `make` (an open scope), so the child's
+        // teardown (onDestroy, `_children` unlink) rides the branch's dropScope
+        // when the condition goes false. The child inserts before the anchor;
+        // returning its nodes lets the block track them for removal.
+        if let TemplateNode::Component(comp) = body {
+            match self.emit_child_mount(b, comp, anchor, frag, diags) {
+                Some(handle) => {
+                    push_indent(b, frag.indent + 1);
+                    b.push_str("return ");
+                    b.push_str(&handle);
+                    b.push_str(".root;\n");
+                }
+                None => {
+                    // Voided (no `@use` import): return an empty node group so the
+                    // block still has a well-formed (empty) branch.
+                    push_indent(b, frag.indent + 1);
+                    b.push_str("return [];\n");
+                }
+            }
+            return;
+        }
+
         // A bare `<template>` body (`<template :if="…">a b</template>`) is a
         // grouping wrapper, not a real element: unwrap it so its children become
         // the branch content directly, rather than leaving a literal `<template>`
