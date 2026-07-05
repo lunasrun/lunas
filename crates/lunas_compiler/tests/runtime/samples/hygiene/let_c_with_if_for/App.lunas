@@ -1,0 +1,10 @@
+html:
+    <div class="wrap">
+        <button @click="inc()">c=${c}</button>
+        <span :if="c > 1">big</span>
+        <ul><li :for="n of list" :key="n">${n}</li></ul>
+    </div>
+script:
+    let c = 1
+    let list = [1, 2]
+    function inc(){ c++ }

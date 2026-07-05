@@ -1005,3 +1005,125 @@ fn slot_component_in_slot_content() {
         "slot content renders: {out}"
     );
 }
+
+// --- compiler-injected name hygiene (c / props collisions) -----------------
+
+#[test]
+fn user_var_named_c_reads_and_mutates() {
+    if !node_available() {
+        eprintln!("skipping codegen_exec: node not found at {NODE}");
+        return;
+    }
+    // A top-level `let c` collides with the injected runtime-context param `c`.
+    // Before the fix this emitted `const c = box(c, …)` → SyntaxError. It must
+    // now compile, render `${c}`, and update when a handler mutates `c`. Refs,
+    // events, `:if`, and `:for` are all present to exercise every generated
+    // local against the mangled context name.
+    let source = "html:\n\
+        \x20   <div>\n\
+        \x20     <button @click=\"inc()\">c=${c}</button>\n\
+        \x20     <span :if=\"c > 1\">big</span>\n\
+        \x20     <ul><li :for=\"n of list\" :key=\"n\">${n}</li></ul>\n\
+        \x20   </div>\n\
+        script:\n\
+        \x20   let c = 1\n\
+        \x20   let list = [1, 2]\n\
+        \x20   function inc(){ c++ }\n";
+
+    let driver = "\
+        const root = factory({});\n\
+        const box = root.childNodes[0];\n\
+        const btn = box.childNodes[0];\n\
+        console.log('INITIAL:' + btn.innerHTMLString());\n\
+        console.log('IFINIT:' + box.innerHTMLString().includes('big'));\n\
+        btn.dispatch('click');\n\
+        await tick();\n\
+        console.log('AFTER:' + btn.innerHTMLString());\n\
+        console.log('IFAFTER:' + box.innerHTMLString().includes('big'));\n";
+
+    let out = run_component("hygiene_c", source, driver);
+    assert!(out.contains("INITIAL:c=1"), "initial render: {out}");
+    assert!(out.contains("IFINIT:false"), "if hidden while c<=1: {out}");
+    assert!(
+        out.contains("AFTER:c=2"),
+        "text updates after mutate c: {out}"
+    );
+    assert!(out.contains("IFAFTER:true"), "if shows after c>1: {out}");
+}
+
+#[test]
+fn user_var_named_props_reads_and_mutates() {
+    if !node_available() {
+        eprintln!("skipping codegen_exec: node not found at {NODE}");
+        return;
+    }
+    // A top-level `let props` collides with the injected props param `props`.
+    let source = "html:\n\
+        \x20   <button @click=\"bump()\">props=${props}</button>\n\
+        script:\n\
+        \x20   let props = 5\n\
+        \x20   function bump(){ props += 10 }\n";
+
+    let driver = "\
+        const root = factory({});\n\
+        const btn = root.childNodes[0];\n\
+        console.log('INITIAL:' + btn.innerHTMLString());\n\
+        btn.dispatch('click');\n\
+        await tick();\n\
+        console.log('AFTER:' + btn.innerHTMLString());\n";
+
+    let out = run_component("hygiene_props", source, driver);
+    assert!(out.contains("INITIAL:props=5"), "initial render: {out}");
+    assert!(
+        out.contains("AFTER:props=15"),
+        "mutate props updates: {out}"
+    );
+}
+
+#[test]
+fn injected_c_collides_with_real_input_prop() {
+    if !node_available() {
+        eprintln!("skipping codegen_exec: node not found at {NODE}");
+        return;
+    }
+    // The collision also fires when the *prop* is named `c`/`props`: the prop is
+    // boxed via `prop($$c, "c", …, props.c, …)` and read as `.v`.
+    let source = "@input c:number = 0\n\
+        html:\n\
+        \x20   <p>c=${c}</p>\n";
+
+    let driver = "\
+        const root = factory({ c: 7 });\n\
+        console.log('INITIAL:' + root.childNodes[0].innerHTMLString());\n";
+
+    let out = run_component("hygiene_prop_c", source, driver);
+    assert!(out.contains("INITIAL:c=7"), "prop named c renders: {out}");
+}
+
+#[test]
+fn user_var_named_e0_collides_with_generated_ref() {
+    if !node_available() {
+        eprintln!("skipping codegen_exec: node not found at {NODE}");
+        return;
+    }
+    // A top-level `let e0` collides with a generated element-ref local `e0`.
+    // Every generated local switches to the reserved `$$` prefix so both
+    // coexist. An event handler forces a real `e0` ref to be emitted.
+    let source = "html:\n\
+        \x20   <button @click=\"inc()\">e0=${e0}</button>\n\
+        script:\n\
+        \x20   let e0 = 3\n\
+        \x20   function inc(){ e0++ }\n";
+
+    let driver = "\
+        const root = factory({});\n\
+        const btn = root.childNodes[0];\n\
+        console.log('INITIAL:' + btn.innerHTMLString());\n\
+        btn.dispatch('click');\n\
+        await tick();\n\
+        console.log('AFTER:' + btn.innerHTMLString());\n";
+
+    let out = run_component("hygiene_e0", source, driver);
+    assert!(out.contains("INITIAL:e0=3"), "initial render: {out}");
+    assert!(out.contains("AFTER:e0=4"), "mutate e0 updates: {out}");
+}

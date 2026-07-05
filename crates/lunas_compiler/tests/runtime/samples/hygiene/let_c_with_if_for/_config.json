@@ -1,0 +1,1 @@
+{ "description": "`let c` alongside refs/events/:if/:for: every generated local and context reference must use the mangled context name and still react" }
