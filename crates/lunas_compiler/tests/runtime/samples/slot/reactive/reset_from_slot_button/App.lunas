@@ -1,0 +1,7 @@
+@use Box from "./Box.lunas"
+html:
+    <div><button class="add" @click="add()">a</button><Box><button class="clr" @click="clear()">clr</button><ul><li :for="i of items" :key="i">${i}</li></ul></Box></div>
+script:
+    let items = [1, 2]
+    function add(){ items.push(items.length + 1) }
+    function clear(){ items = [] }

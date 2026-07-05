@@ -1,0 +1,4 @@
+html:
+    <section class="host"><slot :fixed="seed"></slot></section>
+script:
+    let seed = 50

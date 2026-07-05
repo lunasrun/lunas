@@ -1,0 +1,2 @@
+html:
+    <section><header><slot name="head"></slot></header><main class="m"><slot></slot></main></section>

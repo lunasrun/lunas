@@ -1,0 +1,6 @@
+@use Box from "./Box.lunas"
+html:
+    <div class="wrap"><button @click="t()">t</button><span :if="on"><Box><b>content</b></Box></span></div>
+script:
+    let on = true
+    function t(){ on = !on }

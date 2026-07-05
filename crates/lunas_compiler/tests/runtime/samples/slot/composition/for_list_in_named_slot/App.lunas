@@ -1,0 +1,5 @@
+@use Box from "./Box.lunas"
+html:
+    <div><Box><template #body><ul><li :for="w of words" :key="w" class="it">${w}</li></ul></template></Box></div>
+script:
+    let words = ["a", "b", "c"]

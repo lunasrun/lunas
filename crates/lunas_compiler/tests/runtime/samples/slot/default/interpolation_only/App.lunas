@@ -1,0 +1,5 @@
+@use Box from "./Box.lunas"
+html:
+    <div><Box>${name}</Box></div>
+script:
+    let name = "ada"

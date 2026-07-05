@@ -1,0 +1,5 @@
+@use Box from "./Box.lunas"
+html:
+    <div><Box><input ::value="text"/><span>${text}</span></Box></div>
+script:
+    let text = "hi"

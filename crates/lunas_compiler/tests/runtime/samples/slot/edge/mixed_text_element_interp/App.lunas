@@ -1,0 +1,6 @@
+@use Box from "./Box.lunas"
+html:
+    <div><Box>pre ${a}<b>bold</b> post ${z}</Box></div>
+script:
+    let a = "1"
+    let z = "9"

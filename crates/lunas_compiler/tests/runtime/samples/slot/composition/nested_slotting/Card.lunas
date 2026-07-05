@@ -1,0 +1,2 @@
+html:
+    <article class="inner"><slot>ifb</slot></article>

@@ -1,0 +1,5 @@
+html:
+    <section><main><slot :a="one"></slot></main><footer><slot name="foot" :b="two"></slot></footer></section>
+script:
+    let one = "P"
+    let two = "Q"

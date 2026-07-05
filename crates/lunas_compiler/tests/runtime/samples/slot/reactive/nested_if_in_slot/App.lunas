@@ -1,0 +1,6 @@
+@use Box from "./Box.lunas"
+html:
+    <div class="w"><button @click="next()">n</button><Box><p :if="step == 0">zero</p><p :if="step == 1">one</p></Box></div>
+script:
+    let step = 0
+    function next(){ step++ }

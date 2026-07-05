@@ -1,0 +1,2 @@
+html:
+    <section><slot>fb</slot></section>

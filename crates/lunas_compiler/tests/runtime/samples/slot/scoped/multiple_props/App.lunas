@@ -1,0 +1,3 @@
+@use Box from "./Box.lunas"
+html:
+    <div><Box><template #default="p">${p.a}-${p.b}</template></Box></div>

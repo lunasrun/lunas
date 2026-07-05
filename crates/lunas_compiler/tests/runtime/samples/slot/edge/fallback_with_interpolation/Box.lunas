@@ -1,0 +1,4 @@
+html:
+    <section><slot>default ${name}</slot></section>
+script:
+    let name = "child"

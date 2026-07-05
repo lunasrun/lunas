@@ -1,0 +1,2 @@
+html:
+    <section class="card"><header><slot name="head">untitled</slot></header><main><slot>empty</slot></main><footer><slot name="foot"></slot></footer></section>

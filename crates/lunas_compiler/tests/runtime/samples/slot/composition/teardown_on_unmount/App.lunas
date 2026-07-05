@@ -1,0 +1,8 @@
+@use Box from "./Box.lunas"
+html:
+    <div class="w"><button class="t" @click="t()">t</button><button class="i" @click="inc()">i</button><span :if="on"><Box><b>n=${n}</b></Box></span></div>
+script:
+    let on = true
+    let n = 1
+    function t(){ on = !on }
+    function inc(){ n++ }
