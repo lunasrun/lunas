@@ -917,6 +917,37 @@ fn parent_scoped_slot_binding_names_param() {
 }
 
 #[test]
+fn parent_default_scoped_slot_long_form_binds() {
+    // `<template slot-scope="p">` with no `slot=`/`#` is the long form of the
+    // default scoped slot: `p` must bind the default slot's props.
+    let js = emit(
+        "@use Card from \"./Card.lunas\"\nhtml:\n    <Card><template slot-scope=\"p\">${p.item}</template></Card>\n",
+    );
+    assert!(
+        js.contains("default: (slotProps, onCleanup) => slotContent(c, (p) => {"),
+        "bare slot-scope binds the default slot's scoped param `p`: {js}"
+    );
+    // It must NOT emit a duplicate `default` object key.
+    assert_eq!(
+        js.matches("default: (slotProps").count(),
+        1,
+        "exactly one default slot entry: {js}"
+    );
+}
+
+#[test]
+fn parent_default_scoped_slot_hash_shorthand_binds() {
+    // `<template #="p">` (bare `#` with a value) is the same default scoped slot.
+    let js = emit(
+        "@use Card from \"./Card.lunas\"\nhtml:\n    <Card><template #=\"p\">${p.item}</template></Card>\n",
+    );
+    assert!(
+        js.contains("default: (slotProps, onCleanup) => slotContent(c, (p) => {"),
+        "bare #=\"p\" binds the default scoped slot: {js}"
+    );
+}
+
+#[test]
 fn component_without_children_has_no_slots_member() {
     let js = emit("@use Card from \"./Card.lunas\"\nhtml:\n    <Card/>\n");
     assert!(!js.contains("$slots"), "no children -> no $slots: {js}");

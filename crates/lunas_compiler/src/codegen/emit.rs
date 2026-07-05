@@ -2264,6 +2264,9 @@ struct SlotGroup {
 /// in document order.
 fn partition_slots(children: &[TemplateNode]) -> Vec<SlotGroup> {
     let mut default_nodes: Vec<TemplateNode> = Vec::new();
+    // A scoped binding for the DEFAULT slot, from a bare `<template slot-scope="p">`
+    // / `<template #="p">` (default scoped-slot long form). First non-empty wins.
+    let mut default_scoped: Option<String> = None;
     // Named groups in first-seen order: (name, nodes, scoped_binding).
     let mut named: Vec<SlotGroup> = Vec::new();
 
@@ -2271,6 +2274,17 @@ fn partition_slots(children: &[TemplateNode]) -> Vec<SlotGroup> {
         if let TemplateNode::Element(e) = child {
             if e.name == "template" {
                 if let Some((name, scoped)) = template_slot_target(e) {
+                    // A `<template slot-scope="p">` with no `slot=`/`#name` targets
+                    // the DEFAULT slot with a scoped binding — route it to the
+                    // default group (so it merges with any bare default content),
+                    // not to a separate `default`-named group (a duplicate key).
+                    if name == "default" {
+                        default_nodes.extend(e.children.iter().cloned());
+                        if default_scoped.is_none() {
+                            default_scoped = scoped;
+                        }
+                        continue;
+                    }
                     // A named/scoped <template>: its children fill slot `name`.
                     if let Some(g) = named.iter_mut().find(|g| g.name == name) {
                         g.nodes.extend(e.children.iter().cloned());
@@ -2306,7 +2320,7 @@ fn partition_slots(children: &[TemplateNode]) -> Vec<SlotGroup> {
         groups.push(SlotGroup {
             name: "default".to_string(),
             nodes: default_nodes,
-            scoped_binding: None,
+            scoped_binding: default_scoped,
         });
     }
     groups.extend(named);
@@ -2315,8 +2329,10 @@ fn partition_slots(children: &[TemplateNode]) -> Vec<SlotGroup> {
 
 /// If a `<template>` element marks a named slot, returns `(slot_name,
 /// scoped_binding)`. Recognizes `#name`, `#name="binding"`, and `slot="name"`
-/// (with optional `slot-scope="binding"`). Returns `None` for a bare
-/// `<template>` (default-slot content).
+/// (with optional `slot-scope="binding"`). A bare `<template slot-scope="p">`
+/// / `<template #="p">` (no `slot=`/`#name`) targets the `"default"` slot with
+/// scoped binding `p` (Vue-2 default scoped-slot long form). Returns `None` for
+/// a plain bare `<template>` (unscoped default-slot content).
 fn template_slot_target(el: &TemplateElement) -> Option<(String, Option<String>)> {
     // `slot="name"` form (+ optional `slot-scope="binding"`).
     let mut slot_attr: Option<String> = None;
@@ -2346,19 +2362,31 @@ fn template_slot_target(el: &TemplateElement) -> Option<(String, Option<String>)
 
     // `#name` / `#name="binding"` shorthand. The parser classifies `#x` as a
     // Static attr whose name starts with `#`; a value is the scoped binding.
+    // A bare `#="p"` (empty name) is the DEFAULT slot with scoped binding `p`.
     for a in &el.attrs {
         if let TemplateAttr::Static { name, value, .. } = a {
             if let Some(slot) = name.strip_prefix('#') {
-                if slot.is_empty() {
-                    continue;
-                }
                 let scoped = value
                     .as_ref()
                     .map(static_value_text)
                     .filter(|s| !s.is_empty());
+                if slot.is_empty() {
+                    // `#="p"` — default slot, scoped. Bare `#` with no value is
+                    // just default content; let it fall through to bare-template.
+                    if scoped.is_some() {
+                        return Some(("default".to_string(), scoped));
+                    }
+                    continue;
+                }
                 return Some((slot.to_string(), scoped));
             }
         }
+    }
+
+    // `<template slot-scope="p">` with no `slot=` / `#name`: the Vue-2 long form
+    // for the DEFAULT scoped slot. Bind `p` to the default slot's props.
+    if let Some(scope) = slot_scope.filter(|s| !s.is_empty()) {
+        return Some(("default".to_string(), Some(scope)));
     }
     None
 }

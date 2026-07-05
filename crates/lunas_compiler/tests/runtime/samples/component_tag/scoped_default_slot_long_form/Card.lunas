@@ -1,0 +1,4 @@
+html:
+    <section><slot :count="rows"></slot></section>
+script:
+    let rows = 7

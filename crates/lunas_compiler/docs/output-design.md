@@ -398,7 +398,7 @@ No signal-tracking stack, no VDOM, no per-node effect objects.
 | `<slot :item="e"/>` (child, scoped) | above **+** a trailing `() => ({ item: (e) })` scoped-props getter; the value flows up to the parent's slot content |
 | `<Child>…</Child>` (parent, bare children) | a `default` entry on the mountChild `$slots` object: `default: (slotProps, onCleanup) => slotContent(c, (slotProps) => {…wire content in the PARENT…}, slotProps, onCleanup)` |
 | `<template #x>…</template>` / `<template slot="x">…</template>` (parent) | an `x` entry on `$slots` (named slot). Bare `<template>` inlines its children into the `default` group |
-| `<template #x="p">…</template>` (parent, scoped) | the inner build binds the scoped-slot props to `p`: `slotContent(c, (p) => {…read p.…}, slotProps, onCleanup)`. `slot-scope="p"` is the long form |
+| `<template #x="p">…</template>` (parent, scoped) | the inner build binds the scoped-slot props to `p`: `slotContent(c, (p) => {…read p.…}, slotProps, onCleanup)`. `slot="x" slot-scope="p"` is the long form. A bare `<template slot-scope="p">` / `<template #="p">` (no `slot=`/`#name`) scopes the **default** slot |
 
 > **Scoped-slot reactivity (restricted form).** The child's scoped props
 > (`<slot :item="e"/>`) are captured once, at slot build time, via
