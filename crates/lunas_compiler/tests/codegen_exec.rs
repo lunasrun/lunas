@@ -347,6 +347,117 @@ fn for_initial_push_splice_and_reorder() {
     );
 }
 
+#[test]
+fn for_over_primitive_items_mounts_child_per_item() {
+    if !node_available() {
+        eprintln!("skipping codegen_exec: node not found at {NODE}");
+        return;
+    }
+    // Regression: a `:for` over PRIMITIVE items (numbers) whose body mounts a
+    // child component used to crash at runtime — mountChild wrote `_children`
+    // onto the primitive item ("Cannot create property '_children' on number").
+    // Now: each item mounts a Child with the correct component context; list
+    // mutation (push/remove/reorder) updates and tears children down cleanly.
+    let parent = "@use Child from \"./Child.lunas\"\n\
+        html:\n\
+        \x20   <div>\n\
+        \x20     <button @click=\"push4()\">p</button>\n\
+        \x20     <button @click=\"dropMid()\">d</button>\n\
+        \x20     <button @click=\"reorder()\">r</button>\n\
+        \x20     <ul><li :for=\"n of nums\" :key=\"n\"><Child :x=\"n\"/></li></ul>\n\
+        \x20   </div>\n\
+        script:\n\
+        \x20   let nums = [1,2,3]\n\
+        \x20   function push4(){ nums.push(4) }\n\
+        \x20   function dropMid(){ nums = nums.filter((v) => v !== 2) }\n\
+        \x20   function reorder(){ nums = [nums[nums.length-1], ...nums.slice(0,-1)] }\n";
+    let child = "@input x:number = 0\n\
+        html:\n\
+        \x20   <b>x=${x}</b>\n";
+
+    let driver = "\
+        const root = factory({});\n\
+        const c = root.__lunasCtx;\n\
+        const div = root.childNodes[0];\n\
+        const [pBtn, dBtn, rBtn, ul] = div.childNodes;\n\
+        const lis = () => ul.childNodes.filter(n => n.tag === 'li');\n\
+        const shown = () => lis().map(n => n.innerHTMLString()).join(',');\n\
+        const kids = () => (c._children ? c._children.length : 0);\n\
+        console.log('INITIAL:' + shown());\n\
+        console.log('KIDS0:' + kids());\n\
+        pBtn.dispatch('click'); await tick();\n\
+        console.log('PUSH:' + shown());\n\
+        console.log('KIDS1:' + kids());\n\
+        dBtn.dispatch('click'); await tick();\n\
+        console.log('DROP:' + shown());\n\
+        console.log('KIDS2:' + kids());\n\
+        rBtn.dispatch('click'); await tick();\n\
+        console.log('REORDER:' + shown());\n\
+        console.log('KIDS3:' + kids());\n";
+
+    let out = run_parent_child("for_prim_child", parent, child, "./Child.lunas", driver);
+    assert!(
+        out.contains("INITIAL:<div><b>x=1</b></div>,<div><b>x=2</b></div>,<div><b>x=3</b></div>"),
+        "each primitive item mounts a Child with the right prop: {out}"
+    );
+    assert!(
+        out.contains("KIDS0:3"),
+        "three children linked initially: {out}"
+    );
+    assert!(
+        out.contains(
+            "PUSH:<div><b>x=1</b></div>,<div><b>x=2</b></div>,<div><b>x=3</b></div>,<div><b>x=4</b></div>"
+        ),
+        "push mounts a new child: {out}"
+    );
+    assert!(out.contains("KIDS1:4"), "four children after push: {out}");
+    assert!(
+        out.contains("DROP:<div><b>x=1</b></div>,<div><b>x=3</b></div>,<div><b>x=4</b></div>"),
+        "removing an item tears its child down: {out}"
+    );
+    assert!(
+        out.contains("KIDS2:3"),
+        "removed item's child de-registered from _children (no leak): {out}"
+    );
+    assert!(
+        out.contains("REORDER:<div><b>x=4</b></div>,<div><b>x=1</b></div>,<div><b>x=3</b></div>"),
+        "reorder reflects the new order: {out}"
+    );
+    assert!(
+        out.contains("KIDS3:3"),
+        "reorder does not duplicate or drop child links: {out}"
+    );
+}
+
+#[test]
+fn for_over_string_items_mounts_child_per_item() {
+    if !node_available() {
+        eprintln!("skipping codegen_exec: node not found at {NODE}");
+        return;
+    }
+    // Same regression for STRING primitives (the other primitive-item shape).
+    let parent = "@use Child from \"./Child.lunas\"\n\
+        html:\n\
+        \x20   <ul><li :for=\"s of words\" :key=\"s\"><Child :x=\"s\"/></li></ul>\n\
+        script:\n\
+        \x20   let words = [\"a\",\"b\",\"c\"]\n";
+    let child = "@input x:string = \"\"\n\
+        html:\n\
+        \x20   <b>${x}</b>\n";
+
+    let driver = "\
+        const root = factory({});\n\
+        const ul = root.childNodes[0];\n\
+        const lis = () => ul.childNodes.filter(n => n.tag === 'li');\n\
+        console.log('INITIAL:' + lis().map(n => n.innerHTMLString()).join(','));\n";
+
+    let out = run_parent_child("for_str_child", parent, child, "./Child.lunas", driver);
+    assert!(
+        out.contains("INITIAL:<div><b>a</b></div>,<div><b>b</b></div>,<div><b>c</b></div>"),
+        "string primitives each mount a Child without crashing: {out}"
+    );
+}
+
 // --- child components -----------------------------------------------------
 
 #[test]

@@ -1,0 +1,7 @@
+@use Item from "./Item.lunas"
+html:
+    <div><button @click="push4()">p</button><button @click="dropMid()">d</button><ul><li :for="n of nums" :key="n"><Item :x="n"/></li></ul></div>
+script:
+    let nums = [1,2,3]
+    function push4(){ nums.push(4) }
+    function dropMid(){ nums = nums.filter((v) => v !== 2) }

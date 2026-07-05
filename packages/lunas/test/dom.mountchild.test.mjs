@@ -8,7 +8,7 @@ import assert from "node:assert";
 import { installDom } from "./dom-shim.mjs";
 const document = installDom();
 
-import { createContext, bind } from "../src/core.mjs";
+import { createContext, bind, beginScope, endScope, dropScope } from "../src/core.mjs";
 import { box, prop } from "../src/boxes.mjs";
 import { anchorAppend, component, fragment } from "../src/dom.mjs";
 import { mountChild } from "../src/blocks.mjs";
@@ -172,6 +172,58 @@ await test("unmount recurses: a grandchild's onDestroy also fires", () => {
   assert.strictEqual(grandDestroyed, 0);
   m.unmount();
   assert.strictEqual(grandDestroyed, 1, "grandchild destroy fired via recursion");
+});
+
+// --- never-panic: a non-object `c` (a primitive :for item) must not throw -----
+
+await test("mountChild does not throw when `c` is a primitive (never sets _children on a number)", () => {
+  const host = document.createElement("div");
+  const anchor = anchorAppend(host);
+  let destroyed = 0;
+  const Child = component("kid", {}, "<n></n>", (cc) => {
+    onDestroy(cc, () => destroyed++);
+  });
+  // Passing a primitive as `c` used to crash: "Cannot create property
+  // '_children' on number". It must mount cleanly and still drive teardown.
+  let m;
+  assert.doesNotThrow(() => {
+    m = mountChild(3, anchor, Child, {});
+  }, "primitive c must not throw");
+  assert.strictEqual(shape(host), "<kid> |", "child still mounted");
+  m.unmount();
+  assert.strictEqual(destroyed, 1, "onDestroy still fires via the handle");
+  assert.strictEqual(shape(host), "|", "child removed on unmount");
+});
+
+// --- scope-tied teardown: dropping the enclosing scope unmounts the child -----
+
+await test("dropping the enclosing scope unmounts a child mounted inside it (fires onDestroy, clears _children)", () => {
+  const c = createContext(null);
+  const host = document.createElement("div");
+  const anchor = anchorAppend(host);
+  let destroyed = 0;
+  const Child = component("kid", {}, "<x></x>", (cc) => {
+    onDestroy(cc, () => destroyed++);
+  });
+
+  // Simulate a :for/:if item: open a scope, mount the child inside it.
+  const scope = beginScope(c);
+  const m = mountChild(c, anchor, Child, {});
+  endScope(c);
+
+  assert.strictEqual(shape(host), "<kid> |", "child mounted inside the item scope");
+  assert.ok(c._children.includes(m.ctx), "child linked under parent _children");
+  assert.strictEqual(destroyed, 0, "alive while the item is present");
+
+  // Item removed: dropScope must tear the child down.
+  dropScope(c, scope);
+  assert.strictEqual(destroyed, 1, "onDestroy fired when the item scope dropped");
+  assert.ok(!c._children.includes(m.ctx), "child de-registered from _children");
+  assert.strictEqual(shape(host), "|", "child DOM removed");
+
+  // Idempotent: a later explicit unmount (or a second drop) is a no-op.
+  m.unmount();
+  assert.strictEqual(destroyed, 1, "no double onDestroy");
 });
 
 console.log("\ndom.mountchild.test.mjs: " + passed + " passed.");

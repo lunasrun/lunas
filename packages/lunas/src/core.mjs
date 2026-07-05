@@ -116,10 +116,26 @@ export function unbind(c, s) {
 // ---------------------------------------------------------------------------
 
 export function beginScope(c) {
-  const scope = { subs: [], children: [], parent: c.scope };
+  // `disposers` hold extra teardown callbacks registered against this scope
+  // (e.g. a child component's `unmount`, added by mountChild). They run when
+  // the scope is dropped, so a `:for`/`:if` item that mounts a component
+  // unmounts it — firing onDestroy and unlinking it from the parent's
+  // `_children` — when the item is removed (for-diff-design.md §6).
+  const scope = { subs: [], children: [], disposers: null, parent: c.scope };
   if (c.scope) c.scope.children.push(scope);
   c.scope = scope;
   return scope;
+}
+
+// addDisposer(c, fn) — register `fn` on the currently-open scope (if any) to be
+// run when that scope is dropped. Returns true if it was registered, false when
+// no scope is open (the caller then owns teardown itself, e.g. a top-level
+// mountChild). Kept null-until-needed so scopes stay cheap.
+export function addDisposer(c, fn) {
+  const scope = c.scope;
+  if (!scope) return false;
+  (scope.disposers || (scope.disposers = [])).push(fn);
+  return true;
 }
 
 export function endScope(c) {
@@ -148,6 +164,14 @@ export function dropScope(c, scope) {
   for (const ch of scope.children) {
     ch.parent = null; // avoid double-splice below
     dropScope(c, ch);
+  }
+  // Run extra teardown (child-component unmounts) registered on this scope.
+  // Guarded to run once: null the list first so a disposer that re-enters
+  // (or a double dropScope) can't fire it twice.
+  const disposers = scope.disposers;
+  if (disposers) {
+    scope.disposers = null;
+    for (const fn of disposers) fn();
   }
   scope.subs.length = 0;
   scope.children.length = 0;
