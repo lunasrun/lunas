@@ -1005,3 +1005,147 @@ fn slot_component_in_slot_content() {
         "slot content renders: {out}"
     );
 }
+
+// --- inline template-handler mutations (fix/inline-handler-mutations) --------
+//
+// A mutation written INLINE in an `@event` handler (`@click="n = n + 1"`,
+// `@click="count++"`, `@click="obj.k = 1"`, `@click="a++; b++"`) must be
+// recognized as a reactive write and compiled through the `.v` box-setter path,
+// so the DOM updates on click — matching Vue/Svelte. Previously such mutations
+// were silently ignored unless routed through a named script function.
+
+#[test]
+fn inline_handler_assignment_updates_dom() {
+    if !node_available() {
+        eprintln!("skipping codegen_exec: node not found at {NODE}");
+        return;
+    }
+    // `n = n + 1` written inline, `n` never assigned in script.
+    let source = "html:\n\
+        \x20   <button @click=\"n = n + 1\">count: ${n}</button>\n\
+        script:\n\
+        \x20   let n = 0\n";
+    let driver = "\
+        const root = factory({});\n\
+        const btn = root.childNodes[0];\n\
+        console.log('INITIAL:' + btn.innerHTMLString());\n\
+        btn.dispatch('click'); await tick();\n\
+        btn.dispatch('click'); await tick();\n\
+        console.log('AFTER:' + btn.innerHTMLString());\n";
+    let out = run_component("inline_assign", source, driver);
+    assert!(out.contains("INITIAL:count: 0"), "initial render: {out}");
+    assert!(
+        out.contains("AFTER:count: 2"),
+        "inline assign updates DOM: {out}"
+    );
+}
+
+#[test]
+fn inline_handler_increment_updates_dom() {
+    if !node_available() {
+        eprintln!("skipping codegen_exec: node not found at {NODE}");
+        return;
+    }
+    // `n++` written inline.
+    let source = "html:\n\
+        \x20   <button @click=\"n++\">count: ${n}</button>\n\
+        script:\n\
+        \x20   let n = 5\n";
+    let driver = "\
+        const root = factory({});\n\
+        const btn = root.childNodes[0];\n\
+        console.log('INITIAL:' + btn.innerHTMLString());\n\
+        btn.dispatch('click'); await tick();\n\
+        console.log('AFTER:' + btn.innerHTMLString());\n";
+    let out = run_component("inline_incr", source, driver);
+    assert!(out.contains("INITIAL:count: 5"), "initial render: {out}");
+    assert!(
+        out.contains("AFTER:count: 6"),
+        "inline ++ updates DOM: {out}"
+    );
+}
+
+#[test]
+fn inline_handler_deep_member_assignment_updates_dom() {
+    if !node_available() {
+        eprintln!("skipping codegen_exec: node not found at {NODE}");
+        return;
+    }
+    // `obj.k = 1` (deep member write): the target must be a deepBox so the
+    // in-place mutation marks the var.
+    let source = "html:\n\
+        \x20   <button @click=\"obj.k = obj.k + 10\">v: ${obj.k}</button>\n\
+        script:\n\
+        \x20   let obj = { k: 1 }\n";
+    let driver = "\
+        const root = factory({});\n\
+        const btn = root.childNodes[0];\n\
+        console.log('INITIAL:' + btn.innerHTMLString());\n\
+        btn.dispatch('click'); await tick();\n\
+        console.log('AFTER:' + btn.innerHTMLString());\n";
+    let out = run_component("inline_deep", source, driver);
+    assert!(out.contains("INITIAL:v: 1"), "initial render: {out}");
+    assert!(
+        out.contains("AFTER:v: 11"),
+        "inline member assign updates DOM: {out}"
+    );
+}
+
+#[test]
+fn inline_handler_multiple_statements_update_dom() {
+    if !node_available() {
+        eprintln!("skipping codegen_exec: node not found at {NODE}");
+        return;
+    }
+    // Two statements in one handler: `a++; b++`.
+    let source = "html:\n\
+        \x20   <button @click=\"a++; b++\">${a}-${b}</button>\n\
+        script:\n\
+        \x20   let a = 0\n\
+        \x20   let b = 10\n";
+    let driver = "\
+        const root = factory({});\n\
+        const btn = root.childNodes[0];\n\
+        console.log('INITIAL:' + btn.innerHTMLString());\n\
+        btn.dispatch('click'); await tick();\n\
+        console.log('AFTER:' + btn.innerHTMLString());\n";
+    let out = run_component("inline_multi", source, driver);
+    assert!(out.contains("INITIAL:0-10"), "initial render: {out}");
+    assert!(
+        out.contains("AFTER:1-11"),
+        "multi-statement handler updates DOM: {out}"
+    );
+}
+
+#[test]
+fn inline_and_function_call_handlers_mix() {
+    if !node_available() {
+        eprintln!("skipping codegen_exec: node not found at {NODE}");
+        return;
+    }
+    // One button mutates inline; another calls a script function. Both must work
+    // and drive the same reactive state.
+    let source = "html:\n\
+        \x20   <div><button @click=\"n = n + 1\">inc</button><button @click=\"reset()\">reset</button><p>${n}</p></div>\n\
+        script:\n\
+        \x20   let n = 0\n\
+        \x20   function reset(){ n = 0 }\n";
+    let driver = "\
+        const root = factory({});\n\
+        const div = root.childNodes[0];\n\
+        const btns = div.childNodes.filter((c) => c.tag === 'button');\n\
+        const p = div.childNodes.find((c) => c.tag === 'p');\n\
+        console.log('INITIAL:' + p.innerHTMLString());\n\
+        btns[0].dispatch('click'); await tick();\n\
+        btns[0].dispatch('click'); await tick();\n\
+        console.log('MID:' + p.innerHTMLString());\n\
+        btns[1].dispatch('click'); await tick();\n\
+        console.log('AFTER:' + p.innerHTMLString());\n";
+    let out = run_component("inline_mixed", source, driver);
+    assert!(out.contains("INITIAL:0"), "initial render: {out}");
+    assert!(out.contains("MID:2"), "inline handler drives state: {out}");
+    assert!(
+        out.contains("AFTER:0"),
+        "function-call handler still works: {out}"
+    );
+}
