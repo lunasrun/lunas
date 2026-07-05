@@ -1,0 +1,6 @@
+@use Child from "./Child.lunas"
+html:
+    <div><button @click="bump()">p</button><Child :step="n"/></div>
+script:
+    let n = 2
+    function bump(){ n = n + 3 }

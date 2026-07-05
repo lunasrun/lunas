@@ -625,10 +625,17 @@ impl<'a> Emitter<'a> {
         }
         // Rewrite the script body so reactive declarations become boxes and all
         // references become `.v`.
+        let prop_names: Vec<String> = self
+            .component
+            .props
+            .iter()
+            .map(|p| p.name.clone())
+            .collect();
         let rewritten = rewrite_script(
             script_text,
             &self.deep_hint,
             &self.component.reactive_vars,
+            &prop_names,
             &self.aliases,
             self.ctx(),
         );
@@ -2801,10 +2808,18 @@ fn skip_ident(s: &str) -> Option<&str> {
 /// reference to a reactive variable becomes `name.v`. Uses scope-aware
 /// [`module_binding_references`] so shadowed uses are left alone. `hint` is
 /// the deep-mutation detection text (script + template-derived writes).
+///
+/// `prop_names` are the component's `@input` props: they are reactive boxes but
+/// are NOT declared in the script text, so `module_binding_references` (which
+/// only tracks script-declared bindings) never sees them. Their free references
+/// in the script body — a handler reading a prop, a local computed from a prop —
+/// are rewritten to `.v` via a scope-aware free-identifier scan so a prop read
+/// anywhere in the script goes through the box (not the wrapped ref object).
 fn rewrite_script(
     script: &str,
     hint: &str,
     vars: &[ReactiveVar],
+    prop_names: &[String],
     aliases: &std::collections::BTreeMap<&'static str, String>,
     ctx: &str,
 ) -> String {
@@ -2876,6 +2891,32 @@ fn rewrite_script(
             edits.push((start, end, format!("{}: {}.v", r.name, r.name)));
         } else {
             edits.push((end, end, ".v".to_string()));
+        }
+    }
+
+    // (3) `@input` props are reactive boxes that are NOT declared in the script,
+    // so step (2) (script-declared bindings only) misses them. Rewrite their
+    // FREE references in the script body to `.v`, using the scope-aware program
+    // free-identifier scan so a shadowing local (a nested `step` parameter) is
+    // left alone. References inside a rewritten declaration init are skipped —
+    // step (1) already `.v`-rewrote the whole init via `rewrite_expr`.
+    if !prop_names.is_empty() {
+        let prop_set: std::collections::HashSet<&str> =
+            prop_names.iter().map(|s| s.as_str()).collect();
+        if let Ok(free) = lunas_script::free_identifiers_with_spans_program(script) {
+            for (name, range) in free {
+                if !prop_set.contains(name.as_str()) {
+                    continue;
+                }
+                let end = range.end().raw();
+                if decl_ranges
+                    .iter()
+                    .any(|dr| end > dr.start().raw() && end <= dr.end().raw())
+                {
+                    continue;
+                }
+                edits.push((end, end, ".v".to_string()));
+            }
         }
     }
 

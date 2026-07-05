@@ -141,6 +141,33 @@ fn props_seeded_from_input() {
 }
 
 #[test]
+fn prop_read_in_function_body_unwraps() {
+    // A prop read inside the child's own script function/handler body must go
+    // through the box (`.v`), not return the wrapped ref object. Props are not
+    // declared in the script, so the script-binding rewrite misses them — a
+    // scope-aware free-identifier pass rewrites their free references.
+    let js = emit(
+        "@input step:number = 1\nhtml:\n    <button @click=\"go()\">${label}</button>\nscript:\n    let label = \"x\"\n    function go(){ label = \"is \" + step }\n",
+    );
+    assert!(
+        js.contains("function go(){ label.v = \"is \" + step.v }"),
+        "prop read in a handler body unwraps to `.v`: {js}"
+    );
+}
+
+#[test]
+fn prop_read_shadowed_by_local_is_left_alone() {
+    // A nested local named like the prop shadows it and must NOT be rewritten.
+    let js = emit(
+        "@input step:number = 1\nhtml:\n    <p>${label}</p>\nscript:\n    let label = \"x\"\n    function go(){ let step = 9; label = step }\n",
+    );
+    assert!(
+        js.contains("function go(){ let step = 9; label.v = step }"),
+        "shadowing local `step` is not rewritten to `.v`: {js}"
+    );
+}
+
+#[test]
 fn deep_mutation_uses_deepbox() {
     // `o.k = 1` mutates a member, so `o` is reactive (root reported) *and*
     // deeply mutated -> deepBox.
