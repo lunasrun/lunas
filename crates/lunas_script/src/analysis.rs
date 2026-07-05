@@ -242,6 +242,40 @@ pub fn free_identifiers_with_spans(
         .collect())
 }
 
+/// Like [`free_identifiers_with_spans`] but parses `code` as a *program* (a
+/// sequence of statements), not a single wrapped expression. This is what an
+/// inline `@event` handler needs: a handler value may be several statements
+/// (`a++; b++`) or a bare assignment (`n = n + 1`), neither of which parses when
+/// wrapped in `(…)`. Spans are 0-based byte offsets within `code`. Never panics;
+/// a malformed handler returns a parse error the caller can drop.
+///
+/// ```
+/// use lunas_script::free_identifiers_with_spans_program;
+///
+/// let ids = free_identifiers_with_spans_program("a++; b = a + 1").unwrap();
+/// let names: Vec<_> = ids.iter().map(|(n, _)| n.as_str()).collect();
+/// assert_eq!(names, ["a", "b", "a"]);
+/// assert_eq!(ids[0].1.slice("a++; b = a + 1"), Some("a"));
+/// ```
+pub fn free_identifiers_with_spans_program(
+    code: &str,
+) -> Result<Vec<(String, lunas_span::TextRange)>, ScriptParseError> {
+    let (module, fm) = parse_source_with_fm(code.to_string())?;
+    let mut c = ScopedFreeCollector::default();
+    module.visit_with(&mut c);
+
+    let base = fm.start_pos.0;
+    let code_len = code.len() as u32;
+    Ok(c.free
+        .into_iter()
+        .filter_map(|(name, lo, hi)| {
+            let lo = lo.checked_sub(base)?;
+            let hi = hi.checked_sub(base)?;
+            (hi <= code_len && lo <= hi).then(|| (name, lunas_span::TextRange::at(lo, hi)))
+        })
+        .collect())
+}
+
 struct SpanRefCollector {
     items: Vec<(String, u32, u32)>,
 }
