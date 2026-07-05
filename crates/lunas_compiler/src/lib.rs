@@ -118,9 +118,13 @@ pub fn resolve(source: &str) -> (ResolvedComponent, Vec<Diagnostic>) {
     (component, diags)
 }
 
-/// The root identifiers written by two-way bindings anywhere in the template
-/// (including inside `:if` branches and `:for` bodies). `::value="name"` writes
-/// `name`; `::value="o.k"` deep-writes `o`.
+/// The root identifiers written by template constructs anywhere in the template
+/// (including inside `:if` branches and `:for` bodies), so the resolver numbers
+/// them as reactive even when the script never assigns them:
+///   - two-way bindings: `::value="name"` writes `name`; `::value="o.k"`
+///     deep-writes `o`.
+///   - template refs: `:ref="name"` assigns the element into `name`, so `name`
+///     is mutated (a plain `let name;` in script is the natural declaration).
 fn two_way_mutation_roots(template: &lunas_parser::Template) -> HashSet<String> {
     use lunas_parser::{TemplateAttr, TemplateNode};
     let mut roots = HashSet::new();
@@ -131,10 +135,18 @@ fn two_way_mutation_roots(template: &lunas_parser::Template) -> HashSet<String> 
             _ => return,
         };
         for attr in attrs {
-            if let TemplateAttr::TwoWay { lvalue, .. } = attr {
-                if let Some(root) = leading_identifier(&lvalue.text) {
-                    roots.insert(root.to_string());
+            match attr {
+                TemplateAttr::TwoWay { lvalue, .. } => {
+                    if let Some(root) = leading_identifier(&lvalue.text) {
+                        roots.insert(root.to_string());
+                    }
                 }
+                TemplateAttr::Bound { name, expr, .. } if name == "ref" => {
+                    if let Some(root) = leading_identifier(&expr.text) {
+                        roots.insert(root.to_string());
+                    }
+                }
+                _ => {}
             }
         }
     });

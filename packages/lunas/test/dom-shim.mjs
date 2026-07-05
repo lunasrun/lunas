@@ -138,6 +138,23 @@ class FakeNode {
       this.appendChild(n);
     }
   }
+  get innerHTML() {
+    return this.innerHTMLString();
+  }
+  // querySelector — supports the narrow selector shapes teleport tests use:
+  //   "#id", ".class", "tag". Depth-first search over the subtree.
+  querySelector(sel) {
+    const match = selectorMatcher(sel);
+    const walk = (node) => {
+      for (const child of node.childNodes) {
+        if (child.kind === "element" && match(child)) return child;
+        const found = walk(child);
+        if (found) return found;
+      }
+      return null;
+    };
+    return walk(this);
+  }
   // Serialize the subtree back to HTML — used to assert rendered output.
   get outerHTML() {
     if (this.kind === "text") return this.data;
@@ -209,6 +226,20 @@ function parseTag(raw) {
   return { tag, attrs };
 }
 
+// A minimal CSS selector matcher for querySelector: "#id" | ".class" | "tag".
+function selectorMatcher(sel) {
+  sel = sel.trim();
+  if (sel[0] === "#") {
+    const id = sel.slice(1);
+    return (el) => el.getAttribute("id") === id;
+  }
+  if (sel[0] === ".") {
+    const cls = sel.slice(1);
+    return (el) => (el.getAttribute("class") || "").split(/\s+/).includes(cls);
+  }
+  return (el) => el.tag === sel;
+}
+
 function decode(s) {
   return s
     .replace(/&quot;/g, '"')
@@ -227,7 +258,14 @@ export function installDom() {
       n.tag = tag;
       return n;
     },
+    // A document-level root so teleport targets attached here are reachable via
+    // document.querySelector. Tests append their portal container to `body`.
+    body: null,
+    querySelector(sel) {
+      return doc.body ? doc.body.querySelector(sel) : null;
+    },
   };
+  doc.body = doc.createElement("body");
   globalThis.document = doc;
   return doc;
 }

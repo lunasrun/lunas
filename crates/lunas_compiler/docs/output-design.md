@@ -195,8 +195,19 @@ export function component(tag, attrs, HTML, setup) {
     return root;                           // caller attaches once
   };
 }
+export function fragment(attrs, HTML, setup) { /* multi-root component (§7): no wrapper —
+                                                 parse HTML into a throwaway host, wire
+                                                 against it (c.root = host), return the
+                                                 child-node group (an Array carrying
+                                                 __lunasCtx) as the mountable unit */ }
 export const refs = (root, paths) => paths.map(p => p.reduce((n, i) => n.childNodes[i], root));
 export const on = (el, ev, fn) => el.addEventListener(ev, fn);
+
+// --- class / style normalization (`:class` / `:style`) ---
+export function normClass(v) { /* string | { cls: bool } | array(nested) -> class string */ }
+export function setClass(el, staticClass, v) { /* merge staticClass with normClass(v) -> class attr */ }
+export function normStyle(v) { /* string | { camelProp: val } | array -> "prop: val;" (camel->kebab) */ }
+export function setStyle(el, staticStyle, v) { /* merge staticStyle with normStyle(v) -> style attr */ }
 
 // --- control flow (anchors are runtime text nodes) ---
 export function ifBlock(c, before, deps, cond, make) { /* insert/remove make() at a text anchor */ }
@@ -204,7 +215,19 @@ export function forBlock(c, into, deps, items, make) { /* keyed list at a text a
 export function mountChild(c, before, Child, props) { /* Child(props) inserted at a text anchor;
                                                           returns { root, ctx, setProp(name,value),
                                                           unmount() } — setProp drives a reactive
-                                                          prop box in the child (§6) */ }
+                                                          prop box in the child (§6). Handles a
+                                                          multi-root (fragment) child: inserts and
+                                                          removes the whole node group */ }
+export function dynamicBlock(c, before, deps, factoryOf, props) { /* `<component :is>` — remount the
+                                                          factoryOf() child at the anchor when it
+                                                          changes (unmount old, mountChild new);
+                                                          forwards props via setProp. Returns
+                                                          { handle, update(), setProp(), destroy() } */ }
+export function teleportBlock(c, before, targetOf, build) { /* `<teleport to>` — build() content is
+                                                          appended into targetOf() (a selector string
+                                                          -> querySelector, or an Element) instead of
+                                                          inline; destroy() removes it. Content binds
+                                                          collected in a scope for leak-free teardown */ }
 
 // --- module-level stores (state outside any component; §4's "shared" concept
 //     generalized to N components importing the same module, instead of one
@@ -341,6 +364,13 @@ No signal-tracking stack, no VDOM, no per-node effect objects.
 | `<Child :p="e"/>` | `mountChild(c, anchor, Child, { p: () => e, static: "x" })` at an anchor; reactive props are getters, static props are values (see below) |
 | `<Child @save="h($event)"/>` | an `onSave: ($event) => h($event)` entry on the mountChild props object; the child raises it with `emit(c, "save", payload)` (§5, c-emits). `@save-all` → `onSaveAll` (camel-cased). Handler runs in the parent; it does not auto-mark the parent dirty |
 | `@input name:type = v` | `const name = prop(c, "name", i, props.name, v)` at the top of `setup` — every prop is a reactive box (see below) |
+| `:class="e"` | `setClass(el, "<static class>", e)` — `e` is `string \| { cls: bool } \| array` (nested), normalized and merged with the static `class` attr (`normClass`) |
+| `:style="e"` | `setStyle(el, "<static style>", e)` — `e` is `string \| { camelCaseProp: v }` (arrays merge), camelCase → kebab, merged with the static `style` attr (`normStyle`) |
+| `:html="e"` | `el.innerHTML = e` (initial + reactive). **XSS caveat:** the value is inserted verbatim — never bind untrusted input. Children on the same element are overwritten (a warning is emitted) |
+| `:ref="name"` | `name.v = el` at wire time — exposes the element/child to the script via the reactive box `name` (declare `let name;` in script; the ref assignment makes it reactive so the resolver numbers it). Component refs expose the mount handle |
+| `<component :is="e" :p="…"/>` | `dynamicBlock(c, anchor, deps, () => e, { p: () => … })` — remounts the child factory `e` at the anchor when `:is` changes; props flow via `setProp`. Any `@use` factory is importable by name (all `@use` imports are emitted when a `<component>` is present) |
+| `<teleport to="sel">…</teleport>` | `teleportBlock(c, anchor, () => "sel", () => {…build children…})` — children render into `document.querySelector(sel)` (or an element via `:to="e"`) instead of inline; nodes removed on teardown |
+| multi-root template (>1 top-level node) | `export default fragment({}, HTML, setup)` instead of `component(...)` — no wrapper element; the factory returns the child-node group carrying `__lunasCtx`, mountable/movable/unmountable as a unit (§7) |
 
 ### Child components & props (concretized)
 

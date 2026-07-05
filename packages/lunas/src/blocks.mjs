@@ -263,6 +263,88 @@ export function forBlock(c, anchor, deps, items, opts) {
   };
 }
 
+// dynamicBlock(c, anchor, deps, factoryOf, props) — dynamic component (`:is`).
+// `factoryOf()` returns the current child factory (a `component(...)` result),
+// or a falsy value for "render nothing". Whenever the factory identity changes
+// (its deps flush), the old child is unmounted and the new one is mounted at
+// the same anchor via mountChild, so prop passing and child reactivity keep
+// working. `props` is the same shape mountChild takes ({ p: () => e, static });
+// it is reused across remounts and re-seeds the fresh child.
+//
+// Returns a handle: { handle (current mountChild handle or null), update(),
+// setProp(name, value) (forwards to the live child), destroy() }.
+export function dynamicBlock(c, anchor, deps, factoryOf, props) {
+  let cur = undefined; // current factory
+  let child = null; // current mountChild handle
+
+  const run = () => {
+    const next = factoryOf();
+    if (next === cur) return;
+    cur = next;
+    if (child) {
+      child.unmount();
+      child = null;
+    }
+    if (next) child = mountChild(c, anchor, next, props);
+  };
+  const s = bind(c, deps, run);
+
+  return {
+    get handle() {
+      return child;
+    },
+    update: run,
+    setProp(name, value) {
+      if (child) child.setProp(name, value);
+    },
+    destroy() {
+      unbind(c, s);
+      if (child) {
+        child.unmount();
+        child = null;
+      }
+    },
+  };
+}
+
+// teleportBlock(c, anchor, targetOf, build) — teleport/portal.
+// `build()` returns the content node or an array of nodes (like an :if branch
+// make()). `targetOf()` resolves the mount target: a selector string
+// (`document.querySelector(sel)`) or an Element. The content is inserted into
+// the target instead of inline at `anchor`; on destroy the nodes are removed.
+// A permanent text anchor still marks the inline slot so surrounding layout is
+// undisturbed and teardown order stays deterministic.
+//
+// Content binds are collected in a scope homed at creation, so destroying the
+// block tears down every inner bind (no leaks), exactly like ifBlock.
+export function teleportBlock(c, anchor, targetOf, build) {
+  const home = c.scope;
+  const r = inScopeAt(c, home, build);
+  const scope = r.scope;
+  const nodes = toNodes(r.result);
+
+  const resolveTarget = () => {
+    const t = targetOf();
+    if (t == null) return null;
+    if (typeof t === "string") {
+      const doc = anchor.ownerDocument || (typeof document !== "undefined" ? document : null);
+      return doc && doc.querySelector ? doc.querySelector(t) : null;
+    }
+    return t; // an Element
+  };
+
+  const target = resolveTarget();
+  if (target) for (const n of nodes) target.appendChild(n);
+
+  return {
+    nodes,
+    destroy() {
+      for (const n of nodes) n.remove();
+      dropScope(c, scope);
+    },
+  };
+}
+
 // mountChild(c, anchor, childFactory, props) — instantiate a child component
 // and insert its root before the anchor (output-design.md §6).
 //
@@ -274,6 +356,11 @@ export function forBlock(c, anchor, deps, items, opts) {
 // binds react. The two contexts are independent (§6): pushing a prop marks the
 // CHILD dirty, a child event marks only the child.
 //
+// A multi-root child (built by `fragment(...)`) returns an Array of nodes
+// carrying `__lunasCtx`; a single-root child returns one node. mountChild
+// handles both: it inserts every node of the group before the anchor and
+// removes them all on unmount.
+//
 // Returns a handle: { root, ctx, setProp(name, value), unmount() }.
 //
 // Lifecycle & DI wiring (additive): the child context is linked to the parent
@@ -284,7 +371,9 @@ export function forBlock(c, anchor, deps, items, opts) {
 // `attach()` drains them. `unmount()` fires the child's onDestroy exactly once.
 export function mountChild(c, anchor, childFactory, props) {
   const root = childFactory(props);
-  anchor.parentNode.insertBefore(root, anchor);
+  const nodes = toNodes(root);
+  const p = anchor.parentNode;
+  for (const n of nodes) p.insertBefore(n, anchor);
   const childCtx = root && root.__lunasCtx;
   if (childCtx) {
     childCtx.parent = c;
@@ -310,7 +399,8 @@ export function mountChild(c, anchor, childFactory, props) {
           if (k >= 0) kids.splice(k, 1);
         }
       }
-      root.remove();
+      // Multi-root children remove every node of the group.
+      for (const n of nodes) n.remove();
     },
   };
 }

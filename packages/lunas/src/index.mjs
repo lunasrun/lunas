@@ -26,15 +26,27 @@ export { nextTick, batch } from "./batch.mjs";
 
 export {
   component,
+  fragment,
   refs,
   on,
   fromHTML,
   anchorBefore,
   anchorBeforeSplit,
   anchorAppend,
+  normClass,
+  setClass,
+  normStyle,
+  setStyle,
 } from "./dom.mjs";
 
-export { ifBlock, ifChain, forBlock, mountChild } from "./blocks.mjs";
+export {
+  ifBlock,
+  ifChain,
+  forBlock,
+  mountChild,
+  dynamicBlock,
+  teleportBlock,
+} from "./blocks.mjs";
 
 export {
   createForState,

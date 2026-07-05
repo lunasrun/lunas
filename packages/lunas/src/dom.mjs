@@ -33,6 +33,40 @@ export const refs = (root, paths) =>
 
 export const on = (el, ev, fn) => el.addEventListener(ev, fn);
 
+// fragment(attrs, HTML, setup) — the compiled factory for a MULTI-ROOT
+// component (output-design.md §7). Unlike `component`, there is no wrapper
+// element: the static skeleton HTML has several top-level nodes, so the factory
+// parses it into a throwaway host and returns the host's child nodes as a
+// FRAGMENT — an Array of nodes carrying the component context on `__lunasCtx`
+// (so a parent's mountChild can drive props exactly as for a single-root
+// child). `attrs` is accepted for signature parity but not applied (there is no
+// single root to attribute); it is ignored.
+//
+// The block helpers (mountChild/ifBlock/forBlock) already treat a node group as
+// a unit via toNodes/firstNode, so a fragment mounts, moves, and unmounts as
+// one. The context uses the first node as its `root` for positional refs
+// against the whole child list.
+export function fragment(attrs, HTML, setup) {
+  return (props) => {
+    const host = document.createElement("div"); // throwaway wiring host
+    host.innerHTML = HTML; // ★ one native parse, detached
+    const c = createContext(host); // `c.root` = host: positional refs navigate it
+    // Wire while the nodes are still attached to the host, so refs(c.root, …)
+    // captured in setup resolve against the parsed tree (like a single-root
+    // component). Binds keep the captured refs, not live host navigation.
+    setup(c, props || {});
+    // Snapshot AFTER setup so any top-level anchors created during wiring
+    // (a top-level :if/:for/text slot) are part of the fragment node group and
+    // travel with it. Then detach from the host (discarded) so the caller
+    // inserts the fragment directly.
+    const nodes = Array.from(host.childNodes);
+    for (const n of nodes) n.remove();
+    const frag = nodes;
+    frag.__lunasCtx = c;
+    return frag;
+  };
+}
+
 // fromHTML(html, near) — parse a static block skeleton (an :if branch, a :for
 // item, …) into a detached scratch element via one bulk innerHTML, exactly like
 // the component root build (§8: branches are built by their own innerHTML when
@@ -84,4 +118,88 @@ export function anchorAppend(parent) {
   const a = emptyText(parent);
   parent.appendChild(a);
   return a;
+}
+
+// --- class & style normalization (output-design.md §6, `:class` / `:style`) --
+// Vue-parity semantics with Lunas syntax: `:class="expr"` where expr is a
+// string | { cls: bool } | array (nested mix of those), and `:style="expr"`
+// where expr is a string | { camelCaseProp: value } (arrays merge). The
+// emitter special-cases the `class`/`style` attribute names and merges the
+// normalized dynamic value with the element's static attribute.
+
+// normClass(value) — flatten a class binding into a space-separated string.
+// Falsy entries are dropped; object keys are included when their value is
+// truthy; arrays are flattened recursively. Non-object/array values stringify.
+export function normClass(value) {
+  if (value == null || value === false) return "";
+  if (typeof value === "string") return value.trim();
+  if (Array.isArray(value)) {
+    let out = "";
+    for (const v of value) {
+      const s = normClass(v);
+      if (s) out = out ? out + " " + s : s;
+    }
+    return out;
+  }
+  if (typeof value === "object") {
+    let out = "";
+    for (const k in value) {
+      if (value[k]) out = out ? out + " " + k : k;
+    }
+    return out;
+  }
+  return String(value);
+}
+
+// setClass(el, staticClass, value) — merge the element's static class string
+// with the normalized dynamic `value` and write the whole `class` attribute.
+export function setClass(el, staticClass, value) {
+  const dyn = normClass(value);
+  const merged = staticClass ? (dyn ? staticClass + " " + dyn : staticClass) : dyn;
+  if (merged) el.setAttribute("class", merged);
+  else el.removeAttribute("class");
+}
+
+// camelToKebab(name) — `backgroundColor` -> `background-color`. Custom
+// properties (`--x`) and already-kebab names pass through unchanged.
+function camelToKebab(name) {
+  if (name.charCodeAt(0) === 45 /* '-' */) return name; // --custom-prop
+  return name.replace(/[A-Z]/g, (m) => "-" + m.toLowerCase());
+}
+
+// normStyle(value) — flatten a style binding into a `prop: value;` string.
+// A string passes through; an object maps camelCase keys to kebab-case CSS
+// properties; arrays merge left-to-right (later entries win).
+export function normStyle(value) {
+  if (value == null || value === false) return "";
+  if (typeof value === "string") return value.trim();
+  if (Array.isArray(value)) {
+    let out = "";
+    for (const v of value) {
+      const s = normStyle(v);
+      if (s) out = out ? out + (out.endsWith(";") ? " " : "; ") + s : s;
+    }
+    return out;
+  }
+  if (typeof value === "object") {
+    let out = "";
+    for (const k in value) {
+      const v = value[k];
+      if (v == null || v === false) continue;
+      out += (out ? " " : "") + camelToKebab(k) + ": " + v + ";";
+    }
+    return out;
+  }
+  return String(value);
+}
+
+// setStyle(el, staticStyle, value) — merge the static style string with the
+// normalized dynamic `value` and write the whole `style` attribute.
+export function setStyle(el, staticStyle, value) {
+  const dyn = normStyle(value);
+  let base = staticStyle ? staticStyle.trim() : "";
+  if (base && !base.endsWith(";")) base += ";";
+  const merged = base ? (dyn ? base + " " + dyn : base) : dyn;
+  if (merged) el.setAttribute("style", merged);
+  else el.removeAttribute("style");
 }
