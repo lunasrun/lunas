@@ -1,0 +1,10 @@
+html:
+    <div>
+        <button @click="toggle()">toggle</button>
+        <p :if="locked">Locked: ${value}</p>
+        <input :else ::value="value">
+    </div>
+script:
+    let locked = false
+    let value = "edit me"
+    function toggle(){ locked = !locked }

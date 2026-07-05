@@ -1,0 +1,6 @@
+html:
+    <div><span :if="(a && b) || cc">shown</span></div>
+script:
+    let a = false
+    let b = true
+    let cc = true

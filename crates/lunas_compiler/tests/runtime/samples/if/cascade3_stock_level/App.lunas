@@ -1,0 +1,8 @@
+html:
+    <div>
+        <p :if="stock == 0">Out of stock</p>
+        <p :elseif="stock < 5">Low stock</p>
+        <p :else>In stock</p>
+    </div>
+script:
+    let stock = 0

@@ -1,0 +1,7 @@
+html:
+    <div :if="show">
+        <ul><li :for="item of items" :key="item">${item}</li></ul>
+    </div>
+script:
+    let show = true
+    let items = ["a", "b", "c"]

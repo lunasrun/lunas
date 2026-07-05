@@ -1,0 +1,4 @@
+html:
+    <div><span :if="!on">shown</span></div>
+script:
+    let on = true

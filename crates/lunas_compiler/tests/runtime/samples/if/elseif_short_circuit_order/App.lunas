@@ -1,0 +1,8 @@
+html:
+    <div>
+        <p :if="n > 0">Positive</p>
+        <p :elseif="n > -100">Small negative or zero</p>
+        <p :else>Very negative</p>
+    </div>
+script:
+    let n = 0

@@ -1,0 +1,7 @@
+html:
+    <div>
+        <p :if="temp > 30">Hot</p>
+        <p :else>Mild</p>
+    </div>
+script:
+    let temp = 32

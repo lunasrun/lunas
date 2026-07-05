@@ -1,0 +1,8 @@
+html:
+    <div>
+        <p :if="n == 1">one</p>
+        <p :elseif="n == 2">two</p>
+        <p :elseif="n == 3">three</p>
+    </div>
+script:
+    let n = 2

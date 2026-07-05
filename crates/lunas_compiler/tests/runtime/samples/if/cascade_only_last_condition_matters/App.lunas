@@ -1,0 +1,8 @@
+html:
+    <div>
+        <p :if="n == 1">One</p>
+        <p :elseif="n == 1">One again (unreachable)</p>
+        <p :else>Not one</p>
+    </div>
+script:
+    let n = 1

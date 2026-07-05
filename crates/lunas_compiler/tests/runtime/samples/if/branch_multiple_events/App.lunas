@@ -1,0 +1,15 @@
+html:
+    <div>
+        <button @click="show()">show</button>
+        <div :if="visible">
+            <button @click="inc()">inc</button>
+            <button @click="dec()">dec</button>
+            <span>${n}</span>
+        </div>
+    </div>
+script:
+    let visible = false
+    let n = 5
+    function show(){ visible = true }
+    function inc(){ n = n + 1 }
+    function dec(){ n = n - 1 }

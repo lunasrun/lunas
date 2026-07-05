@@ -1,0 +1,4 @@
+html:
+    <ul><li :for="n of nums" :key="n"><span :if="n % 2 == 0">even ${n}</span><em :else>odd ${n}</em></li></ul>
+script:
+    let nums = [1, 2, 3, 4, 5]

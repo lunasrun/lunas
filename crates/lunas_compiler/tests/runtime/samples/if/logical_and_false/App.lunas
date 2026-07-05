@@ -1,0 +1,5 @@
+html:
+    <div><span :if="loggedIn && isAdmin">admin panel</span></div>
+script:
+    let loggedIn = true
+    let isAdmin = false

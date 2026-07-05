@@ -1,0 +1,8 @@
+html:
+    <div>
+        <button @click="flip()">flip</button>
+        <span :if="on">HERE</span>
+    </div>
+script:
+    let on = false
+    function flip(){ on = !on }

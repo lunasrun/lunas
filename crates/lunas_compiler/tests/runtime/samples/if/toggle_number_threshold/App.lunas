@@ -1,0 +1,9 @@
+html:
+    <div>
+        <button @click="inc()">inc</button>
+        <p :if="count >= 3">Threshold reached</p>
+        <p :else>Below threshold (${count})</p>
+    </div>
+script:
+    let count = 0
+    function inc(){ count = count + 1 }

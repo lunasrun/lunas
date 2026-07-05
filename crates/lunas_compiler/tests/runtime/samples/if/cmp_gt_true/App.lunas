@@ -1,0 +1,4 @@
+html:
+    <div><span :if="score > 90">excellent</span></div>
+script:
+    let score = 95

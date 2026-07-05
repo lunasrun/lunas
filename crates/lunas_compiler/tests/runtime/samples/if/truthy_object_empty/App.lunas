@@ -1,0 +1,4 @@
+html:
+    <div><span :if="obj">shown</span></div>
+script:
+    let obj = {}

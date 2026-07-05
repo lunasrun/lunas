@@ -1,0 +1,16 @@
+html:
+    <div>
+        <button @click="toA()">a</button>
+        <button @click="toB()">b</button>
+        <div :if="page == 'a'">
+            <button @click="bump()">bump</button>
+            <span>${n}</span>
+        </div>
+        <p :else>Page B</p>
+    </div>
+script:
+    let page = "a"
+    let n = 0
+    function toA(){ page = "a" }
+    function toB(){ page = "b" }
+    function bump(){ n = n + 1 }

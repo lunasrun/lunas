@@ -1,0 +1,8 @@
+html:
+    <div>
+        <a :if="loggedIn" :href="profileUrl" class="link" target="_blank">Profile</a>
+        <a :else href="/login" class="link">Login</a>
+    </div>
+script:
+    let loggedIn = true
+    let profileUrl = "/u/42"

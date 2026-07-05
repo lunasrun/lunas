@@ -1,0 +1,9 @@
+html:
+    <div>
+        <p :if="isHoliday">Holiday</p>
+        <p :elseif="isWeekend">Weekend</p>
+        <p :else>Weekday</p>
+    </div>
+script:
+    let isHoliday = false
+    let isWeekend = true

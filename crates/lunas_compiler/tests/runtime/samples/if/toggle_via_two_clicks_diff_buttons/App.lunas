@@ -1,0 +1,12 @@
+html:
+    <div>
+        <button @click="showA()">a</button>
+        <button @click="showB()">b</button>
+        <p :if="which == 'a'">Panel A</p>
+        <p :elseif="which == 'b'">Panel B</p>
+        <p :else>None</p>
+    </div>
+script:
+    let which = "none"
+    function showA(){ which = "a" }
+    function showB(){ which = "b" }

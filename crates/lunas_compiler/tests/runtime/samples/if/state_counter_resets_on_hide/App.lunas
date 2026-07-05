@@ -1,0 +1,13 @@
+html:
+    <div>
+        <button @click="toggle()">toggle</button>
+        <div :if="on">
+            <button @click="bump()">bump</button>
+            <span>${n}</span>
+        </div>
+    </div>
+script:
+    let on = true
+    let n = 0
+    function toggle(){ on = !on }
+    function bump(){ n = n + 1 }

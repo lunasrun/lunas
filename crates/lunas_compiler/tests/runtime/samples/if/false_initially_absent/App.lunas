@@ -1,0 +1,8 @@
+html:
+    <div>
+        <button @click="show()">show</button>
+        <p :if="visible">Now visible</p>
+    </div>
+script:
+    let visible = false
+    function show(){ visible = true }

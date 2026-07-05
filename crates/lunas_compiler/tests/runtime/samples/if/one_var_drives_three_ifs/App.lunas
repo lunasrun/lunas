@@ -1,0 +1,10 @@
+html:
+    <div>
+        <button @click="toggle()">toggle</button>
+        <span :if="ready">A</span>
+        <em :if="ready">B</em>
+        <i :if="!ready">C</i>
+    </div>
+script:
+    let ready = false
+    function toggle(){ ready = !ready }

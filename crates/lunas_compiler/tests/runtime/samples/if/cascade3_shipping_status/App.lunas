@@ -1,0 +1,8 @@
+html:
+    <div>
+        <p :if="status == 'delivered'">Delivered</p>
+        <p :elseif="status == 'shipped'">Shipped</p>
+        <p :else>Processing</p>
+    </div>
+script:
+    let status = "processing"

@@ -1,0 +1,7 @@
+html:
+    <div>
+        <p :if="!ready">Loading</p>
+        <p :else>Ready</p>
+    </div>
+script:
+    let ready = false

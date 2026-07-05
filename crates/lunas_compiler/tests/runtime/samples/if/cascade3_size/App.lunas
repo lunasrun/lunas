@@ -1,0 +1,8 @@
+html:
+    <div>
+        <p :if="w < 100">Small</p>
+        <p :elseif="w < 500">Medium</p>
+        <p :else>Large</p>
+    </div>
+script:
+    let w = 250

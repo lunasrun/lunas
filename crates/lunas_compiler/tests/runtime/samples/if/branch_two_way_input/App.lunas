@@ -1,0 +1,12 @@
+html:
+    <div>
+        <button @click="toggle()">toggle</button>
+        <div :if="editing">
+            <input ::value="draft">
+            <span>${draft}</span>
+        </div>
+    </div>
+script:
+    let editing = false
+    let draft = "hi"
+    function toggle(){ editing = !editing }

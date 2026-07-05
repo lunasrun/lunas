@@ -1,0 +1,7 @@
+html:
+    <div>
+        <p :if="page == 'a'">A page</p>
+        <p :elseif="page == 'b'">B page</p>
+    </div>
+script:
+    let page = "c"

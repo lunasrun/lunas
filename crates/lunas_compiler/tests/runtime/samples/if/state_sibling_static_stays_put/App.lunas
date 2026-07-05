@@ -1,0 +1,10 @@
+html:
+    <div>
+        <header>Header</header>
+        <button @click="toggle()">toggle</button>
+        <p :if="on">Middle content</p>
+        <footer>Footer</footer>
+    </div>
+script:
+    let on = false
+    function toggle(){ on = !on }

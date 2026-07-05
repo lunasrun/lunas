@@ -1,0 +1,8 @@
+html:
+    <div>
+        <p :if="light == 'red'">Stop</p>
+        <p :elseif="light == 'yellow'">Slow</p>
+        <p :else>Go</p>
+    </div>
+script:
+    let light = "yellow"

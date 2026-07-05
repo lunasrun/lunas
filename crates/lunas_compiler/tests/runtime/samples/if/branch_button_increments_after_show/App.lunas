@@ -1,0 +1,10 @@
+html:
+    <div>
+        <button @click="toggle()">toggle</button>
+        <button :if="on" @click="inc()">plus (${n})</button>
+    </div>
+script:
+    let on = false
+    let n = 0
+    function toggle(){ on = !on }
+    function inc(){ n = n + 1 }

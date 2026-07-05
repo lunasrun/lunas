@@ -1,0 +1,4 @@
+html:
+    <div :if="show" class="panel">Panel content</div>
+script:
+    let show = true

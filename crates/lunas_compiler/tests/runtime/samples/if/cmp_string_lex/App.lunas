@@ -1,0 +1,4 @@
+html:
+    <div><span :if="name > 'm'">late alphabet</span></div>
+script:
+    let name = "zed"

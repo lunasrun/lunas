@@ -1,0 +1,9 @@
+html:
+    <div>
+        <button @click="toggle()">toggle</button>
+        <span :if="dark">Dark Icon</span>
+        <p :if="dark">Dark Label</p>
+    </div>
+script:
+    let dark = false
+    function toggle(){ dark = !dark }

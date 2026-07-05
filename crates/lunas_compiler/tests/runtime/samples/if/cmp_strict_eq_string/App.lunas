@@ -1,0 +1,4 @@
+html:
+    <div><span :if="mode === 'dark'">dark mode</span></div>
+script:
+    let mode = "dark"

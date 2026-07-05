@@ -1,0 +1,5 @@
+html:
+    <div><span :if="isValid()">valid</span></div>
+script:
+    let n = 4
+    function isValid(){ return n > 0 }

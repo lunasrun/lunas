@@ -1,0 +1,12 @@
+html:
+    <div>
+        <p :if="a">A true</p>
+        <p :else>A false</p>
+        <span :if="b">B true</span>
+        <span :elseif="bc">B-c true</span>
+        <span :else>B false</span>
+    </div>
+script:
+    let a = true
+    let b = false
+    let bc = true

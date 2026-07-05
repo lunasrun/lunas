@@ -1,0 +1,9 @@
+html:
+    <div>
+        <button @click="toggle()">toggle</button>
+        <p :if="!!visible">Visible</p>
+        <p :else>Hidden</p>
+    </div>
+script:
+    let visible = false
+    function toggle(){ visible = !visible }
