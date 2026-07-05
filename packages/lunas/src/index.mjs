@@ -46,6 +46,8 @@ export {
   mountChild,
   dynamicBlock,
   teleportBlock,
+  slotBlock,
+  slotContent,
 } from "./blocks.mjs";
 
 export {
