@@ -1,0 +1,4 @@
+html:
+    <section><slot :item="row"></slot></section>
+script:
+    let row = "apple"

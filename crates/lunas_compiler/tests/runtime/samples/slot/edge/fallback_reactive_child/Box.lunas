@@ -1,0 +1,5 @@
+html:
+    <section><slot><button @click="inc()">c=${cnt}</button></slot></section>
+script:
+    let cnt = 0
+    function inc(){ cnt++ }

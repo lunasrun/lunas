@@ -1,0 +1,6 @@
+@use Box from "./Box.lunas"
+html:
+    <div><button @click="go()">g</button><Box><a :href="url">link</a></Box></div>
+script:
+    let url = "/a"
+    function go(){ url = "/b" }

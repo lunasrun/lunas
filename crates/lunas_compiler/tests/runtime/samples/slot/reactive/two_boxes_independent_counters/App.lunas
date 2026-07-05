@@ -1,0 +1,8 @@
+@use Box from "./Box.lunas"
+html:
+    <div><button class="a" @click="ia()">a</button><button class="b" @click="ib()">b</button><Box><span class="x">${a}</span></Box><Box><span class="y">${b}</span></Box></div>
+script:
+    let a = 0
+    let b = 0
+    function ia(){ a++ }
+    function ib(){ b++ }

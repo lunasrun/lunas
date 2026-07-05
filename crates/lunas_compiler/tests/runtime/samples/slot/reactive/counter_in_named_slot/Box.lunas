@@ -1,0 +1,2 @@
+html:
+    <section><footer><slot name="foot"></slot></footer></section>

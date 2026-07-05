@@ -1,0 +1,4 @@
+@use Box from "./Box.lunas"
+@use Card from "./Card.lunas"
+html:
+    <div><Box><template #body><Card><template #title>T</template></Card></template></Box></div>

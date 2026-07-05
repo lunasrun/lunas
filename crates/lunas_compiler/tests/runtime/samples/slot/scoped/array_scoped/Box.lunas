@@ -1,0 +1,4 @@
+html:
+    <section><slot :list="items"></slot></section>
+script:
+    let items = ["a", "b"]

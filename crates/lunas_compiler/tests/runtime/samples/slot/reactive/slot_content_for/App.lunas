@@ -1,0 +1,6 @@
+@use Box from "./Box.lunas"
+html:
+    <div><button @click="add()">add</button><Box><ul><li :for="i of items" :key="i">${i}</li></ul></Box></div>
+script:
+    let items = ["a", "b"]
+    function add(){ items.push("c") }

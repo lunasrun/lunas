@@ -1,0 +1,3 @@
+@use Box from "./Box.lunas"
+html:
+    <div><Box><template slot="head">long form</template></Box></div>

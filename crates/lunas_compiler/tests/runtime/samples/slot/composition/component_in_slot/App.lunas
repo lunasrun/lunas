@@ -1,0 +1,6 @@
+@use Box from "./Box.lunas"
+@use Chip from "./Chip.lunas"
+html:
+    <div><Box><Chip :label="word"/></Box></div>
+script:
+    let word = "hi"

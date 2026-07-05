@@ -1,0 +1,5 @@
+@use Box from "./Box.lunas"
+html:
+    <div><Box><template #default="p">${label}:${p.item}</template></Box></div>
+script:
+    let label = "tag"

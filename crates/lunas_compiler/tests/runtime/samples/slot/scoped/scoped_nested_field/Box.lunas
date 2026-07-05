@@ -1,0 +1,4 @@
+html:
+    <section><slot :user="account"></slot></section>
+script:
+    let account = { name: "ada", id: 7 }

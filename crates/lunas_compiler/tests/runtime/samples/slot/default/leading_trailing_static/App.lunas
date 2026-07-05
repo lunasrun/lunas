@@ -1,0 +1,5 @@
+@use Box from "./Box.lunas"
+html:
+    <div><Box>[${v}]</Box></div>
+script:
+    let v = "mid"

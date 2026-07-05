@@ -1,0 +1,5 @@
+@use Box from "./Box.lunas"
+html:
+    <div><Box>hello ${who}!</Box></div>
+script:
+    let who = "world"

@@ -1,0 +1,2 @@
+html:
+    <article class="inner"><h1><slot name="title"></slot></h1></article>

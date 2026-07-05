@@ -1,0 +1,3 @@
+@use Box from "./Box.lunas"
+html:
+    <div><Box><template #head="h">h:${h.t}</template><template #foot="f">f:${f.c}</template></Box></div>

@@ -1,0 +1,6 @@
+@use Box from "./Box.lunas"
+html:
+    <div><Box>${a} and ${b}</Box></div>
+script:
+    let a = "x"
+    let b = "y"

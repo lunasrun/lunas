@@ -1,0 +1,2 @@
+html:
+    <section class="host"><slot></slot></section>

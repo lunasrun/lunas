@@ -1,0 +1,6 @@
+@use Box from "./Box.lunas"
+@use Chip from "./Chip.lunas"
+html:
+    <div><Box><template #head><Chip :label="t"/></template></Box></div>
+script:
+    let t = "hello"

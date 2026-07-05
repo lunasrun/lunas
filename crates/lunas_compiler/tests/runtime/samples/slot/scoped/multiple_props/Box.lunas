@@ -1,0 +1,5 @@
+html:
+    <section><slot :a="x" :b="y"></slot></section>
+script:
+    let x = "L"
+    let y = "R"

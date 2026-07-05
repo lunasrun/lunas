@@ -1,0 +1,4 @@
+html:
+    <section><slot :n="count"></slot></section>
+script:
+    let count = 7

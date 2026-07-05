@@ -1,0 +1,6 @@
+@use Box from "./Box.lunas"
+html:
+    <div><button @click="grow()">g</button><Box><span :style="'width:' + w + 'px'">bar</span></Box></div>
+script:
+    let w = 10
+    function grow(){ w += 5 }

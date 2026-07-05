@@ -1,0 +1,4 @@
+html:
+    <section><div :if="ready"><slot></slot></div></section>
+script:
+    let ready = true

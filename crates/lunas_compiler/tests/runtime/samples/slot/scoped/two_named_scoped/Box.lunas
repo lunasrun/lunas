@@ -1,0 +1,5 @@
+html:
+    <section><header><slot name="head" :t="title"></slot></header><footer><slot name="foot" :c="count"></slot></footer></section>
+script:
+    let title = "T"
+    let count = 9

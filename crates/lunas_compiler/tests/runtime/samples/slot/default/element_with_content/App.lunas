@@ -1,0 +1,5 @@
+@use Box from "./Box.lunas"
+html:
+    <div><Box><p>count is ${n}</p></Box></div>
+script:
+    let n = 42
