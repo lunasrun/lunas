@@ -710,6 +710,8 @@ name = "lunas_wasm"
 version = "0.1.0"
 dependencies = [
  "lunas_compiler",
+ "lunas_parser",
+ "lunas_script",
  "lunas_span",
  "serde",
  "serde-wasm-bindgen",
