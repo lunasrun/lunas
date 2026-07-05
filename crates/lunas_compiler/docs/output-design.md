@@ -217,7 +217,29 @@ export function mountChild(c, before, Child, props) { /* Child(props) inserted a
                                                           unmount() } — setProp drives a reactive
                                                           prop box in the child (§6). Handles a
                                                           multi-root (fragment) child: inserts and
-                                                          removes the whole node group */ }
+                                                          removes the whole node group. Slot content
+                                                          rides in via a reserved `props.$slots`
+                                                          object (see slotBlock/slotContent) */ }
+
+// --- slots: parent content projected into a child's <slot> outlets (c-slots) --
+// The parent passes a `$slots` object on the mountChild props: { default:
+// factory, name: factory, … }. Each factory has the shape
+// `(slotProps, onCleanup) => nodes` and is wired in the PARENT's scope (parent
+// reactivity drives it; onCleanup ties its teardown to the child's unmount).
+export function slotBlock(childCtx, anchor, factory, fallback, slotPropsOf) { /* at a child <slot>
+                                                          anchor: render the parent-provided `factory`
+                                                          content (wired in the parent), else the
+                                                          child's own `fallback` (() => nodes, wired
+                                                          in the child scope), else nothing.
+                                                          `slotPropsOf()` supplies scoped-slot props
+                                                          (<slot :item=…>) passed up to the factory.
+                                                          Null-safe (never-panic on sparse groups) */ }
+export function slotContent(parentCtx, build, slotProps, onCleanup) { /* the PARENT half of a slot
+                                                          factory: open a parent scope homed at the
+                                                          child's mount, run build(slotProps) to wire
+                                                          the content against the parent, register the
+                                                          scope's dropScope via onCleanup, return the
+                                                          nodes */ }
 export function dynamicBlock(c, before, deps, factoryOf, props) { /* `<component :is>` — remount the
                                                           factoryOf() child at the anchor when it
                                                           changes (unmount old, mountChild new);
@@ -370,6 +392,23 @@ No signal-tracking stack, no VDOM, no per-node effect objects.
 | `:ref="name"` | `name.v = el` at wire time — exposes the element/child to the script via the reactive box `name` (declare `let name;` in script; the ref assignment makes it reactive so the resolver numbers it). Component refs expose the mount handle |
 | `<component :is="e" :p="…"/>` | `dynamicBlock(c, anchor, deps, () => e, { p: () => … })` — remounts the child factory `e` at the anchor when `:is` changes; props flow via `setProp`. Any `@use` factory is importable by name (all `@use` imports are emitted when a `<component>` is present) |
 | `<teleport to="sel">…</teleport>` | `teleportBlock(c, anchor, () => "sel", () => {…build children…})` — children render into `document.querySelector(sel)` (or an element via `:to="e"`) instead of inline; nodes removed on teardown |
+| `<slot>fallback</slot>` (child) | `slotBlock(c, anchor, props.$slots && props.$slots["default"], () => {…fallback fragment…})` — renders the parent's default-slot content, else its own fallback |
+| `<slot name="x"/>` (child) | `slotBlock(c, anchor, props.$slots && props.$slots["x"], fallbackOrNull)` — a named slot keyed by `x` |
+| `<slot :item="e"/>` (child, scoped) | above **+** a trailing `() => ({ item: (e) })` scoped-props getter; the value flows up to the parent's slot content |
+| `<Child>…</Child>` (parent, bare children) | a `default` entry on the mountChild `$slots` object: `default: (slotProps, onCleanup) => slotContent(c, (slotProps) => {…wire content in the PARENT…}, slotProps, onCleanup)` |
+| `<template #x>…</template>` / `<template slot="x">…</template>` (parent) | an `x` entry on `$slots` (named slot). Bare `<template>` inlines its children into the `default` group |
+| `<template #x="p">…</template>` (parent, scoped) | the inner build binds the scoped-slot props to `p`: `slotContent(c, (p) => {…read p.…}, slotProps, onCleanup)`. `slot-scope="p"` is the long form |
+
+> **Scoped-slot reactivity (restricted form).** The child's scoped props
+> (`<slot :item="e"/>`) are captured once, at slot build time, via
+> `slotPropsOf()` — they are a *snapshot object*, not a live reactive channel.
+> Parent slot content reads them through the bound name (`p.item`) and renders
+> correctly on first paint; parent state that the content also reads stays fully
+> reactive (parent-scope binds). What is **not** yet wired is the child later
+> *mutating* a scoped value and having the parent content re-render — that needs
+> a per-scoped-prop reactive bridge (analogous to `mountChild.setProp`, but
+> child→parent). Deferred; slot props whose shape/values are fixed at build (the
+> common case) work today. Making them live is additive on top of this contract.
 | multi-root template (>1 top-level node) | `export default fragment({}, HTML, setup)` instead of `component(...)` — no wrapper element; the factory returns the child-node group carrying `__lunasCtx`, mountable/movable/unmountable as a unit (§7) |
 
 ### Child components & props (concretized)

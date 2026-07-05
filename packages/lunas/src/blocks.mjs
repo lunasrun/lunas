@@ -21,7 +21,7 @@ import {
   runScope,
 } from "./core.mjs";
 import { createForState, seedForState, reconcile, extractKeys } from "./for_diff.mjs";
-import { isLive, runMount, runDestroy } from "./lifecycle.mjs";
+import { isLive, runMount, runDestroy, onDestroy } from "./lifecycle.mjs";
 
 const toNodes = (h) => (Array.isArray(h) ? h : [h]);
 const firstNode = (h) => (Array.isArray(h) ? h[0] : h);
@@ -403,4 +403,88 @@ export function mountChild(c, anchor, childFactory, props) {
       for (const n of nodes) n.remove();
     },
   };
+}
+
+// slotBlock(childCtx, anchor, factory, fallback, slotPropsOf) — render slot
+// content at a `<slot>` anchor inside a CHILD component (output-design.md §6).
+//
+//   childCtx    — the child component's context (where the `<slot>` lives).
+//   anchor      — permanent text anchor marking the slot position in the child.
+//   factory     — the parent-provided slot content factory, or undefined/null
+//                 when the parent passed no content for this slot. Its shape is
+//                 `(slotProps, onCleanup) => nodes` (node or array of nodes):
+//                 the PARENT emits it, so it wires against the PARENT's context
+//                 and the parent's reactivity drives it. `onCleanup(fn)` lets
+//                 the factory register teardown (its parent-scope dropScope) to
+//                 run when this child unmounts.
+//   fallback    — the child's own fallback factory `() => nodes`, wired in the
+//                 CHILD's scope, shown only when `factory` is absent. Optional.
+//   slotPropsOf — optional getter returning the scoped-slot props object passed
+//                 up to the parent's content (`<slot :item="e"/>`). Called once
+//                 at build; reactivity on the props flows through the parent's
+//                 own binds inside `factory` when the value is a getter.
+//
+// Scope ownership (get this right): parent-provided content is wired by the
+// parent factory in the PARENT context, so its binds live on the parent and are
+// driven by parent state; its teardown is registered via onCleanup and fires on
+// the child's onDestroy. Fallback content is the child's own, wired in the child
+// context under a scope dropped on the child's destroy. Either way nothing
+// leaks and no late write lands after unmount.
+export function slotBlock(childCtx, anchor, factory, fallback, slotPropsOf) {
+  const slotProps = slotPropsOf ? slotPropsOf() : undefined;
+  let nodes = null;
+
+  if (typeof factory === "function") {
+    // Parent content: the factory owns its own (parent) scope; it registers
+    // teardown through onCleanup, which we tie to the child's destroy.
+    const cleanups = [];
+    const onCleanup = (fn) => {
+      if (typeof fn === "function") cleanups.push(fn);
+    };
+    const result = factory(slotProps, onCleanup);
+    nodes = result == null ? [] : toNodes(result);
+    if (cleanups.length) {
+      onDestroy(childCtx, () => {
+        for (const fn of cleanups) fn();
+      });
+    }
+  } else if (typeof fallback === "function") {
+    // Fallback content: the child's own, wired in the child's scope so a child
+    // teardown drops it.
+    const home = childCtx.scope;
+    const r = inScopeAt(childCtx, home, () => fallback(slotProps));
+    nodes = r.result == null ? [] : toNodes(r.result);
+    onDestroy(childCtx, () => dropScope(childCtx, r.scope));
+  }
+
+  if (nodes) {
+    const p = anchor.parentNode;
+    // Skip null/undefined entries defensively so a factory that returns a
+    // sparse group never throws (never-panic).
+    for (const n of nodes) if (n != null) p.insertBefore(n, anchor);
+  }
+  return { nodes: nodes || [] };
+}
+
+// slotContent(parentCtx, build) — build the PARENT half of a slot factory
+// (output-design.md §6). The parent emits, per slot it fills, a factory of the
+// shape `(slotProps, onCleanup) => nodes`; this helper wraps the actual wiring:
+//
+//   • opens a fresh scope on the PARENT context (homed at the scope open when
+//     the parent mounted the child, so nested :for-item slot content tears down
+//     with the item), runs `build(slotProps)` to create + wire the content
+//     against the parent (its binds register on the parent and react to parent
+//     state), and returns the produced nodes;
+//   • registers the scope's dropScope through `onCleanup`, so when the child
+//     unmounts, the parent-owned binds are unregistered (no leak, no late write).
+//
+// Emitted usage (parent side):
+//   { default: (sp, onCleanup) => slotContent(c, (sp) => { …wire…; return r0.childNodes[0]; }, sp, onCleanup) }
+export function slotContent(parentCtx, build, slotProps, onCleanup) {
+  const home = parentCtx.scope;
+  const r = inScopeAt(parentCtx, home, () => build(slotProps));
+  if (typeof onCleanup === "function") {
+    onCleanup(() => dropScope(parentCtx, r.scope));
+  }
+  return r.result;
 }

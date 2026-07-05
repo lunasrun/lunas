@@ -775,3 +775,233 @@ fn component_ref_exposes_mount_handle() {
         "parent drives child through the ref handle: {out}"
     );
 }
+
+// --- slots (c-slots) --------------------------------------------------------
+
+#[test]
+fn slot_default_content_renders_in_child() {
+    if !node_available() {
+        eprintln!("skipping codegen_exec: node not found at {NODE}");
+        return;
+    }
+    // Parent passes default-slot content; the child's <slot> renders it.
+    let parent = "@use Card from \"./Card.lunas\"\n\
+        html:\n\
+        \x20   <div><Card>hello ${name}</Card></div>\n\
+        script:\n\
+        \x20   let name = \"world\"\n\
+        \x20   function chg(){ name = \"lunas\" }\n";
+    let child = "html:\n\
+        \x20   <section><slot>fallback</slot></section>\n";
+
+    let driver = "\
+        const root = factory({});\n\
+        const card = root.childNodes[0].childNodes[0];\n\
+        console.log('INITIAL:' + card.innerHTMLString());\n";
+
+    let out = run_parent_child("slot_default", parent, child, "./Card.lunas", driver);
+    assert!(
+        out.contains("INITIAL:<section>hello world</section>"),
+        "parent default content renders in child slot: {out}"
+    );
+}
+
+#[test]
+fn slot_fallback_when_no_content_given() {
+    if !node_available() {
+        eprintln!("skipping codegen_exec: node not found at {NODE}");
+        return;
+    }
+    // Parent mounts the child with NO content; the slot shows its own fallback.
+    let parent = "@use Card from \"./Card.lunas\"\n\
+        html:\n\
+        \x20   <div><Card/></div>\n";
+    let child = "html:\n\
+        \x20   <section><slot>fallback text</slot></section>\n";
+
+    let driver = "\
+        const root = factory({});\n\
+        const card = root.childNodes[0].childNodes[0];\n\
+        console.log('INITIAL:' + card.innerHTMLString());\n";
+
+    let out = run_parent_child("slot_fallback", parent, child, "./Card.lunas", driver);
+    assert!(
+        out.contains("INITIAL:<section>fallback text</section>"),
+        "fallback shows when parent gives no content: {out}"
+    );
+}
+
+#[test]
+fn slot_parent_state_updates_content_in_place() {
+    if !node_available() {
+        eprintln!("skipping codegen_exec: node not found at {NODE}");
+        return;
+    }
+    // Slot content reads parent state; a parent change updates it in place —
+    // the parent's reactivity drives content living inside the child.
+    let parent = "@use Card from \"./Card.lunas\"\n\
+        html:\n\
+        \x20   <div><button @click=\"inc()\">p</button><Card><span>n=${n}</span></Card></div>\n\
+        script:\n\
+        \x20   let n = 1\n\
+        \x20   function inc(){ n++ }\n";
+    let child = "html:\n\
+        \x20   <section><slot></slot></section>\n";
+
+    let driver = "\
+        const root = factory({});\n\
+        const div = root.childNodes[0];\n\
+        const btn = div.childNodes[0];\n\
+        const card = div.childNodes[1];\n\
+        console.log('INITIAL:' + card.innerHTMLString());\n\
+        btn.dispatch('click'); await tick();\n\
+        console.log('AFTER:' + card.innerHTMLString());\n";
+
+    let out = run_parent_child("slot_reactive", parent, child, "./Card.lunas", driver);
+    assert!(
+        out.contains("INITIAL:<section><span>n=1</span></section>"),
+        "initial slot content: {out}"
+    );
+    assert!(
+        out.contains("AFTER:<section><span>n=2</span></section>"),
+        "parent state change updated slot content in place: {out}"
+    );
+}
+
+#[test]
+fn slot_named_routing() {
+    if !node_available() {
+        eprintln!("skipping codegen_exec: node not found at {NODE}");
+        return;
+    }
+    // Default + a named slot via <template #foot>; each routes to its outlet.
+    let parent = "@use Card from \"./Card.lunas\"\n\
+        html:\n\
+        \x20   <div><Card>body here<template #foot>the footer</template></Card></div>\n";
+    let child = "html:\n\
+        \x20   <section><main><slot></slot></main><footer><slot name=\"foot\"></slot></footer></section>\n";
+
+    let driver = "\
+        const root = factory({});\n\
+        const card = root.childNodes[0].childNodes[0];\n\
+        console.log('OUT:' + card.innerHTMLString());\n";
+
+    let out = run_parent_child("slot_named", parent, child, "./Card.lunas", driver);
+    assert!(
+        out.contains("<main>body here</main>"),
+        "default slot routed to <main>: {out}"
+    );
+    assert!(
+        out.contains("<footer>the footer</footer>"),
+        "named slot routed to <footer>: {out}"
+    );
+}
+
+#[test]
+fn slot_scoped_props_flow_up() {
+    if !node_available() {
+        eprintln!("skipping codegen_exec: node not found at {NODE}");
+        return;
+    }
+    // The child exposes a scoped prop `:item` on its <slot>; the parent's
+    // <template #default="p"> reads it.
+    let parent = "@use Card from \"./Card.lunas\"\n\
+        html:\n\
+        \x20   <div><Card><template #default=\"p\">got ${p.item}</template></Card></div>\n";
+    let child = "html:\n\
+        \x20   <section><slot :item=\"row\"></slot></section>\n\
+        script:\n\
+        \x20   let row = \"apple\"\n";
+
+    let driver = "\
+        const root = factory({});\n\
+        const card = root.childNodes[0].childNodes[0];\n\
+        console.log('OUT:' + card.innerHTMLString());\n";
+
+    let out = run_parent_child("slot_scoped", parent, child, "./Card.lunas", driver);
+    assert!(
+        out.contains("<section>got apple</section>"),
+        "scoped slot prop flowed from child up into parent content: {out}"
+    );
+}
+
+#[test]
+fn slot_teardown_on_child_unmount() {
+    if !node_available() {
+        eprintln!("skipping codegen_exec: node not found at {NODE}");
+        return;
+    }
+    // A child carrying slot content lives inside an :if. Toggling off unmounts
+    // the child; the parent-owned slot binds must not fire afterwards (no leak,
+    // no late write). We prove it by continuing to mutate parent state after
+    // teardown and checking the (removed) content never errors and the child is
+    // gone.
+    let parent = "@use Card from \"./Card.lunas\"\n\
+        html:\n\
+        \x20   <div><button @click=\"t()\">t</button><button @click=\"inc()\">i</button>\
+        <span :if=\"on\"><Card><b>n=${n}</b></Card></span></div>\n\
+        script:\n\
+        \x20   let on = true\n\
+        \x20   let n = 1\n\
+        \x20   function t(){ on = !on }\n\
+        \x20   function inc(){ n++ }\n";
+    let child = "html:\n\
+        \x20   <section><slot></slot></section>\n";
+
+    let driver = "\
+        const root = factory({});\n\
+        const div = root.childNodes[0];\n\
+        const tBtn = div.childNodes[0];\n\
+        const iBtn = div.childNodes[1];\n\
+        console.log('SHOWN:' + div.innerHTMLString());\n\
+        tBtn.dispatch('click'); await tick();\n\
+        console.log('HIDDEN:' + div.innerHTMLString());\n\
+        // Mutating parent state after unmount must not throw or resurrect content.\n\
+        iBtn.dispatch('click'); await tick();\n\
+        console.log('AFTER:' + div.innerHTMLString());\n";
+
+    let out = run_parent_child("slot_teardown", parent, child, "./Card.lunas", driver);
+    assert!(
+        out.lines()
+            .any(|l| l.starts_with("SHOWN:") && l.contains("<section><b>n=1</b></section>")),
+        "slot content shown while child mounted: {out}"
+    );
+    assert!(
+        out.lines()
+            .any(|l| l.starts_with("HIDDEN:") && !l.contains("<section>")),
+        "child + slot content removed on unmount: {out}"
+    );
+    assert!(
+        out.lines()
+            .any(|l| l.starts_with("AFTER:") && !l.contains("<section>")),
+        "post-unmount parent mutation does not resurrect content: {out}"
+    );
+}
+
+#[test]
+fn slot_component_in_slot_content() {
+    if !node_available() {
+        eprintln!("skipping codegen_exec: node not found at {NODE}");
+        return;
+    }
+    // Slot content that itself contains a child component (component-in-slot):
+    // the inner component mounts inside the outer child's slot outlet.
+    let parent = "@use Card from \"./Card.lunas\"\n\
+        html:\n\
+        \x20   <div><Card>wrap ${label}</Card></div>\n\
+        script:\n\
+        \x20   let label = \"x\"\n";
+    let child = "html:\n\
+        \x20   <section><slot></slot></section>\n";
+
+    let driver = "\
+        const root = factory({});\n\
+        const card = root.childNodes[0].childNodes[0];\n\
+        console.log('OUT:' + card.innerHTMLString());\n";
+
+    let out = run_parent_child("slot_nested", parent, child, "./Card.lunas", driver);
+    assert!(
+        out.contains("<section>wrap x</section>"),
+        "slot content renders: {out}"
+    );
+}

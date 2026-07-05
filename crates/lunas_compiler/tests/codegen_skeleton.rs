@@ -204,6 +204,7 @@ fn slots_are_in_template_preorder() {
             SlotContent::Component(_) => "component",
             SlotContent::Dynamic(_) => "dynamic",
             SlotContent::Teleport(_) => "teleport",
+            SlotContent::Slot(_) => "slot",
         })
         .collect();
     assert_eq!(kinds, vec!["text", "if", "for"]);

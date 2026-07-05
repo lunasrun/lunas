@@ -51,6 +51,11 @@ pub enum SlotContent {
     /// `<teleport to="…">…</teleport>` — children rendered into a target
     /// selector/element instead of inline.
     Teleport(TemplateElement),
+    /// `<slot [name="x"] [:prop="e"]>fallback</slot>` — a slot outlet in a
+    /// child component. Renders the parent-provided content for the named slot
+    /// (default when unnamed), or its own children as fallback. Bound
+    /// attributes become scoped-slot props passed up to the parent's content.
+    Slot(TemplateElement),
 }
 
 /// A dynamic slot: what goes there and where "there" is.
@@ -163,6 +168,9 @@ fn walk(children: &[TemplateNode], parent_path: &[u32], ctx: &mut Ctx) {
             }
             TemplateNode::Element(e) if e.name == "teleport" => {
                 pending.push(SlotContent::Teleport(e.clone()));
+            }
+            TemplateNode::Element(e) if e.name == "slot" => {
+                pending.push(SlotContent::Slot(e.clone()));
             }
 
             TemplateNode::Element(e) => {

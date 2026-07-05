@@ -87,10 +87,10 @@ tree:
         - { id: d-fragment, title: "Fragments / multi-root components", status: done }
     - id: components
       title: Component model
-      status: todo
+      status: done
       children:
         - { id: c-props, title: "Props (@input)", status: done }
-        - { id: c-slots, title: "Slots (default / named / scoped)", status: todo }
+        - { id: c-slots, title: "Slots (default / named / scoped)", status: done }
         - { id: c-emits, title: "Events / emits (child → parent)", status: done }
         - { id: c-lifecycle, title: "Lifecycle hooks (mount/update/destroy)", status: done }
         - { id: c-provide, title: "Provide / inject (DI)", status: done }

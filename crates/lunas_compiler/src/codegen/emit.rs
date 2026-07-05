@@ -63,6 +63,8 @@ const ALL_HELPERS: &[&str] = &[
     "mountChild",
     "dynamicBlock",
     "teleportBlock",
+    "slotBlock",
+    "slotContent",
     "setClass",
     "setStyle",
     // `component` is intentionally excluded: it is only referenced at module
@@ -233,6 +235,7 @@ struct Emitter<'a> {
     n_data: usize,   // d{n}
     n_html: usize,   // HTML_{n}
     n_child: usize,  // c{n} (child-component instance handle)
+    n_slots: usize,  // s{n} (per-child slots object)
 }
 
 impl<'a> Emitter<'a> {
@@ -328,6 +331,7 @@ impl<'a> Emitter<'a> {
             n_data: 0,
             n_html: 0,
             n_child: 0,
+            n_slots: 0,
         }
     }
 
@@ -394,6 +398,11 @@ impl<'a> Emitter<'a> {
         let n = self.n_child;
         self.n_child += 1;
         format!("ch{n}")
+    }
+    fn alloc_slots(&mut self) -> String {
+        let n = self.n_slots;
+        self.n_slots += 1;
+        format!("s{n}")
     }
     fn hoist_html(&mut self, html: String) -> String {
         self.n_html += 1;
@@ -476,15 +485,22 @@ impl<'a> Emitter<'a> {
     // --- boxes ------------------------------------------------------------
 
     fn emit_boxes(&mut self, b: &mut String) {
-        if self.component.reactive_vars.is_empty() {
-            return;
-        }
         let script_text = self
             .component
             .script
             .as_ref()
             .map(|s| s.source.text.as_str())
             .unwrap_or("");
+        // A component may have NO reactive vars yet still declare plain
+        // `const`/`let` values that the template reads (e.g. `const WIDTH = 5;`
+        // used as `${WIDTH}`). Those must still be emitted verbatim into setup —
+        // dropping the whole script would leave the template referencing an
+        // undefined name. `rewrite_script` returns the script unchanged when
+        // there are no reactive vars, so this path covers both cases: rewrite
+        // reactive declarations to boxes when present, else emit as-is.
+        if script_text.trim().is_empty() {
+            return;
+        }
         // Rewrite the script body so reactive declarations become boxes and all
         // references become `.v`.
         let rewritten = rewrite_script(
@@ -593,6 +609,7 @@ impl<'a> Emitter<'a> {
                 }
                 SlotContent::Dynamic(el) => self.emit_dynamic_slot(b, el, &slot.pos, frag, diags),
                 SlotContent::Teleport(el) => self.emit_teleport_slot(b, el, &slot.pos, frag, diags),
+                SlotContent::Slot(el) => self.emit_slot_outlet(b, el, &slot.pos, frag, diags),
             }
         }
     }
@@ -805,10 +822,17 @@ impl<'a> Emitter<'a> {
             .collect();
 
         // Classify props into an initial-object + driving binds.
-        let (members, reactive) = self.build_child_props(&props, frag, comp.open_tag_range, diags);
+        let (mut members, reactive) =
+            self.build_child_props(&props, frag, comp.open_tag_range, diags);
 
+        // Slot content: the component's children become slot factories wired in
+        // THIS (parent) scope and passed to the child via a `$slots` object.
         let anchor = self.alloc_anchor();
         self.emit_anchor(b, &anchor, pos, frag);
+
+        if let Some(slots_local) = self.emit_slot_factories(b, &comp.children, frag, diags) {
+            members.push(format!("$slots: {slots_local}"));
+        }
 
         let handle = self.alloc_child();
         self.use_helper("mountChild");
@@ -845,6 +869,82 @@ impl<'a> Emitter<'a> {
             let stmt = format!("{handle}.setProp({}, {});", js_string(&rp.name), rp.expr);
             self.emit_update(b, frag, &rp.deps, rp.coupled, &stmt);
         }
+    }
+
+    /// Emits the parent-side `$slots` object for a component's children
+    /// (output-design.md §6): partitions children into slots (`<template #x>` /
+    /// `<template slot="x">` → named `x`; everything else → `default`), and
+    /// emits a `const s{n} = { name: (slotProps, onCleanup) => slotContent(c,
+    /// build, slotProps, onCleanup), … };` where each `build` wires that slot's
+    /// content in THIS (parent) component's scope. Returns the local name, or
+    /// `None` when the component has no meaningful children (all whitespace).
+    ///
+    /// Scoped slots: `<template #x="p">` binds `p` to the slot props inside that
+    /// slot's content (an arrow parameter of the inner `build`), so the parent
+    /// content can read child-provided values.
+    fn emit_slot_factories(
+        &mut self,
+        b: &mut String,
+        children: &[TemplateNode],
+        frag: &Frag,
+        diags: &mut Vec<Diagnostic>,
+    ) -> Option<String> {
+        let groups = partition_slots(children);
+        if groups.is_empty() {
+            return None;
+        }
+
+        let slots_local = self.alloc_slots();
+        push_indent(b, frag.indent);
+        b.push_str("const ");
+        b.push_str(&slots_local);
+        b.push_str(" = {\n");
+        for group in &groups {
+            push_indent(b, frag.indent + 1);
+            b.push_str(&prop_key(&group.name));
+            // `(slotProps, onCleanup) => slotContent(c, (BINDING) => { … }, slotProps, onCleanup)`
+            b.push_str(": (slotProps, onCleanup) => ");
+            self.use_helper("slotContent");
+            b.push_str(self.helper("slotContent"));
+            b.push_str("(c, (");
+            // Scoped-slot parameter: `#x="p"` binds `p` to slotProps inside the
+            // content; otherwise a throwaway parameter name keeps the signature.
+            b.push_str(group.scoped_binding.as_deref().unwrap_or("slotProps"));
+            b.push_str(") => {\n");
+
+            let tpl = Template {
+                nodes: group.nodes.clone(),
+            };
+            let skel = build_skeleton(&tpl);
+            let html_name = self.hoist_html(skel.html.clone());
+            let root = self.alloc_root();
+            self.use_helper("fromHTML");
+            push_indent(b, frag.indent + 2);
+            b.push_str("const ");
+            b.push_str(&root);
+            b.push_str(" = ");
+            b.push_str(self.helper("fromHTML"));
+            b.push('(');
+            b.push_str(&html_name);
+            b.push_str(", c.root);\n");
+            let inner = Frag {
+                base: &root,
+                shadowed: frag.shadowed,
+                indent: frag.indent + 2,
+                depth: frag.depth + 1,
+                strip: 0,
+            };
+            self.emit_fragment(b, &skel, &inner, diags);
+            push_indent(b, frag.indent + 2);
+            b.push_str("return Array.from(");
+            b.push_str(&root);
+            b.push_str(".childNodes);\n");
+            push_indent(b, frag.indent + 1);
+            b.push_str("}, slotProps, onCleanup),\n");
+        }
+        push_indent(b, frag.indent);
+        b.push_str("};\n");
+        Some(slots_local)
     }
 
     /// Emits `name.v = <handle>;` for a `:ref="name"` on a component, validating
@@ -1065,6 +1165,147 @@ impl<'a> Emitter<'a> {
         b.push_str(".childNodes);\n");
         push_indent(b, frag.indent);
         b.push_str("});\n");
+    }
+
+    /// `<slot [name="x"] [:prop="e"]>fallback</slot>` (output-design.md §6): a
+    /// slot outlet inside a CHILD component. Emits `slotBlock(c, anchor,
+    /// parentFactory, fallbackFactory, slotPropsGetter?)`:
+    ///
+    /// - `parentFactory` is `props.$slots && props.$slots["<name>"]` — the
+    ///   parent-provided content factory for this slot (undefined when the
+    ///   parent filled no such slot), wired in the PARENT's scope;
+    /// - `fallbackFactory` builds the `<slot>`'s own children as a fragment in
+    ///   THIS (child) component's scope, shown only when the parent gave none;
+    /// - `slotPropsGetter` (scoped slots) collects the slot's bound attributes
+    ///   into a props object passed up to the parent's content.
+    fn emit_slot_outlet(
+        &mut self,
+        b: &mut String,
+        el: &TemplateElement,
+        pos: &InsertPos,
+        frag: &Frag,
+        diags: &mut Vec<Diagnostic>,
+    ) {
+        if frag.depth >= MAX_BLOCK_DEPTH {
+            self.void_block(
+                b,
+                frag,
+                el.open_tag_range,
+                "control flow nested too deeply",
+                diags,
+            );
+            return;
+        }
+
+        // Slot name: a static `name="x"`; unnamed slots are the "default" slot.
+        let slot_name = el
+            .attrs
+            .iter()
+            .find_map(|a| match a {
+                TemplateAttr::Static {
+                    name,
+                    value: Some(v),
+                    ..
+                } if name == "name" => {
+                    let mut s = String::new();
+                    for seg in &v.segments {
+                        if let TextSegment::Literal { text, .. } = seg {
+                            s.push_str(text);
+                        }
+                    }
+                    Some(s)
+                }
+                _ => None,
+            })
+            .unwrap_or_else(|| "default".to_string());
+
+        // Scoped-slot props: every bound attr other than `name` becomes a key on
+        // the props object the child passes up to the parent's content.
+        let scoped: Vec<(String, String)> = el
+            .attrs
+            .iter()
+            .filter_map(|a| match a {
+                TemplateAttr::Bound { name, expr, .. } if name != "name" => Some((
+                    name.clone(),
+                    rewrite_expr(&expr.text, &self.component.reactive_vars, frag.shadowed),
+                )),
+                _ => None,
+            })
+            .collect();
+
+        // Does the slot have fallback content (non-whitespace children)?
+        let has_fallback = el.children.iter().any(|c| match c {
+            TemplateNode::Text(t) => !t.is_whitespace(),
+            TemplateNode::Comment(_) => false,
+            _ => true,
+        });
+
+        let anchor = self.alloc_anchor();
+        self.emit_anchor(b, &anchor, pos, frag);
+
+        self.use_helper("slotBlock");
+        push_indent(b, frag.indent);
+        b.push_str(self.helper("slotBlock"));
+        b.push_str("(c, ");
+        b.push_str(&anchor);
+        b.push_str(", props.$slots && props.$slots[");
+        push_js_string(b, &slot_name);
+        b.push(']');
+
+        // Fallback factory (child's own content) or null.
+        if has_fallback {
+            b.push_str(", (slotProps) => {\n");
+            let tpl = Template {
+                nodes: el.children.clone(),
+            };
+            let skel = build_skeleton(&tpl);
+            let html_name = self.hoist_html(skel.html.clone());
+            let root = self.alloc_root();
+            self.use_helper("fromHTML");
+            push_indent(b, frag.indent + 1);
+            b.push_str("const ");
+            b.push_str(&root);
+            b.push_str(" = ");
+            b.push_str(self.helper("fromHTML"));
+            b.push('(');
+            b.push_str(&html_name);
+            b.push_str(", ");
+            b.push_str(&anchor);
+            b.push_str(");\n");
+            let inner = Frag {
+                base: &root,
+                shadowed: frag.shadowed,
+                indent: frag.indent + 1,
+                depth: frag.depth + 1,
+                strip: 0,
+            };
+            self.emit_fragment(b, &skel, &inner, diags);
+            push_indent(b, frag.indent + 1);
+            b.push_str("return Array.from(");
+            b.push_str(&root);
+            b.push_str(".childNodes);\n");
+            push_indent(b, frag.indent);
+            b.push('}');
+        } else {
+            b.push_str(", null");
+        }
+
+        // Scoped-slot props getter, if any bound attrs are present.
+        if !scoped.is_empty() {
+            b.push_str(", () => ({");
+            for (i, (k, v)) in scoped.iter().enumerate() {
+                if i > 0 {
+                    b.push(',');
+                }
+                b.push(' ');
+                b.push_str(&prop_key(k));
+                b.push_str(": (");
+                b.push_str(v);
+                b.push(')');
+            }
+            b.push_str(" })");
+        }
+        b.push_str(");\n");
     }
 
     /// Builds the template-literal value, deps, and item-coupling flag for an
@@ -1775,6 +2016,141 @@ impl<'a> Emitter<'a> {
     ) -> Option<&crate::model::DynamicPart> {
         self.component.dynamics.iter().find(|p| pred(p))
     }
+}
+
+// --- slot partitioning -----------------------------------------------------
+
+/// One resolved slot's content for the parent side: its name, the nodes that
+/// fill it, and an optional scoped-slot binding name (`<template #x="p">` → the
+/// parent content reads slot props through `p`).
+struct SlotGroup {
+    name: String,
+    nodes: Vec<TemplateNode>,
+    scoped_binding: Option<String>,
+}
+
+/// Partitions a component's children into slot groups (output-design.md §6):
+///
+/// - `<template #x>…</template>` or `<template slot="x">…</template>` → the
+///   named slot `x`, its inner nodes as content. `#x="p"` (or `#x=p`) records
+///   `p` as the scoped-slot binding for that group.
+/// - every other child (including bare `<template>` without a slot marker, whose
+///   children are inlined) → the `default` slot, accumulated in document order.
+///
+/// Whitespace-only default content with no named slots yields no groups (the
+/// component simply has no slot content). Duplicate named-slot templates merge
+/// in document order.
+fn partition_slots(children: &[TemplateNode]) -> Vec<SlotGroup> {
+    let mut default_nodes: Vec<TemplateNode> = Vec::new();
+    // Named groups in first-seen order: (name, nodes, scoped_binding).
+    let mut named: Vec<SlotGroup> = Vec::new();
+
+    for child in children {
+        if let TemplateNode::Element(e) = child {
+            if e.name == "template" {
+                if let Some((name, scoped)) = template_slot_target(e) {
+                    // A named/scoped <template>: its children fill slot `name`.
+                    if let Some(g) = named.iter_mut().find(|g| g.name == name) {
+                        g.nodes.extend(e.children.iter().cloned());
+                        if g.scoped_binding.is_none() {
+                            g.scoped_binding = scoped;
+                        }
+                    } else {
+                        named.push(SlotGroup {
+                            name,
+                            nodes: e.children.clone(),
+                            scoped_binding: scoped,
+                        });
+                    }
+                    continue;
+                }
+                // A bare <template> with no slot marker: inline its children as
+                // default content (Vue treats this as default-slot content).
+                default_nodes.extend(e.children.iter().cloned());
+                continue;
+            }
+        }
+        // Drop insignificant whitespace/comments from default content so an
+        // all-whitespace child list produces no default slot.
+        match child {
+            TemplateNode::Text(t) if t.is_whitespace() => {}
+            TemplateNode::Comment(_) => {}
+            other => default_nodes.push(other.clone()),
+        }
+    }
+
+    let mut groups = Vec::new();
+    if !default_nodes.is_empty() {
+        groups.push(SlotGroup {
+            name: "default".to_string(),
+            nodes: default_nodes,
+            scoped_binding: None,
+        });
+    }
+    groups.extend(named);
+    groups
+}
+
+/// If a `<template>` element marks a named slot, returns `(slot_name,
+/// scoped_binding)`. Recognizes `#name`, `#name="binding"`, and `slot="name"`
+/// (with optional `slot-scope="binding"`). Returns `None` for a bare
+/// `<template>` (default-slot content).
+fn template_slot_target(el: &TemplateElement) -> Option<(String, Option<String>)> {
+    // `slot="name"` form (+ optional `slot-scope="binding"`).
+    let mut slot_attr: Option<String> = None;
+    let mut slot_scope: Option<String> = None;
+    for a in &el.attrs {
+        match a {
+            TemplateAttr::Static {
+                name,
+                value: Some(v),
+                ..
+            } if name == "slot" => {
+                slot_attr = Some(static_value_text(v));
+            }
+            TemplateAttr::Static {
+                name,
+                value: Some(v),
+                ..
+            } if name == "slot-scope" => {
+                slot_scope = Some(static_value_text(v));
+            }
+            _ => {}
+        }
+    }
+    if let Some(name) = slot_attr {
+        return Some((name, slot_scope));
+    }
+
+    // `#name` / `#name="binding"` shorthand. The parser classifies `#x` as a
+    // Static attr whose name starts with `#`; a value is the scoped binding.
+    for a in &el.attrs {
+        if let TemplateAttr::Static { name, value, .. } = a {
+            if let Some(slot) = name.strip_prefix('#') {
+                if slot.is_empty() {
+                    continue;
+                }
+                let scoped = value
+                    .as_ref()
+                    .map(static_value_text)
+                    .filter(|s| !s.is_empty());
+                return Some((slot.to_string(), scoped));
+            }
+        }
+    }
+    None
+}
+
+/// The concatenated literal text of a static attribute value (interpolations
+/// ignored — a slot name / binding is a plain identifier).
+fn static_value_text(v: &StaticValue) -> String {
+    let mut s = String::new();
+    for seg in &v.segments {
+        if let TextSegment::Literal { text, .. } = seg {
+            s.push_str(text);
+        }
+    }
+    s.trim().to_string()
 }
 
 // --- template helpers ------------------------------------------------------
