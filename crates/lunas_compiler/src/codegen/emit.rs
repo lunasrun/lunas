@@ -307,6 +307,15 @@ impl<'a> Emitter<'a> {
                     deep_hint.push_str(" = 0;");
                 }
             }
+            // Inline `@event` handlers can deeply mutate a binding directly from
+            // the template (`@click="obj.k = 1"`, `@click="items.push(x)"`). The
+            // handler text is itself the mutation, so appending it lets the
+            // textual `is_deeply_mutated` scan classify the target as a `deepBox`
+            // (a plain `box` would never fire on an in-place member/index write).
+            for h in event_handler_texts(template) {
+                deep_hint.push('\n');
+                deep_hint.push_str(&h);
+            }
         }
         // Names that would shadow a runtime helper if imported bare: every
         // top-level script binding plus every prop. A helper whose canonical
@@ -2114,7 +2123,12 @@ impl<'a> Emitter<'a> {
 
     fn emit_event(&mut self, b: &mut String, node: &str, event: &str, handler: &str, frag: &Frag) {
         self.use_helper("on");
-        let body = rewrite_expr(handler, &self.component.reactive_vars, frag.shadowed);
+        // A handler body is a statement sequence, not a single expression, so it
+        // is rewritten via the program-mode analyzer — this makes inline
+        // assignments (`n = n + 1`, `count++`, `a++; b++`, `obj.k = v`) compile
+        // to the `.v` box-setter path so the write marks the var and the DOM
+        // updates. Function-call handlers (`inc()`) are unaffected.
+        let body = rewrite_handler(handler, &self.component.reactive_vars, frag.shadowed);
         push_indent(b, frag.indent);
         b.push_str(self.helper("on"));
         b.push('(');
@@ -2434,6 +2448,27 @@ fn two_way_lvalues(template: &Template) -> Vec<String> {
         for attr in attrs {
             if let TemplateAttr::TwoWay { lvalue, .. } = attr {
                 out.push(lvalue.text.clone());
+            }
+        }
+    });
+    out
+}
+
+/// The raw text of every inline `@event` handler anywhere in the template. Fed
+/// into `deep_hint` so an inline member/index mutation (`@click="obj.k = 1"`,
+/// `@click="items.push(x)"`) classifies its target as a `deepBox` — the same
+/// textual `is_deeply_mutated` scan the script body goes through.
+fn event_handler_texts(template: &Template) -> Vec<String> {
+    let mut out = Vec::new();
+    template.visit(&mut |node: &TemplateNode| {
+        let attrs = match node {
+            TemplateNode::Element(e) => &e.attrs,
+            TemplateNode::Component(c) => &c.props,
+            _ => return,
+        };
+        for attr in attrs {
+            if let TemplateAttr::Event { handler, .. } = attr {
+                out.push(handler.text.clone());
             }
         }
     });
@@ -2823,8 +2858,45 @@ fn apply_edits(src: &str, mut edits: Vec<(u32, u32, String)>) -> String {
 /// arrow parameter of the same name) are left alone. `shadowed` names (loop
 /// bindings of enclosing `:for` items) are excluded from rewriting.
 fn rewrite_expr(expr: &str, vars: &[ReactiveVar], shadowed: &[String]) -> String {
+    rewrite_with(
+        expr,
+        vars,
+        shadowed,
+        lunas_script::free_identifiers_with_spans,
+    )
+}
+
+/// Like [`rewrite_expr`], but for an inline `@event` handler body. A handler is
+/// a statement sequence (`n = n + 1`, `count++`, `a++; b++`), not a single
+/// expression, so it must be parsed as a program — otherwise the `(…)`-wrapped
+/// expression parser rejects multi-statement / bare-assignment handlers and the
+/// `.v` rewrite is silently skipped (assignments would not reach the box setter
+/// and the DOM would never update). A handler that only *calls* a function is
+/// left untouched by the identifier rewrite except for its reactive arguments,
+/// which is exactly right.
+fn rewrite_handler(handler: &str, vars: &[ReactiveVar], shadowed: &[String]) -> String {
+    rewrite_with(
+        handler,
+        vars,
+        shadowed,
+        lunas_script::free_identifiers_with_spans_program,
+    )
+}
+
+/// Shared body of the `.v`-rewrite: appends `.v` after every free occurrence of
+/// a (non-shadowed) reactive binding, using the supplied span analyzer to locate
+/// occurrences. On a parse error the source is returned unchanged (never-panic).
+fn rewrite_with(
+    src: &str,
+    vars: &[ReactiveVar],
+    shadowed: &[String],
+    spans_of: impl Fn(
+        &str,
+    )
+        -> Result<Vec<(String, lunas_span::TextRange)>, lunas_script::ScriptParseError>,
+) -> String {
     if vars.is_empty() {
-        return expr.trim().to_string();
+        return src.trim().to_string();
     }
     let reactive: std::collections::HashSet<&str> = vars
         .iter()
@@ -2832,11 +2904,11 @@ fn rewrite_expr(expr: &str, vars: &[ReactiveVar], shadowed: &[String]) -> String
         .filter(|n| !shadowed.iter().any(|s| s == n))
         .collect();
     if reactive.is_empty() {
-        return expr.trim().to_string();
+        return src.trim().to_string();
     }
-    let spans = match lunas_script::free_identifiers_with_spans(expr) {
+    let spans = match spans_of(src) {
         Ok(s) => s,
-        Err(_) => return expr.trim().to_string(),
+        Err(_) => return src.trim().to_string(),
     };
     let mut edits: Vec<(u32, u32, String)> = Vec::new();
     for (name, range) in spans {
@@ -2844,7 +2916,7 @@ fn rewrite_expr(expr: &str, vars: &[ReactiveVar], shadowed: &[String]) -> String
             edits.push((range.end().raw(), range.end().raw(), ".v".to_string()));
         }
     }
-    apply_edits(expr, edits).trim().to_string()
+    apply_edits(src, edits).trim().to_string()
 }
 
 // --- attribute set special cases -----------------------------------------

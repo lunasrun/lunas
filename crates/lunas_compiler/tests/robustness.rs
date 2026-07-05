@@ -41,3 +41,32 @@ script:
         &[c.reactive_index("n").unwrap()]
     );
 }
+
+#[test]
+fn inline_handler_mutations_never_panic() {
+    // Inline `@event` handler analysis (assignment detection + `.v` rewrite via
+    // the program-mode parser) must never panic, however malformed the handler.
+    let cases = [
+        // Well-formed inline mutations of various shapes.
+        "html:\n    <button @click=\"n = n + 1\">${n}</button>\nscript:\n    let n = 0",
+        "html:\n    <button @click=\"n++\">${n}</button>\nscript:\n    let n = 0",
+        "html:\n    <button @click=\"obj.k = 1\">${obj.k}</button>\nscript:\n    let obj = {}",
+        "html:\n    <button @click=\"a++; b++\">${a}${b}</button>\nscript:\n    let a=0\n    let b=0",
+        "html:\n    <button @click=\"arr[i] = 1\">x</button>\nscript:\n    let arr=[]\n    let i=0",
+        // Malformed / partial handler bodies.
+        "html:\n    <button @click=\"n = \">x</button>\nscript:\n    let n = 0",
+        "html:\n    <button @click=\"++\">x</button>\nscript:\n    let n = 0",
+        "html:\n    <button @click=\"@#$%(\">x</button>\nscript:\n    let n = 0",
+        "html:\n    <button @click=\"n = n +;;\">x</button>\nscript:\n    let n = 0",
+        "html:\n    <button @click=\"() => { n = \">x</button>\nscript:\n    let n = 0",
+        "html:\n    <button @click=\"日本語 = 1; 🦀++\">x</button>\nscript:\n    let n = 0",
+        // Inline mutation with no script block at all.
+        "html:\n    <button @click=\"n = 1\">x</button>",
+    ];
+    for case in cases {
+        let (_c, _d) = lunas_compiler::resolve(case);
+        // The full compile path (which runs the `.v` handler rewrite) must also
+        // never panic.
+        let (_js, _d2) = lunas_compiler::compile(case);
+    }
+}

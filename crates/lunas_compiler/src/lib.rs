@@ -59,12 +59,17 @@ pub fn resolve(source: &str) -> (ResolvedComponent, Vec<Diagnostic>) {
         })
         .collect();
 
-    // A two-way binding (`::name="lvalue"`) writes back into its target, so the
-    // lvalue's root binding is mutated even if the script never assigns it.
+    // Constructs in the template that mutate a top-level binding, so the
+    // resolver numbers it reactive even when the `script:` block never assigns
+    // it: two-way binding write-backs (`::name="lvalue"`), template refs
+    // (`:ref="name"`), and — crucially — assignments/updates written *inline*
+    // in an `@event` handler (`@click="n = n + 1"`, `@click="count++"`,
+    // `@click="obj.k = v"`). Vue/Svelte both treat inline handler mutations as
+    // reactive writes; without this, such a mutation would be silently ignored.
     let template_mutated = file
         .html
         .as_ref()
-        .map(|h| two_way_mutation_roots(&h.template))
+        .map(|h| template_mutation_roots(&h.template))
         .unwrap_or_default();
 
     let mut reactive_vars = match &file.script {
@@ -125,7 +130,11 @@ pub fn resolve(source: &str) -> (ResolvedComponent, Vec<Diagnostic>) {
 ///     deep-writes `o`.
 ///   - template refs: `:ref="name"` assigns the element into `name`, so `name`
 ///     is mutated (a plain `let name;` in script is the natural declaration).
-fn two_way_mutation_roots(template: &lunas_parser::Template) -> HashSet<String> {
+///   - inline `@event` handlers: `@click="n = n + 1"` / `@click="count++"` /
+///     `@click="obj.k = v"` assign a top-level binding directly from the
+///     template; the assignment target's root is mutated. A handler that merely
+///     *calls* a function is handled separately (function mutation graph).
+fn template_mutation_roots(template: &lunas_parser::Template) -> HashSet<String> {
     use lunas_parser::{TemplateAttr, TemplateNode};
     let mut roots = HashSet::new();
     template.visit(&mut |node: &TemplateNode| {
@@ -144,6 +153,16 @@ fn two_way_mutation_roots(template: &lunas_parser::Template) -> HashSet<String> 
                 TemplateAttr::Bound { name, expr, .. } if name == "ref" => {
                     if let Some(root) = leading_identifier(&expr.text) {
                         roots.insert(root.to_string());
+                    }
+                }
+                TemplateAttr::Event { handler, .. } => {
+                    // Assignments/updates written inline in the handler
+                    // (`n = n + 1`, `count++`, `obj.k = v`) mutate their target's
+                    // root binding. `assigned_identifiers` already reports the
+                    // root object for member/index targets and never panics on a
+                    // malformed expression (it returns an error we drop here).
+                    if let Ok(assigned) = assigned_identifiers(&handler.text) {
+                        roots.extend(assigned);
                     }
                 }
                 _ => {}

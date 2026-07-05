@@ -1,0 +1,5 @@
+html:
+    <div><button class="inc" @click="n = n + 1">inc</button><button class="reset" @click="reset()">reset</button><p>${n}</p></div>
+script:
+    let n = 0
+    function reset(){ n = 0 }
