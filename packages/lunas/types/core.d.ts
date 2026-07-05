@@ -33,6 +33,12 @@ export interface Context<R = unknown> {
   scope: Scope | null;
   post: (() => void)[] | null;
   batchDepth?: number;
+  /** Link to the parent component's context (set by mountChild); null on a
+   *  root. provide/inject (provide.mjs) walks this chain. Additive. */
+  parent: Context | null;
+  /** Optional per-context post-update hook the flush loop invokes after an
+   *  update pass that actually ran; wired by onUpdate (lifecycle.mjs). */
+  onUpdate: (() => void) | null;
 }
 
 /** Create a fresh reactive context rooted at `root`. */

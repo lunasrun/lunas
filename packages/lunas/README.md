@@ -98,6 +98,21 @@ main repo for the calling contract.
 | `asyncComponent(loader, opts?)` | `lunas/async` | Wrap a lazy module loader (`() => import(...)`) into a mountable child factory; resolves default export or bare factory, caches after first load, optional `loading`/`error`/`delay`/`timeout`. |
 | `mountAsyncChild(c, anchor, factory, props?)` | `lunas/async` | Mount an async component at an anchor (mountChild contract + suspense registration); `unmount()` cancels any in-flight load. |
 | `suspenseBlock(c, anchor, contentFactory, fallbackFactory?)` | `lunas/async` | Async boundary at an anchor: shows `fallback` while any async child under it is pending, reveals `content` once all resolve (batched, no flash); nested boundaries are independent. |
+| `onMount(c, fn)` | `lunas/lifecycle` | Run `fn` after the component's root attaches to a live tree (fires once). |
+| `onDestroy(c, fn)` | `lunas/lifecycle` | Run `fn` when the component is torn down (fires once, every unmount path). |
+| `onUpdate(c, fn)` | `lunas/lifecycle` | Run `fn` after each flush of `c` that ran updates. |
+| `onActivated(c, fn)` / `onDeactivated(c, fn)` | `lunas/lifecycle` | Keep-alive (de)activation hooks — fire on cache re-attach / detach. |
+| `attach(root, host)` | `lunas/lifecycle` | Append a detached component root to a live host and fire the subtree's `onMount` callbacks. |
+| `isLive(node)` | `lunas/lifecycle` | Whether `node` is in a live tree (`isConnected` + shim fallback). |
+| `emit(c, name, payload?)` | `lunas/emits` | Raise a child→parent event; invokes the parent's `on<Name>` handler prop. Never marks the parent dirty by itself. |
+| `registerEmits(c, props, declared?)` | `lunas/emits` | Stash a child's props (so `emit` finds handlers); optional declared-events validation. |
+| `eventPropName(name)` | `lunas/emits` | Map an event name to its prop (`save` → `onSave`); the codegen's `@name`→`onName` mapping. |
+| `provide(c, key, value)` | `lunas/provide` | Provide a value (string or Symbol key) to descendants via the parent-context chain. |
+| `inject(c, key, default?)` | `lunas/provide` | Resolve a provided value from the nearest ancestor, else the default. |
+| `hasInjection(c, key)` | `lunas/provide` | Whether any ancestor provides `key` (distinguishes provided-`undefined` from absent). |
+| `withTransition(opts?)` | `lunas/transition` | Build an enter/leave CSS-class transition controller composing with a block's insert/remove; degrades to immediate outside a browser. |
+| `runPhase(el, base, phase, opts, done)` | `lunas/transition` | Run one enter/leave class choreography on an element (frame classes + `transitionend`/timeout). |
+| `keepAlive(opts?)` | `lunas/keepalive` | Cache mountChild instances by key: deactivate detaches (keeps state), activate re-attaches (no rebuild); LRU `max`; eviction fires `onDestroy`. |
 
 ## Testing
 
