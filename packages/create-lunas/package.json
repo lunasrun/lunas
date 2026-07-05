@@ -1,0 +1,32 @@
+{
+  "name": "create-lunas",
+  "version": "0.0.1-beta.11-alpha.0",
+  "description": "Scaffold a new Lunas + Vite project.",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lunasrun/lunas.git",
+    "directory": "packages/create-lunas"
+  },
+  "homepage": "https://github.com/lunasrun/lunas/tree/main/packages/create-lunas#readme",
+  "bugs": {
+    "url": "https://github.com/lunasrun/lunas/issues"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "bin": {
+    "create-lunas": "./bin/create-lunas.mjs"
+  },
+  "files": [
+    "bin",
+    "src",
+    "template",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node test/run-all.mjs"
+  }
+}

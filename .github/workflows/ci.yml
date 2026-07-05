@@ -87,3 +87,46 @@ jobs:
 
       - name: Tree-shaking / no-side-effects check
         run: node test/treeshake.check.mjs
+
+  tooling:
+    name: tooling tests (vite plugin · create-lunas)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install toolchain + wasm target (from rust-toolchain.toml)
+        working-directory: crates
+        run: |
+          rustup show active-toolchain || rustup toolchain install
+          rustup target add wasm32-unknown-unknown
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            crates/target
+          key: ${{ runner.os }}-cargo-wasm-${{ hashFiles('crates/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-wasm-
+
+      # Build the wasm compiler once so the plugin's opt-in integration test
+      # runs the real end-to-end path (mock-compiler unit tests run regardless).
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - name: Build lunas_wasm (nodejs target)
+        working-directory: crates/lunas_wasm
+        run: wasm-pack build --target nodejs
+
+      - name: vite-plugin-lunas tests
+        working-directory: packages/vite-plugin-lunas
+        run: node test/run-all.mjs
+
+      - name: create-lunas tests
+        working-directory: packages/create-lunas
+        run: node test/run-all.mjs
