@@ -1,0 +1,10 @@
+html:
+    <div>
+        <button class="g" @click="g()">g</button>
+        <button class="s" @click="s()">s</button>
+        <ul><li :for="n of nums" :key="n">${n}</li></ul>
+    </div>
+script:
+    let nums = [1, 2]
+    function g(){ nums = [1, 2, 3, 4] }
+    function s(){ nums = [2, 3] }

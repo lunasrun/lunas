@@ -1,0 +1,4 @@
+html:
+    <div :for="a of tree" :key="a.id" class="a"><div :for="b of a.kids" :key="b.id" class="b"><span :for="c of b.leaf" :key="c" class="c">${c}</span></div></div>
+script:
+    let tree = [{id:1,kids:[{id:11,leaf:[1,2]}]},{id:2,kids:[{id:21,leaf:[3]}]}]

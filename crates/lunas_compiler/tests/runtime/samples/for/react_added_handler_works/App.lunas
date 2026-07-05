@@ -1,0 +1,10 @@
+html:
+    <div>
+        <button class="add" @click="add()">add</button>
+        <ul><li :for="item of items" :key="item.id"><button class="p" @click="pick(item.id)">${item.label}</button></li></ul>
+    </div>
+script:
+    let items = [{id:1,label:"a"}]
+    let last = 0
+    function add(){ items.push({id:2,label:"b"}) }
+    function pick(id){ last = id }

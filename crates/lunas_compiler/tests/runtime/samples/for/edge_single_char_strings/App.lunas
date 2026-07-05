@@ -1,0 +1,4 @@
+html:
+    <ul><li :for="s of chars" :key="s">${s}</li></ul>
+script:
+    let chars = ["a", "b", "c", "d", "e"]

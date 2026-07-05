@@ -1,0 +1,10 @@
+html:
+    <div>
+        <button class="clr" @click="clr()">clr</button>
+        <button class="bld" @click="bld()">bld</button>
+        <ul><li :for="n of nums" :key="n">${n}</li></ul>
+    </div>
+script:
+    let nums = [1, 2, 3]
+    function clr(){ nums = [] }
+    function bld(){ nums = [7, 8, 9] }

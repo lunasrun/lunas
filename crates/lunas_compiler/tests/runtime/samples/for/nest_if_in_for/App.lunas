@@ -1,0 +1,4 @@
+html:
+    <ul><li :for="n of nums" :key="n"><span :if="n > 2">big</span><span :else>small</span></li></ul>
+script:
+    let nums = [1, 2, 3, 4]

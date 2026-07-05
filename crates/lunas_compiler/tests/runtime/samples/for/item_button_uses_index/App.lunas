@@ -1,0 +1,6 @@
+html:
+    <ul><li :for="[i, item] of items.entries()" :key="item.id"><button class="b" @click="pick(i)">${item.label}</button></li></ul>
+script:
+    let items = [{id:1,label:"a"},{id:2,label:"b"}]
+    let picked = -1
+    function pick(i){ picked = i }

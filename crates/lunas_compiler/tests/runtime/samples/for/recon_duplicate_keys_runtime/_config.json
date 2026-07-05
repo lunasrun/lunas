@@ -1,0 +1,1 @@
+{ "description": "duplicate keys degrade to index fallback; visible order still exact" }

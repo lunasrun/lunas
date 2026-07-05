@@ -1,0 +1,8 @@
+html:
+    <div>
+        <button class="go" @click="go()">go</button>
+        <ul><li :for="n of nums" :key="n">${n}</li></ul>
+    </div>
+script:
+    let nums = [1, 2, 3]
+    function go(){ nums.push(4); nums.push(5); nums.shift() }

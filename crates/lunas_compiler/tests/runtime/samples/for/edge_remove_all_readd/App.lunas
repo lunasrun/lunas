@@ -1,0 +1,10 @@
+html:
+    <div>
+        <button class="clr" @click="clr()">clr</button>
+        <button class="add" @click="add()">add</button>
+        <ul><li :for="item of items" :key="item.id">${item.label}</li></ul>
+    </div>
+script:
+    let items = [{id:1,label:"a"},{id:2,label:"b"}]
+    function clr(){ items = [] }
+    function add(){ items = [{id:3,label:"c"}] }

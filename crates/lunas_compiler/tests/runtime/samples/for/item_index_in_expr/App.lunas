@@ -1,0 +1,4 @@
+html:
+    <ul><li :for="[i, s] of words.entries()" :key="s">${i}. ${s}</li></ul>
+script:
+    let words = ["a", "b", "c"]

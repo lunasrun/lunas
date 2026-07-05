@@ -1,0 +1,4 @@
+html:
+    <ul><li :for="[i, n] of nums.entries()" :key="i">${n}</li></ul>
+script:
+    let nums = [0, 1, 0, 2]

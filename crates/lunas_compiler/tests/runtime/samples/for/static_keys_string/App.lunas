@@ -1,0 +1,4 @@
+html:
+    <ul><li :for="u of users" :key="u.code">${u.code}:${u.name}</li></ul>
+script:
+    let users = [{code:"aa",name:"a"},{code:"bb",name:"b"}]

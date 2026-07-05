@@ -1,0 +1,9 @@
+html:
+    <div>
+        <button class="go" @click="go()">go</button>
+        <ul :if="show"><li :for="n of nums" :key="n">${n}</li></ul>
+    </div>
+script:
+    let show = false
+    let nums = [1, 2, 3]
+    function go(){ show = !show }

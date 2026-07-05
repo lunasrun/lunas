@@ -1,0 +1,4 @@
+html:
+    <ul><li :for="u of users" :key="u.id">${u.active ? 'on' : 'off'}</li></ul>
+script:
+    let users = [{id:1,active:true},{id:2,active:false}]
