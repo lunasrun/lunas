@@ -28,6 +28,21 @@ export const refs = (root, paths) =>
 
 export const on = (el, ev, fn) => el.addEventListener(ev, fn);
 
+// fromHTML(html, near) — parse a static block skeleton (an :if branch, a :for
+// item, …) into a detached scratch element via one bulk innerHTML, exactly like
+// the component root build (§8: branches are built by their own innerHTML when
+// shown). `near` is any node used to reach the owner document, so blocks built
+// inside a detached component still resolve a document (and tests can pass a
+// fake-DOM node).
+export function fromHTML(html, near) {
+  const doc =
+    (near && near.ownerDocument) ||
+    (typeof document !== "undefined" ? document : null);
+  const el = doc.createElement("div");
+  el.innerHTML = html;
+  return el;
+}
+
 // --- anchors -----------------------------------------------------------------
 // Anchors are permanent EMPTY TEXT NODES created at wiring time (never
 // comments — comments knock Blink off the fast-path parser; see

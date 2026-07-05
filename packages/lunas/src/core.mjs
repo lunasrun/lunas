@@ -106,6 +106,23 @@ export function endScope(c) {
   c.scope = c.scope ? c.scope.parent : null;
 }
 
+// runScope(c, scope) — re-run every live bind registered in `scope` and its
+// child scopes (nested blocks' content). Used by forBlock's patch path: after
+// an item's data cell is updated, re-running the item's scope refreshes every
+// item-local bind — including nested ifBlock/forBlock binds, which re-evaluate
+// their condition/reconcile with the fresh data (for-diff-design.md §6).
+// Scopes dropped mid-walk are safe: dropScope empties their arrays and marks
+// their records dead, so they no-op here.
+export function runScope(c, scope) {
+  // Snapshot first: a sub may create child scopes (a branch shown by this very
+  // walk) whose binds already ran at creation, or drop existing ones (their
+  // arrays are emptied by dropScope, so recursing into them is a no-op).
+  const subs = scope.subs.slice();
+  const children = scope.children.slice();
+  for (const s of subs) if (s.alive) s.fn();
+  for (const ch of children) runScope(c, ch);
+}
+
 export function dropScope(c, scope) {
   for (const s of scope.subs) unbind(c, s);
   for (const ch of scope.children) {

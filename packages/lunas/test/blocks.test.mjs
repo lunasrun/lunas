@@ -3,7 +3,14 @@
 // Run: node packages/lunas/test/blocks.test.mjs
 
 import assert from "node:assert";
-import { createContext, bind, markVar } from "../src/core.mjs";
+import {
+  createContext,
+  bind,
+  markVar,
+  beginScope,
+  endScope,
+  dropScope,
+} from "../src/core.mjs";
 import { box, deepBox } from "../src/boxes.mjs";
 import {
   anchorBefore,
@@ -11,7 +18,7 @@ import {
   anchorAppend,
   on,
 } from "../src/dom.mjs";
-import { ifBlock, forBlock, mountChild } from "../src/blocks.mjs";
+import { ifBlock, ifChain, forBlock, mountChild } from "../src/blocks.mjs";
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
@@ -201,6 +208,132 @@ await test("ifBlock teardown: inner binds dropped on hide; destroy() unbinds all
   assert.strictEqual(innerRuns, 3, "nothing runs after destroy");
 });
 
+// --- ifChain -------------------------------------------------------------------
+
+await test("ifChain switches branches; -1 shows none", async () => {
+  const c = createContext(null);
+  const parent = fakeDoc.createElement("div");
+  const anchor = anchorAppend(parent);
+  const n = box(c, 0, 1);
+  const makes = { pos: 0, neg: 0 };
+  ifChain(
+    c,
+    anchor,
+    [0],
+    () => (n.v > 0 ? 0 : n.v < 0 ? 1 : -1),
+    [
+      () => {
+        makes.pos++;
+        return fakeDoc.createElement("pos");
+      },
+      () => {
+        makes.neg++;
+        return fakeDoc.createElement("neg");
+      },
+    ]
+  );
+  assert.strictEqual(shape(parent), "<pos> |", "initial branch 0");
+  n.v = -5;
+  await tick();
+  assert.strictEqual(shape(parent), "<neg> |", "switched to branch 1");
+  n.v = 0;
+  await tick();
+  assert.strictEqual(shape(parent), "|", "no branch for -1");
+  n.v = 3;
+  await tick();
+  assert.strictEqual(shape(parent), "<pos> |");
+  assert.deepStrictEqual(makes, { pos: 2, neg: 1 }, "branches rebuilt per show");
+});
+
+await test("ifChain: same branch stays put; switch tears the old scope down", async () => {
+  const c = createContext(null);
+  const parent = fakeDoc.createElement("div");
+  const anchor = anchorAppend(parent);
+  const n = box(c, 0, 1);
+  const label = box(c, 1, "x");
+  let innerRuns = 0;
+  ifChain(
+    c,
+    anchor,
+    [0],
+    () => (n.v > 0 ? 0 : 1),
+    [
+      () => {
+        const el = fakeDoc.createElement("a");
+        bind(c, [1], () => {
+          innerRuns++;
+          el.data = label.v;
+        });
+        return el;
+      },
+      () => fakeDoc.createElement("b"),
+    ]
+  );
+  const el0 = parent.childNodes[0];
+  n.v = 2; // same branch index -> nothing happens
+  await tick();
+  assert.strictEqual(parent.childNodes[0], el0, "same branch: node kept");
+  assert.strictEqual(innerRuns, 1);
+  n.v = -1; // switch to branch 1
+  await tick();
+  label.v = "y";
+  await tick();
+  assert.strictEqual(innerRuns, 1, "old branch's bind dropped on switch");
+});
+
+await test("ifChain destroy() removes content and unbinds", async () => {
+  const c = createContext(null);
+  const parent = fakeDoc.createElement("div");
+  const anchor = anchorAppend(parent);
+  const n = box(c, 0, 0);
+  const blk = ifChain(c, anchor, [0], () => (n.v > 0 ? 0 : -1), [
+    () => fakeDoc.createElement("x"),
+  ]);
+  n.v = 1;
+  await tick();
+  assert.strictEqual(shape(parent), "<x> |");
+  blk.destroy();
+  assert.strictEqual(shape(parent), "|");
+  n.v = 2;
+  await tick();
+  assert.strictEqual(shape(parent), "|", "dead after destroy");
+});
+
+// --- scope homing --------------------------------------------------------------
+
+await test("ifBlock content built on a later flush still parents to the creation scope", async () => {
+  const c = createContext(null);
+  const parent = fakeDoc.createElement("div");
+  const anchor = anchorAppend(parent);
+  const show = box(c, 0, false);
+  const label = box(c, 1, "x");
+  let innerRuns = 0;
+
+  // Simulate a :for item: the block is created inside an item scope.
+  const home = beginScope(c);
+  ifBlock(c, anchor, [0], () => show.v, () => {
+    const el = fakeDoc.createElement("span");
+    bind(c, [1], () => {
+      innerRuns++;
+      el.data = label.v;
+    });
+    return el;
+  });
+  endScope(c);
+
+  show.v = true; // content is built during a flush (no scope open)
+  await tick();
+  assert.strictEqual(innerRuns, 1);
+
+  // Dropping the "item" scope must tear down the branch content's binds even
+  // though the branch was built later, outside the scope bracket.
+  dropScope(c, home);
+  label.v = "y";
+  show.v = false;
+  await tick();
+  assert.strictEqual(innerRuns, 1, "branch bind dropped with the home scope");
+});
+
 // --- forBlock ------------------------------------------------------------------
 
 await test("forBlock initial render + reorder reuses nodes via reconciler", async () => {
@@ -298,9 +431,11 @@ await test("forBlock item scope teardown: removed item's binds are dead", async 
   arr = ["a"]; // remove b
   markVar(c, 0);
   await tick();
+  // reconcile patched the kept item "a" (its scope re-ran once: a -> 3)
+  assert.deepStrictEqual(runsPerKey, { a: 3, b: 2 }, "kept item patched once");
   hi.v = "!!!";
   await tick();
-  assert.deepStrictEqual(runsPerKey, { a: 3, b: 2 }, "b's bind unregistered");
+  assert.deepStrictEqual(runsPerKey, { a: 4, b: 2 }, "b's bind unregistered");
 });
 
 await test("forBlock destroy() removes items and unbinds everything", async () => {

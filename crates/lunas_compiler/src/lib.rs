@@ -59,8 +59,16 @@ pub fn resolve(source: &str) -> (ResolvedComponent, Vec<Diagnostic>) {
         })
         .collect();
 
+    // A two-way binding (`::name="lvalue"`) writes back into its target, so the
+    // lvalue's root binding is mutated even if the script never assigns it.
+    let template_mutated = file
+        .html
+        .as_ref()
+        .map(|h| two_way_mutation_roots(&h.template))
+        .unwrap_or_default();
+
     let reactive_vars = match &file.script {
-        Some(script) => resolve_reactive_vars(script, &mut diags),
+        Some(script) => resolve_reactive_vars(script, &template_mutated, &mut diags),
         None => Vec::new(),
     };
 
@@ -92,10 +100,58 @@ pub fn resolve(source: &str) -> (ResolvedComponent, Vec<Diagnostic>) {
     (component, diags)
 }
 
+/// The root identifiers written by two-way bindings anywhere in the template
+/// (including inside `:if` branches and `:for` bodies). `::value="name"` writes
+/// `name`; `::value="o.k"` deep-writes `o`.
+fn two_way_mutation_roots(template: &lunas_parser::Template) -> HashSet<String> {
+    use lunas_parser::{TemplateAttr, TemplateNode};
+    let mut roots = HashSet::new();
+    template.visit(&mut |node: &TemplateNode| {
+        let attrs = match node {
+            TemplateNode::Element(e) => &e.attrs,
+            TemplateNode::Component(c) => &c.props,
+            _ => return,
+        };
+        for attr in attrs {
+            if let TemplateAttr::TwoWay { lvalue, .. } = attr {
+                if let Some(root) = leading_identifier(&lvalue.text) {
+                    roots.insert(root.to_string());
+                }
+            }
+        }
+    });
+    roots
+}
+
+/// The identifier an expression starts with (`o.k` → `o`), or `None` if it
+/// does not start with one.
+fn leading_identifier(expr: &str) -> Option<&str> {
+    let s = expr.trim_start();
+    let mut end = 0;
+    for (i, ch) in s.char_indices() {
+        let ok = if i == 0 {
+            ch.is_alphabetic() || ch == '_' || ch == '$'
+        } else {
+            ch.is_alphanumeric() || ch == '_' || ch == '$'
+        };
+        if !ok {
+            break;
+        }
+        end = i + ch.len_utf8();
+    }
+    if end == 0 {
+        None
+    } else {
+        Some(&s[..end])
+    }
+}
+
 /// Determines which top-level bindings are reactive (declared *and* mutated
-/// somewhere) and numbers them in declaration order.
+/// somewhere) and numbers them in declaration order. `extra_mutated` carries
+/// mutations visible only in the template (two-way binding write-backs).
 fn resolve_reactive_vars(
     script: &lunas_parser::ScriptBlock,
+    extra_mutated: &HashSet<String>,
     diags: &mut Vec<Diagnostic>,
 ) -> Vec<ReactiveVar> {
     let text = &script.source.text;
@@ -122,6 +178,7 @@ fn resolve_reactive_vars(
     if let Ok(top_level) = assigned_identifiers(text) {
         mutated.extend(top_level);
     }
+    mutated.extend(extra_mutated.iter().cloned());
 
     let decl_spans = declared_bindings_with_spans(text).unwrap_or_default();
     let span_of = |name: &str| {

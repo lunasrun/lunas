@@ -1,19 +1,32 @@
 //! The JS emitter pass: turns a [`crate::ResolvedComponent`] into a runnable ES
 //! module that targets the runtime in `packages/lunas` (see
-//! `docs/output-design.md`).
+//! `docs/output-design.md` and `docs/for-diff-design.md`).
 //!
-//! Scope (Wave 1): plain text binds, attribute binds (incl. interpolated static
-//! attrs), and event listeners. Positional refs and runtime text anchors are
-//! emitted per §7–8. Control flow (`:if`/`:for`), two-way bindings, and child
-//! components are **not** wired yet — they are voided with a `/* TODO */` marker
-//! (and, for two-way, a diagnostic) so the module still compiles and runs.
+//! Scope (Wave 2): text binds, attribute binds, event listeners, two-way
+//! bindings (`::name`), `:if`/`:elseif`/`:else` cascades (`ifBlock`/`ifChain`),
+//! and keyed `:for` (`forBlock` in compiled html/wire mode: bulk `innerHTML`
+//! initial render + keyed diff updates). Control flow is emitted recursively,
+//! so nested combinations (`:if` in `:for`, `:for` in `:if`, …) work; each
+//! branch/item is its own *fragment* with its own static HTML string (hoisted
+//! at module scope), positional refs, anchors, and binds.
+//!
+//! Child components, `:for`+`:if` on the same element, and `:for` over a
+//! non-element body are not wired yet — they are voided with a comment (and a
+//! warning diagnostic where the author would otherwise be surprised) so the
+//! module still compiles and runs.
 //!
 //! The reactive model is compile-time adjacency dispatch (§4): each reactive
 //! variable becomes a box at a stable index; references to it are rewritten to
-//! `.v`; each dynamic part `bind(c, deps, …)`s with its precomputed dep indices.
+//! `.v`; each dynamic part `bind(c, deps, …)`s with its precomputed dep
+//! indices. Inside a `:for` item, expressions that read the loop bindings are
+//! registered as `bind(c, [], …)` so the item's patch path (`runScope`) can
+//! refresh them when the item's data cell changes.
 
-use lunas_parser::{Diagnostic, StaticValue, TemplateAttr, TemplateText, TextRange, TextSegment};
-use lunas_script::module_binding_references;
+use lunas_parser::{
+    Diagnostic, ForBlock, IfChain, StaticValue, Template, TemplateAttr, TemplateElement,
+    TemplateNode, TemplateText, TextRange, TextSegment,
+};
+use lunas_script::{module_binding_references, parse_for, ForKind};
 
 use crate::codegen::skeleton::{
     build_skeleton, DynamicElement, InsertPos, Skeleton, Slot, SlotContent,
@@ -22,9 +35,45 @@ use crate::model::{DynamicKind, ReactiveVar, ResolvedComponent};
 
 /// The root wrapper tag. The skeleton HTML is the wrapper's `innerHTML`, so all
 /// positional [`refs`](../../packages/lunas/src/dom.mjs) paths are `childNodes`
-/// indices from this element. A neutral `<div>` is used for every component in
-/// Wave 1 (single-root / multi-root distinction is a later optimization).
+/// indices from this element. A neutral `<div>` is used for every component
+/// (single-root / multi-root distinction is a later optimization).
 const ROOT_TAG: &str = "div";
+
+/// Hard cap on control-flow nesting; beyond it blocks are voided with a
+/// diagnostic instead of recursing (never-panic guarantee).
+const MAX_BLOCK_DEPTH: u32 = 32;
+
+/// Every runtime helper the emitter can reference by a bare name. Used to
+/// detect collisions with user bindings (a reactive var named `on` would
+/// shadow the `on` helper); a colliding helper is imported under an alias.
+const ALL_HELPERS: &[&str] = &[
+    "refs",
+    "on",
+    "bind",
+    "box",
+    "deepBox",
+    "anchorBefore",
+    "anchorBeforeSplit",
+    "anchorAppend",
+    "ifBlock",
+    "ifChain",
+    "forBlock",
+    "fromHTML",
+    // `component` is intentionally excluded: it is only referenced at module
+    // scope (the default export), where user bindings — emitted inside the
+    // setup closure — cannot shadow it.
+];
+
+/// A collision-proof local alias for a runtime helper whose canonical name is
+/// taken by a user binding. Prefixes with `$` (rare in hand-written state) and
+/// appends underscores until the name is unused.
+fn alias_name(helper: &str, reserved: &std::collections::HashSet<String>) -> String {
+    let mut name = format!("${helper}");
+    while reserved.contains(&name) {
+        name.push('_');
+    }
+    name
+}
 
 /// Compiles a `.lunas` source string into a runnable ES module.
 ///
@@ -57,7 +106,17 @@ fn emit_module(component: &ResolvedComponent, diags: &mut Vec<Diagnostic>) -> Op
     out.push('\n');
     out.push_str("const HTML = ");
     push_js_string(&mut out, &skeleton.html);
-    out.push_str(";\n\n");
+    out.push_str(";\n");
+    // Hoisted branch/item skeletons (one per :if branch / :for item template),
+    // defined once per module like HTML itself.
+    for (name, html) in &e.hoisted {
+        out.push_str("const ");
+        out.push_str(name);
+        out.push_str(" = ");
+        push_js_string(&mut out, html);
+        out.push_str(";\n");
+    }
+    out.push('\n');
     out.push_str("export default component(");
     push_js_string(&mut out, ROOT_TAG);
     out.push_str(", {}, HTML, (c, props) => {\n");
@@ -66,33 +125,165 @@ fn emit_module(component: &ResolvedComponent, diags: &mut Vec<Diagnostic>) -> Op
     Some(out)
 }
 
+/// The lexical context of one emitted fragment (the component root, an `:if`
+/// branch, or a `:for` item).
+struct Frag<'x> {
+    /// JS expression for the fragment's root node (`c.root`, or a scratch /
+    /// item root local like `r0`).
+    base: &'x str,
+    /// Loop-binding names in scope: they shadow same-named reactive variables
+    /// (no `.v` rewrite, no dep registration) and expressions reading them are
+    /// re-run by the enclosing item's patch path.
+    shadowed: &'x [String],
+    /// Indentation level (1 = the setup body).
+    indent: usize,
+    /// Control-flow nesting depth (for the recursion cap).
+    depth: u32,
+    /// How many leading path segments to strip: `:for` item fragments receive
+    /// the item ROOT node (not a scratch container), so the skeleton's `[0, …]`
+    /// paths become `[…]` relative to it.
+    strip: usize,
+}
+
 struct Emitter<'a> {
     component: &'a ResolvedComponent,
     /// Runtime helper names referenced by the emitted module, collected while
     /// generating so the import line stays minimal.
     used: std::collections::BTreeSet<&'static str>,
+    /// Local aliases for runtime helpers whose canonical name collides with a
+    /// user binding (e.g. a reactive var named `on` would shadow the `on`
+    /// helper). Maps the canonical helper name to the local name to import it
+    /// as and reference. Empty in the common no-collision case.
+    aliases: std::collections::BTreeMap<&'static str, String>,
+    /// Hoisted static HTML strings for control-flow fragments: (const name,
+    /// html), emitted at module scope in creation order.
+    hoisted: Vec<(String, String)>,
+    /// Text used for deep-mutation detection: the script plus one synthetic
+    /// assignment per two-way member/index lvalue (`::value="o.k"` deep-writes
+    /// `o`, so `o` needs a `deepBox` even if the script never mutates it).
+    deep_hint: String,
+    n_ref: usize,    // e{n}
+    n_text: usize,   // t{n}
+    n_anchor: usize, // a{n}
+    n_root: usize,   // r{n}
+    n_data: usize,   // d{n}
+    n_html: usize,   // HTML_{n}
 }
 
 impl<'a> Emitter<'a> {
     fn new(component: &'a ResolvedComponent) -> Self {
+        let script_text = component
+            .script
+            .as_ref()
+            .map(|s| s.source.text.as_str())
+            .unwrap_or("");
+        let mut deep_hint = String::from(script_text);
+        if let Some(template) = &component.template {
+            for lv in two_way_lvalues(template) {
+                // Only member/index writes imply deep mutation; a plain
+                // identifier lvalue is whole reassignment (a plain `box`).
+                if lv.contains('.') || lv.contains('[') {
+                    deep_hint.push('\n');
+                    deep_hint.push_str(&lv);
+                    deep_hint.push_str(" = 0;");
+                }
+            }
+        }
+        // Names that would shadow a runtime helper if imported bare: every
+        // top-level script binding plus every prop. A helper whose canonical
+        // name appears here is imported under a collision-proof alias instead.
+        let mut reserved: std::collections::HashSet<String> = std::collections::HashSet::new();
+        if let Some(script) = &component.script {
+            if let Ok(names) = lunas_script::declared_bindings(&script.source.text) {
+                reserved.extend(names);
+            }
+        }
+        for p in &component.props {
+            reserved.insert(p.name.clone());
+        }
+        let mut aliases = std::collections::BTreeMap::new();
+        for &h in ALL_HELPERS {
+            if reserved.contains(h) {
+                aliases.insert(h, alias_name(h, &reserved));
+            }
+        }
+
         Emitter {
             component,
             used: std::collections::BTreeSet::new(),
+            aliases,
+            hoisted: Vec::new(),
+            deep_hint,
+            n_ref: 0,
+            n_text: 0,
+            n_anchor: 0,
+            n_root: 0,
+            n_data: 0,
+            n_html: 0,
         }
     }
 
     /// `import { … } from "lunas";` covering every helper actually referenced.
+    /// A helper whose canonical name collides with a user binding is imported
+    /// under its alias (`on as _on$`).
     fn import_line(&self) -> String {
         // `component` is always used (the module's default export).
         let mut names: Vec<&str> = self.used.iter().copied().collect();
         if !names.contains(&"component") {
             names.insert(0, "component");
         }
-        format!("import {{ {} }} from \"lunas\";", names.join(", "))
+        let specs: Vec<String> = names
+            .iter()
+            .map(|&n| match self.aliases.get(n) {
+                Some(alias) => format!("{n} as {alias}"),
+                None => n.to_string(),
+            })
+            .collect();
+        format!("import {{ {} }} from \"lunas\";", specs.join(", "))
     }
 
     fn use_helper(&mut self, name: &'static str) {
         self.used.insert(name);
+    }
+
+    /// The local name to *reference* a helper by — its alias if the canonical
+    /// name collides with a user binding, else the canonical name.
+    fn helper(&self, name: &'static str) -> &str {
+        self.aliases.get(name).map(|s| s.as_str()).unwrap_or(name)
+    }
+
+    // --- name allocation ----------------------------------------------------
+
+    fn alloc_ref(&mut self) -> String {
+        let n = self.n_ref;
+        self.n_ref += 1;
+        format!("e{n}")
+    }
+    fn alloc_text(&mut self) -> String {
+        let n = self.n_text;
+        self.n_text += 1;
+        format!("t{n}")
+    }
+    fn alloc_anchor(&mut self) -> String {
+        let n = self.n_anchor;
+        self.n_anchor += 1;
+        format!("a{n}")
+    }
+    fn alloc_root(&mut self) -> String {
+        let n = self.n_root;
+        self.n_root += 1;
+        format!("r{n}")
+    }
+    fn alloc_data(&mut self) -> String {
+        let n = self.n_data;
+        self.n_data += 1;
+        format!("d{n}")
+    }
+    fn hoist_html(&mut self, html: String) -> String {
+        self.n_html += 1;
+        let name = format!("HTML_{}", self.n_html);
+        self.hoisted.push((name.clone(), html));
+        name
     }
 
     /// The body of the `setup` closure: props, boxes, refs, anchors, binds and
@@ -102,9 +293,14 @@ impl<'a> Emitter<'a> {
 
         self.emit_props(&mut b);
         self.emit_boxes(&mut b);
-        self.emit_refs(&mut b, &skeleton.dynamic_elements);
-        self.emit_text_slots(&mut b, &skeleton.slots, diags);
-        self.emit_attr_and_event_wiring(&mut b, &skeleton.dynamic_elements, diags);
+        let frag = Frag {
+            base: "c.root",
+            shadowed: &[],
+            indent: 1,
+            depth: 0,
+            strip: 0,
+        };
+        self.emit_fragment(&mut b, skeleton, &frag, diags);
 
         b
     }
@@ -142,11 +338,16 @@ impl<'a> Emitter<'a> {
             .unwrap_or("");
         // Rewrite the script body so reactive declarations become boxes and all
         // references become `.v`.
-        let rewritten = rewrite_script(script_text, &self.component.reactive_vars);
+        let rewritten = rewrite_script(
+            script_text,
+            &self.deep_hint,
+            &self.component.reactive_vars,
+            &self.aliases,
+        );
         let body = dedent(&rewritten);
         let body = body.trim();
         if !body.is_empty() {
-            for (kind, _) in reactive_box_kinds(script_text, &self.component.reactive_vars) {
+            for (kind, _) in reactive_box_kinds(&self.deep_hint, &self.component.reactive_vars) {
                 self.use_helper(kind);
             }
             for line in body.lines() {
@@ -157,100 +358,158 @@ impl<'a> Emitter<'a> {
         }
     }
 
+    // --- fragments ----------------------------------------------------------
+
+    /// Emits one fragment: refs, slots (text anchors + binds, control-flow
+    /// blocks — recursively), then attribute/event wiring, per §7 build order.
+    fn emit_fragment(
+        &mut self,
+        b: &mut String,
+        skeleton: &Skeleton,
+        frag: &Frag,
+        diags: &mut Vec<Diagnostic>,
+    ) {
+        let ref_names = self.emit_refs(b, &skeleton.dynamic_elements, frag);
+        self.emit_slots(b, &skeleton.slots, frag, diags);
+        self.emit_attr_and_event_wiring(b, &skeleton.dynamic_elements, &ref_names, frag, diags);
+    }
+
     // --- refs -------------------------------------------------------------
 
-    fn emit_refs(&mut self, b: &mut String, elems: &[DynamicElement]) {
+    /// Emits the positional-nav `refs(...)` destructuring for a fragment's
+    /// dynamic elements and returns the allocated local names (parallel to
+    /// `elems`).
+    fn emit_refs(&mut self, b: &mut String, elems: &[DynamicElement], frag: &Frag) -> Vec<String> {
         if elems.is_empty() {
-            return;
+            return Vec::new();
         }
         self.use_helper("refs");
-        b.push_str("  const [");
-        for (i, _) in elems.iter().enumerate() {
+        let refs_fn = self.helper("refs").to_string();
+        let names: Vec<String> = elems.iter().map(|_| self.alloc_ref()).collect();
+        push_indent(b, frag.indent);
+        b.push_str("const [");
+        for (i, name) in names.iter().enumerate() {
             if i > 0 {
                 b.push_str(", ");
             }
-            b.push_str(&ref_name(i));
+            b.push_str(name);
         }
-        b.push_str("] = refs(c.root, [");
+        b.push_str("] = ");
+        b.push_str(&refs_fn);
+        b.push('(');
+        b.push_str(frag.base);
+        b.push_str(", [");
         for (i, el) in elems.iter().enumerate() {
             if i > 0 {
                 b.push_str(", ");
             }
-            push_path(b, &el.path);
+            push_path(b, strip_path(&el.path, frag.strip));
         }
         b.push_str("]);\n");
+        names
     }
 
-    // --- text slots -> anchors + binds -----------------------------------
+    // --- slots --------------------------------------------------------------
 
-    fn emit_text_slots(&mut self, b: &mut String, slots: &[Slot], diags: &mut Vec<Diagnostic>) {
-        for (i, slot) in slots.iter().enumerate() {
+    fn emit_slots(
+        &mut self,
+        b: &mut String,
+        slots: &[Slot],
+        frag: &Frag,
+        diags: &mut Vec<Diagnostic>,
+    ) {
+        for slot in slots {
             match &slot.content {
-                SlotContent::Text(t) => self.emit_text_slot(b, i, t, &slot.pos),
-                SlotContent::If(_) | SlotContent::For(_) | SlotContent::Component(_) => {
-                    b.push_str("  /* TODO(wave2): ");
-                    b.push_str(slot_kind_name(&slot.content));
-                    b.push_str(" block not yet emitted */\n");
-                    let _ = diags; // no diagnostic: these are known deferrals
+                SlotContent::Text(t) => self.emit_text_slot(b, t, &slot.pos, frag),
+                SlotContent::If(chain) => self.emit_if_slot(b, chain, &slot.pos, frag, diags),
+                SlotContent::For(block) => self.emit_for_slot(b, block, &slot.pos, frag, diags),
+                SlotContent::Component(_) => {
+                    push_indent(b, frag.indent);
+                    b.push_str("/* TODO(components): child component not yet emitted */\n");
                 }
             }
         }
     }
 
-    fn emit_text_slot(&mut self, b: &mut String, i: usize, t: &TemplateText, pos: &InsertPos) {
-        let anchor = format!("t{i}");
-        self.emit_anchor(b, &anchor, pos);
+    // --- text slots -> anchors + binds -----------------------------------
 
-        let deps = self.text_run_deps(t);
-        let expr = self.text_run_expr(t);
+    fn emit_text_slot(&mut self, b: &mut String, t: &TemplateText, pos: &InsertPos, frag: &Frag) {
+        let anchor = self.alloc_text();
+        self.emit_anchor(b, &anchor, pos, frag);
 
-        if deps.is_empty() {
-            // Static-once: assign at build, no bind.
-            b.push_str("  ");
-            b.push_str(&anchor);
-            b.push_str(".data = ");
-            b.push_str(&expr);
-            b.push_str(";\n");
+        let deps = self.filter_deps(self.text_run_deps(t), frag.shadowed);
+        let expr = self.text_run_expr(t, frag.shadowed);
+        let coupled = t.segments.iter().any(|seg| match seg {
+            TextSegment::Interpolation(i) => reads_any(&i.expr, frag.shadowed),
+            TextSegment::Literal { .. } => false,
+        });
+
+        let stmt = format!("{anchor}.data = {expr};");
+        self.emit_update(b, frag, &deps, coupled, &stmt);
+    }
+
+    /// Emits `stmt` in the mode its dependencies demand: reactive deps →
+    /// `bind(c, deps, …)`; loop-data-coupled (inside a `:for` item) →
+    /// `bind(c, [], …)` so the item's patch path re-runs it; otherwise a bare
+    /// build-time statement.
+    fn emit_update(
+        &mut self,
+        b: &mut String,
+        frag: &Frag,
+        deps: &[u32],
+        item_coupled: bool,
+        stmt: &str,
+    ) {
+        push_indent(b, frag.indent);
+        if deps.is_empty() && !item_coupled {
+            b.push_str(stmt);
+            b.push('\n');
         } else {
             self.use_helper("bind");
-            b.push_str("  bind(c, ");
-            push_dep_list(b, &deps);
+            b.push_str(self.helper("bind"));
+            b.push_str("(c, ");
+            push_dep_list(b, deps);
             b.push_str(", () => { ");
-            b.push_str(&anchor);
-            b.push_str(".data = ");
-            b.push_str(&expr);
-            b.push_str("; });\n");
+            b.push_str(stmt);
+            b.push_str(" });\n");
         }
     }
 
-    /// Emits the anchor-creation statement for a text run, binding it to a
-    /// local const named `name`.
-    fn emit_anchor(&mut self, b: &mut String, name: &str, pos: &InsertPos) {
+    /// Emits the anchor-creation statement for a slot, binding it to a local
+    /// const named `name`.
+    fn emit_anchor(&mut self, b: &mut String, name: &str, pos: &InsertPos, frag: &Frag) {
+        push_indent(b, frag.indent);
         match pos {
             InsertPos::Before(path) => {
                 self.use_helper("anchorBefore");
-                b.push_str("  const ");
+                b.push_str("const ");
                 b.push_str(name);
-                b.push_str(" = anchorBefore(");
-                push_node_at(b, path);
+                b.push_str(" = ");
+                b.push_str(self.helper("anchorBefore"));
+                b.push('(');
+                push_node_at(b, frag.base, strip_path(path, frag.strip));
                 b.push_str(");\n");
             }
             InsertPos::BeforeSplit { path, utf16_offset } => {
                 self.use_helper("anchorBeforeSplit");
-                b.push_str("  const ");
+                b.push_str("const ");
                 b.push_str(name);
-                b.push_str(" = anchorBeforeSplit(");
-                push_node_at(b, path);
+                b.push_str(" = ");
+                b.push_str(self.helper("anchorBeforeSplit"));
+                b.push('(');
+                push_node_at(b, frag.base, strip_path(path, frag.strip));
                 b.push_str(", ");
                 b.push_str(&utf16_offset.to_string());
                 b.push_str(");\n");
             }
             InsertPos::Append(path) => {
                 self.use_helper("anchorAppend");
-                b.push_str("  const ");
+                b.push_str("const ");
                 b.push_str(name);
-                b.push_str(" = anchorAppend(");
-                push_node_at(b, path);
+                b.push_str(" = ");
+                b.push_str(self.helper("anchorAppend"));
+                b.push('(');
+                push_node_at(b, frag.base, strip_path(path, frag.strip));
                 b.push_str(");\n");
             }
         }
@@ -275,14 +534,18 @@ impl<'a> Emitter<'a> {
 
     /// A JS template literal that reproduces the whole text run, with reactive
     /// references rewritten to `.v`.
-    fn text_run_expr(&self, t: &TemplateText) -> String {
+    fn text_run_expr(&self, t: &TemplateText, shadowed: &[String]) -> String {
         let mut out = String::from("`");
         for seg in &t.segments {
             match seg {
                 TextSegment::Literal { text, .. } => push_template_literal_chunk(&mut out, text),
                 TextSegment::Interpolation(interp) => {
                     out.push_str("${");
-                    out.push_str(&rewrite_expr(&interp.expr, &self.component.reactive_vars));
+                    out.push_str(&rewrite_expr(
+                        &interp.expr,
+                        &self.component.reactive_vars,
+                        shadowed,
+                    ));
                     out.push('}');
                 }
             }
@@ -291,16 +554,390 @@ impl<'a> Emitter<'a> {
         out
     }
 
+    // --- :if ------------------------------------------------------------------
+
+    fn emit_if_slot(
+        &mut self,
+        b: &mut String,
+        chain: &IfChain,
+        pos: &InsertPos,
+        frag: &Frag,
+        diags: &mut Vec<Diagnostic>,
+    ) {
+        if frag.depth >= MAX_BLOCK_DEPTH {
+            self.void_block(
+                b,
+                frag,
+                chain.range,
+                "control flow nested too deeply",
+                diags,
+            );
+            return;
+        }
+        // Every branch body must be an element (the parser guarantees this for
+        // plain cascades; a component body means child-component mounting,
+        // which is a later wave).
+        for branch in &chain.branches {
+            if !matches!(&*branch.body, TemplateNode::Element(_)) {
+                self.void_block(
+                    b,
+                    frag,
+                    branch.range,
+                    "`:if` on a component is not supported yet",
+                    diags,
+                );
+                return;
+            }
+        }
+
+        let anchor = self.alloc_anchor();
+        self.emit_anchor(b, &anchor, pos, frag);
+
+        // Union of every condition's deps drives the whole cascade.
+        let mut deps: Vec<u32> = Vec::new();
+        let mut conds: Vec<String> = Vec::new();
+        for branch in &chain.branches {
+            if let Some(cond) = &branch.condition {
+                if let Some(part) =
+                    self.find_dynamic(DynamicKind::IfCondition, &cond.text, cond.range)
+                {
+                    deps.extend(part.deps.indices().iter().copied());
+                }
+                conds.push(rewrite_expr(
+                    &cond.text,
+                    &self.component.reactive_vars,
+                    frag.shadowed,
+                ));
+            }
+        }
+        deps.sort_unstable();
+        deps.dedup();
+        let deps = self.filter_deps(deps, frag.shadowed);
+        let has_else = chain
+            .branches
+            .last()
+            .is_some_and(|br| br.condition.is_none());
+
+        if chain.branches.len() == 1 {
+            // Plain :if — the cheap single-block path.
+            self.use_helper("ifBlock");
+            push_indent(b, frag.indent);
+            b.push_str(self.helper("ifBlock"));
+            b.push_str("(c, ");
+            b.push_str(&anchor);
+            b.push_str(", ");
+            push_dep_list(b, &deps);
+            b.push_str(", () => (");
+            b.push_str(&conds[0]);
+            b.push_str("), () => {\n");
+            self.emit_block_fragment(b, &chain.branches[0].body, &anchor, frag, diags);
+            push_indent(b, frag.indent);
+            b.push_str("});\n");
+        } else {
+            // Cascade: one ifChain; which() maps conditions to a branch index
+            // (or -1 when no :else and nothing matched).
+            self.use_helper("ifChain");
+            push_indent(b, frag.indent);
+            b.push_str(self.helper("ifChain"));
+            b.push_str("(c, ");
+            b.push_str(&anchor);
+            b.push_str(", ");
+            push_dep_list(b, &deps);
+            b.push_str(", () => ");
+            for (i, cond) in conds.iter().enumerate() {
+                b.push('(');
+                b.push_str(cond);
+                b.push_str(") ? ");
+                b.push_str(&i.to_string());
+                b.push_str(" : ");
+            }
+            if has_else {
+                b.push_str(&conds.len().to_string());
+            } else {
+                b.push_str("-1");
+            }
+            b.push_str(", [\n");
+            for branch in &chain.branches {
+                push_indent(b, frag.indent + 1);
+                b.push_str("() => {\n");
+                let inner = Frag {
+                    indent: frag.indent + 1,
+                    ..*frag
+                };
+                self.emit_block_fragment(b, &branch.body, &anchor, &inner, diags);
+                push_indent(b, frag.indent + 1);
+                b.push_str("},\n");
+            }
+            push_indent(b, frag.indent);
+            b.push_str("]);\n");
+        }
+    }
+
+    /// Emits the body of a branch `make` closure: build the branch's own
+    /// skeleton detached (`fromHTML`), wire it recursively, return its root
+    /// node(s). `frag.indent` is the indent of the closure's braces.
+    fn emit_block_fragment(
+        &mut self,
+        b: &mut String,
+        body: &TemplateNode,
+        anchor: &str,
+        frag: &Frag,
+        diags: &mut Vec<Diagnostic>,
+    ) {
+        let tpl = Template {
+            nodes: vec![body.clone()],
+        };
+        let skel = build_skeleton(&tpl);
+        let multi_root = has_top_level_slot(&skel);
+        let html_name = self.hoist_html(skel.html.clone());
+        let root = self.alloc_root();
+        self.use_helper("fromHTML");
+        push_indent(b, frag.indent + 1);
+        b.push_str("const ");
+        b.push_str(&root);
+        b.push_str(" = ");
+        b.push_str(self.helper("fromHTML"));
+        b.push('(');
+        b.push_str(&html_name);
+        b.push_str(", ");
+        b.push_str(anchor);
+        b.push_str(");\n");
+        let inner = Frag {
+            base: &root,
+            shadowed: frag.shadowed,
+            indent: frag.indent + 1,
+            depth: frag.depth + 1,
+            strip: 0,
+        };
+        self.emit_fragment(b, &skel, &inner, diags);
+        push_indent(b, frag.indent + 1);
+        if multi_root {
+            // Top-level anchors travel with the branch as a node group.
+            b.push_str("return Array.from(");
+            b.push_str(&root);
+            b.push_str(".childNodes);\n");
+        } else {
+            b.push_str("return ");
+            b.push_str(&root);
+            b.push_str(".childNodes[0];\n");
+        }
+    }
+
+    // --- :for -------------------------------------------------------------------
+
+    fn emit_for_slot(
+        &mut self,
+        b: &mut String,
+        block: &ForBlock,
+        pos: &InsertPos,
+        frag: &Frag,
+        diags: &mut Vec<Diagnostic>,
+    ) {
+        if frag.depth >= MAX_BLOCK_DEPTH {
+            self.void_block(
+                b,
+                frag,
+                block.range,
+                "control flow nested too deeply",
+                diags,
+            );
+            return;
+        }
+        let Some(parsed) = parse_for(&block.header.text) else {
+            self.void_block(
+                b,
+                frag,
+                block.header.range,
+                "unrecognized `:for` header (expected e.g. `item of items`)",
+                diags,
+            );
+            return;
+        };
+        let body_el: &TemplateElement = match &*block.body {
+            TemplateNode::Element(e) => e,
+            TemplateNode::If(_) => {
+                self.void_block(
+                    b,
+                    frag,
+                    block.range,
+                    "`:if` on the same element as `:for` is not supported yet \
+                     (wrap the element in the `:if` instead)",
+                    diags,
+                );
+                return;
+            }
+            _ => {
+                self.void_block(
+                    b,
+                    frag,
+                    block.range,
+                    "`:for` on a component is not supported yet",
+                    diags,
+                );
+                return;
+            }
+        };
+
+        // The loop binding names shadow reactive vars inside the item.
+        let bindings = binding_names(&parsed.binding);
+        if bindings.is_empty() {
+            self.void_block(
+                b,
+                frag,
+                block.header.range,
+                "could not resolve the `:for` binding pattern",
+                diags,
+            );
+            return;
+        }
+        if bindings.iter().any(|n| is_generated_name(n)) {
+            self.void_block(
+                b,
+                frag,
+                block.header.range,
+                "`:for` binding name collides with a compiler-generated \
+                 identifier (e0/t0/a0/r0/d0 style); please rename it",
+                diags,
+            );
+            return;
+        }
+        let mut child_shadowed: Vec<String> = frag.shadowed.to_vec();
+        for n in &bindings {
+            if !child_shadowed.contains(n) {
+                child_shadowed.push(n.clone());
+            }
+        }
+
+        // Strip the `:key` bound attribute off the item root: it configures
+        // the reconciler and is never written to the DOM.
+        let mut item_el = body_el.clone();
+        let key_expr = take_key_attr(&mut item_el);
+
+        let anchor = self.alloc_anchor();
+        self.emit_anchor(b, &anchor, pos, frag);
+
+        // The iterable is evaluated in the ENCLOSING scope (outer shadowing).
+        let iterable = rewrite_expr(
+            &parsed.iterable,
+            &self.component.reactive_vars,
+            frag.shadowed,
+        );
+        let items_expr = match parsed.kind {
+            ForKind::Of => format!("Array.from(({iterable}) || [])"),
+            ForKind::In => format!("Object.keys(({iterable}) || {{}})"),
+        };
+        let deps = self.filter_deps(
+            self.find_dynamic_by(|p| {
+                p.kind == DynamicKind::ForIterable && p.expr == parsed.iterable
+            })
+            .map(|p| p.deps.indices().to_vec())
+            .unwrap_or_default(),
+            frag.shadowed,
+        );
+
+        // The item's own skeleton (single-root: the item element).
+        let tpl = Template {
+            nodes: vec![TemplateNode::Element(item_el)],
+        };
+        let skel = build_skeleton(&tpl);
+        let html_name = self.hoist_html(skel.html.clone());
+        let root = self.alloc_root();
+        let d_wire = self.alloc_data();
+        let d_patch = self.alloc_data();
+
+        self.use_helper("forBlock");
+        push_indent(b, frag.indent);
+        b.push_str(self.helper("forBlock"));
+        b.push_str("(c, ");
+        b.push_str(&anchor);
+        b.push_str(", ");
+        push_dep_list(b, &deps);
+        b.push_str(", () => ");
+        b.push_str(&items_expr);
+        b.push_str(", {\n");
+        push_indent(b, frag.indent + 1);
+        b.push_str("html: ");
+        b.push_str(&html_name);
+        b.push_str(",\n");
+        push_indent(b, frag.indent + 1);
+        b.push_str("wire: (");
+        b.push_str(&root);
+        b.push_str(", ");
+        b.push_str(&d_wire);
+        b.push_str(") => {\n");
+        push_indent(b, frag.indent + 2);
+        b.push_str("let ");
+        b.push_str(parsed.binding.trim());
+        b.push_str(" = ");
+        b.push_str(&d_wire);
+        b.push_str(";\n");
+        let inner = Frag {
+            base: &root,
+            shadowed: &child_shadowed,
+            indent: frag.indent + 2,
+            depth: frag.depth + 1,
+            strip: 1,
+        };
+        self.emit_fragment(b, &skel, &inner, diags);
+        push_indent(b, frag.indent + 2);
+        b.push_str("return (");
+        b.push_str(&d_patch);
+        b.push_str(") => { (");
+        b.push_str(parsed.binding.trim());
+        b.push_str(" = ");
+        b.push_str(&d_patch);
+        b.push_str("); };\n");
+        push_indent(b, frag.indent + 1);
+        b.push_str("},\n");
+        if let Some(key) = key_expr {
+            let d_key = self.alloc_data();
+            let key_js = rewrite_expr(&key, &self.component.reactive_vars, &child_shadowed);
+            push_indent(b, frag.indent + 1);
+            b.push_str("keyOf: (");
+            b.push_str(&d_key);
+            b.push_str(") => { const ");
+            b.push_str(parsed.binding.trim());
+            b.push_str(" = ");
+            b.push_str(&d_key);
+            b.push_str("; return (");
+            b.push_str(&key_js);
+            b.push_str("); },\n");
+        }
+        push_indent(b, frag.indent);
+        b.push_str("});\n");
+    }
+
+    /// Voids an unsupported block with a comment and a warning diagnostic. The
+    /// module still compiles and runs (never-panic, never-invalid-JS).
+    fn void_block(
+        &mut self,
+        b: &mut String,
+        frag: &Frag,
+        range: TextRange,
+        why: &str,
+        diags: &mut Vec<Diagnostic>,
+    ) {
+        push_indent(b, frag.indent);
+        b.push_str("/* lunas: block skipped — ");
+        // Keep the comment safe: never allow a comment terminator through.
+        b.push_str(&why.replace("*/", "* /"));
+        b.push_str(" */\n");
+        diags.push(Diagnostic::warning(range, why.to_string()));
+    }
+
     // --- attribute / event wiring ----------------------------------------
 
     fn emit_attr_and_event_wiring(
         &mut self,
         b: &mut String,
         elems: &[DynamicElement],
+        ref_names: &[String],
+        frag: &Frag,
         diags: &mut Vec<Diagnostic>,
     ) {
+        let _ = diags;
         for (i, el) in elems.iter().enumerate() {
-            let name = ref_name(i);
+            let name = &ref_names[i];
             for attr in &el.attrs {
                 match attr {
                     TemplateAttr::Bound {
@@ -308,30 +945,24 @@ impl<'a> Emitter<'a> {
                         expr,
                         ..
                     } => {
-                        self.emit_bound_attr(b, &name, attr_name, &expr.text);
+                        self.emit_bound_attr(b, name, attr_name, &expr.text, frag);
                     }
                     TemplateAttr::Static {
                         name: attr_name,
                         value: Some(v),
                         ..
                     } if has_interpolation(v) => {
-                        self.emit_attr_text(b, &name, attr_name, v);
+                        self.emit_attr_text(b, name, attr_name, v, frag);
                     }
                     TemplateAttr::Event { event, handler, .. } => {
-                        self.emit_event(b, &name, event, &handler.text);
+                        self.emit_event(b, name, event, &handler.text, frag);
                     }
                     TemplateAttr::TwoWay {
                         name: attr_name,
-                        range,
+                        lvalue,
                         ..
                     } => {
-                        b.push_str("  /* TODO(wave2): two-way ::");
-                        b.push_str(attr_name);
-                        b.push_str(" not yet emitted */\n");
-                        diags.push(Diagnostic::warning(
-                            *range,
-                            format!("two-way binding ::{attr_name} is not yet emitted (Wave 2)"),
-                        ));
+                        self.emit_two_way(b, name, attr_name, &lvalue.text, frag);
                     }
                     TemplateAttr::Static { .. } => {}
                 }
@@ -339,34 +970,36 @@ impl<'a> Emitter<'a> {
         }
     }
 
-    fn emit_bound_attr(&mut self, b: &mut String, node: &str, attr: &str, expr: &str) {
-        let deps = self.bound_attr_deps(attr, expr);
-        let value = rewrite_expr(expr, &self.component.reactive_vars);
+    fn emit_bound_attr(&mut self, b: &mut String, node: &str, attr: &str, expr: &str, frag: &Frag) {
+        let deps = self.filter_deps(self.bound_attr_deps(attr, expr), frag.shadowed);
+        let value = rewrite_expr(expr, &self.component.reactive_vars, frag.shadowed);
         let set = attr_set_statement(node, attr, &value);
-        if deps.is_empty() {
-            b.push_str("  ");
-            b.push_str(&set);
-            b.push('\n');
-        } else {
-            self.use_helper("bind");
-            b.push_str("  bind(c, ");
-            push_dep_list(b, &deps);
-            b.push_str(", () => { ");
-            b.push_str(&set);
-            b.push_str(" });\n");
-        }
+        self.emit_update(b, frag, &deps, reads_any(expr, frag.shadowed), &set);
     }
 
-    fn emit_attr_text(&mut self, b: &mut String, node: &str, attr: &str, value: &StaticValue) {
+    fn emit_attr_text(
+        &mut self,
+        b: &mut String,
+        node: &str,
+        attr: &str,
+        value: &StaticValue,
+        frag: &Frag,
+    ) {
         let mut deps = Vec::new();
+        let mut coupled = false;
         let mut lit = String::from("`");
         for seg in &value.segments {
             match seg {
                 TextSegment::Literal { text, .. } => push_template_literal_chunk(&mut lit, text),
                 TextSegment::Interpolation(interp) => {
                     lit.push_str("${");
-                    lit.push_str(&rewrite_expr(&interp.expr, &self.component.reactive_vars));
+                    lit.push_str(&rewrite_expr(
+                        &interp.expr,
+                        &self.component.reactive_vars,
+                        frag.shadowed,
+                    ));
                     lit.push('}');
+                    coupled = coupled || reads_any(&interp.expr, frag.shadowed);
                     if let Some(part) = self.find_dynamic(
                         DynamicKind::AttributeText(attr.to_string()),
                         &interp.expr,
@@ -380,31 +1013,50 @@ impl<'a> Emitter<'a> {
         lit.push('`');
         deps.sort_unstable();
         deps.dedup();
+        let deps = self.filter_deps(deps, frag.shadowed);
 
         let set = attr_set_statement(node, attr, &lit);
-        if deps.is_empty() {
-            b.push_str("  ");
-            b.push_str(&set);
-            b.push('\n');
-        } else {
-            self.use_helper("bind");
-            b.push_str("  bind(c, ");
-            push_dep_list(b, &deps);
-            b.push_str(", () => { ");
-            b.push_str(&set);
-            b.push_str(" });\n");
-        }
+        self.emit_update(b, frag, &deps, coupled, &set);
     }
 
-    fn emit_event(&mut self, b: &mut String, node: &str, event: &str, handler: &str) {
+    fn emit_event(&mut self, b: &mut String, node: &str, event: &str, handler: &str, frag: &Frag) {
         self.use_helper("on");
-        let body = rewrite_expr(handler, &self.component.reactive_vars);
-        b.push_str("  on(");
+        let body = rewrite_expr(handler, &self.component.reactive_vars, frag.shadowed);
+        push_indent(b, frag.indent);
+        b.push_str(self.helper("on"));
+        b.push('(');
         b.push_str(node);
         b.push_str(", ");
         push_js_string(b, event);
         b.push_str(", () => { ");
         b.push_str(&body);
+        b.push_str("; });\n");
+    }
+
+    /// Two-way binding `::name="lvalue"` (§6): the read side is a normal bound
+    /// attribute of `lvalue`; the write side is an event listener assigning the
+    /// element state back into the lvalue. `::checked` listens on `change`
+    /// (checkbox/radio semantics); everything else on `input`.
+    fn emit_two_way(&mut self, b: &mut String, node: &str, attr: &str, lvalue: &str, frag: &Frag) {
+        // Read side: element reflects the lvalue.
+        let deps = self.filter_deps(self.two_way_deps(attr, lvalue), frag.shadowed);
+        let value = rewrite_expr(lvalue, &self.component.reactive_vars, frag.shadowed);
+        let set = attr_set_statement(node, attr, &value);
+        self.emit_update(b, frag, &deps, reads_any(lvalue, frag.shadowed), &set);
+
+        // Write side: element state flows back into the lvalue.
+        let (event, read) = two_way_read(node, attr);
+        self.use_helper("on");
+        push_indent(b, frag.indent);
+        b.push_str(self.helper("on"));
+        b.push('(');
+        b.push_str(node);
+        b.push_str(", ");
+        push_js_string(b, event);
+        b.push_str(", () => { ");
+        b.push_str(&value);
+        b.push_str(" = ");
+        b.push_str(&read);
         b.push_str("; });\n");
     }
 
@@ -416,6 +1068,31 @@ impl<'a> Emitter<'a> {
         })
         .map(|p| p.deps.indices().to_vec())
         .unwrap_or_default()
+    }
+
+    fn two_way_deps(&self, attr: &str, lvalue: &str) -> Vec<u32> {
+        self.find_dynamic_by(|p| {
+            matches!(&p.kind, DynamicKind::TwoWay(n) if n == attr) && p.expr == lvalue
+        })
+        .map(|p| p.deps.indices().to_vec())
+        .unwrap_or_default()
+    }
+
+    /// Drops dep indices whose reactive variable is shadowed by a loop binding
+    /// in the current fragment.
+    fn filter_deps(&self, mut deps: Vec<u32>, shadowed: &[String]) -> Vec<u32> {
+        if shadowed.is_empty() {
+            return deps;
+        }
+        deps.retain(|i| {
+            self.component
+                .reactive_vars
+                .iter()
+                .find(|v| v.index == *i)
+                .map(|v| !shadowed.contains(&v.name))
+                .unwrap_or(true)
+        });
+        deps
     }
 
     fn find_dynamic(
@@ -444,15 +1121,125 @@ impl<'a> Emitter<'a> {
     }
 }
 
+// --- template helpers ------------------------------------------------------
+
+/// Every two-way lvalue expression in the template (branch/item bodies
+/// included).
+fn two_way_lvalues(template: &Template) -> Vec<String> {
+    let mut out = Vec::new();
+    template.visit(&mut |node: &TemplateNode| {
+        let attrs = match node {
+            TemplateNode::Element(e) => &e.attrs,
+            TemplateNode::Component(c) => &c.props,
+            _ => return,
+        };
+        for attr in attrs {
+            if let TemplateAttr::TwoWay { lvalue, .. } = attr {
+                out.push(lvalue.text.clone());
+            }
+        }
+    });
+    out
+}
+
+/// Removes a `:key="expr"` bound attribute from a `:for` item root and returns
+/// the expression. The key configures the reconciler; it is not DOM state.
+fn take_key_attr(el: &mut TemplateElement) -> Option<String> {
+    let idx = el.attrs.iter().position(
+        |a| matches!(a, TemplateAttr::Bound { name, .. } if name.eq_ignore_ascii_case("key")),
+    )?;
+    match el.attrs.remove(idx) {
+        TemplateAttr::Bound { expr, .. } => Some(expr.text),
+        _ => None,
+    }
+}
+
+/// The identifier names bound by a `:for` binding pattern (`item`, `[i, v]`,
+/// `{a, b}`). Uses the scope-aware free-identifier scan: for a pattern text
+/// read as an expression, the free identifiers are exactly the bound names
+/// (default-value expressions may add extras; that only widens shadowing,
+/// which is safe).
+fn binding_names(pattern: &str) -> Vec<String> {
+    let p = pattern.trim();
+    if p.is_empty() {
+        return Vec::new();
+    }
+    // Object patterns parse as blocks when bare; parenthesize.
+    let as_expr = format!("({p})");
+    lunas_script::free_identifiers(&as_expr).unwrap_or_default()
+}
+
+/// Whether a user name would collide with the emitter's generated locals.
+fn is_generated_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    matches!(chars.next(), Some('e' | 't' | 'a' | 'r' | 'd'))
+        && chars.as_str().chars().all(|c| c.is_ascii_digit())
+        && name.len() > 1
+}
+
+/// Whether `expr` reads any of the (loop-binding) `names`. Conservative: an
+/// unparseable expression is assumed to read them (extra re-runs are safe).
+fn reads_any(expr: &str, names: &[String]) -> bool {
+    if names.is_empty() {
+        return false;
+    }
+    match lunas_script::free_identifiers(expr) {
+        Ok(free) => free.iter().any(|n| names.contains(n)),
+        Err(_) => true,
+    }
+}
+
+/// Whether a fragment skeleton has slots inserted at its top level (the
+/// fragment root group then includes runtime anchors, so the whole child list
+/// must travel as the block handle).
+fn has_top_level_slot(skel: &Skeleton) -> bool {
+    skel.slots.iter().any(|s| match &s.pos {
+        InsertPos::Before(p) => p.len() <= 1,
+        InsertPos::BeforeSplit { path, .. } => path.len() <= 1,
+        InsertPos::Append(p) => p.is_empty(),
+    })
+}
+
+/// Drops the first `strip` segments of a positional path (used for `:for`
+/// items, whose wiring receives the item root rather than a container).
+fn strip_path(path: &[u32], strip: usize) -> &[u32] {
+    if path.len() >= strip {
+        &path[strip..]
+    } else {
+        &[]
+    }
+}
+
+// --- two-way write-back ------------------------------------------------------
+
+/// The (event, element-read expression) pair for a two-way binding's write-back
+/// listener.
+fn two_way_read(node: &str, attr: &str) -> (&'static str, String) {
+    if let Some(prop) = boolean_property(attr) {
+        // checkbox/radio style state commits on change
+        ("change", format!("{node}.{prop}"))
+    } else if idl_property(attr).is_some() {
+        ("input", format!("{node}.value"))
+    } else if attr
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$')
+    {
+        ("input", format!("{node}.{attr}"))
+    } else {
+        ("input", format!("{node}.getAttribute(\"{attr}\")"))
+    }
+}
+
 // --- reactive box selection & script rewriting ---------------------------
 
 /// The box helper each reactive var should use, in declaration order: `deepBox`
-/// if the script deeply mutates the var (member/index write or a mutating array
-/// method), else `box`.
-fn reactive_box_kinds(script_text: &str, vars: &[ReactiveVar]) -> Vec<(&'static str, u32)> {
+/// if the component deeply mutates the var (member/index write or a mutating
+/// array method in the script, or a two-way member lvalue), else `box`.
+/// `hint` is the script text plus synthetic template-derived writes.
+fn reactive_box_kinds(hint: &str, vars: &[ReactiveVar]) -> Vec<(&'static str, u32)> {
     vars.iter()
         .map(|v| {
-            let kind = if is_deeply_mutated(script_text, &v.name) {
+            let kind = if is_deeply_mutated(hint, &v.name) {
                 "deepBox"
             } else {
                 "box"
@@ -464,9 +1251,9 @@ fn reactive_box_kinds(script_text: &str, vars: &[ReactiveVar]) -> Vec<(&'static 
 
 /// Textual heuristic for deep mutation of `name`: a member/index assignment
 /// (`name.x =`, `name[i] =`, `name.x++`) or a mutating array method call
-/// (`name.push(`, …). Conservative and dependency-free — Wave 1 has no
-/// AST-level deep-mutation analysis. On a false negative the var would use a
-/// plain `box`, which still reacts to whole reassignment.
+/// (`name.push(`, …). Conservative and dependency-free — there is no AST-level
+/// deep-mutation analysis yet. On a false negative the var would use a plain
+/// `box`, which still reacts to whole reassignment.
 fn is_deeply_mutated(script: &str, name: &str) -> bool {
     const MUTATORS: &[&str] = &[
         "push",
@@ -568,11 +1355,18 @@ fn skip_ident(s: &str) -> Option<&str> {
 /// Rewrites the whole script body: reactive `let/const/var name = init`
 /// declarations become `const name = box|deepBox(c, i, init)`, and every
 /// reference to a reactive variable becomes `name.v`. Uses scope-aware
-/// [`module_binding_references`] so shadowed uses are left alone.
-fn rewrite_script(script: &str, vars: &[ReactiveVar]) -> String {
+/// [`module_binding_references`] so shadowed uses are left alone. `hint` is
+/// the deep-mutation detection text (script + template-derived writes).
+fn rewrite_script(
+    script: &str,
+    hint: &str,
+    vars: &[ReactiveVar],
+    aliases: &std::collections::BTreeMap<&'static str, String>,
+) -> String {
     if vars.is_empty() {
         return script.to_string();
     }
+    let box_name = |k: &'static str| aliases.get(k).map(|s| s.as_str()).unwrap_or(k);
     let reactive: std::collections::HashMap<&str, &ReactiveVar> =
         vars.iter().map(|v| (v.name.as_str(), v)).collect();
 
@@ -596,7 +1390,7 @@ fn rewrite_script(script: &str, vars: &[ReactiveVar]) -> String {
         if d.declarators_in_stmt != 1 {
             continue;
         }
-        let kind = if is_deeply_mutated(script, &d.name) {
+        let kind = if is_deeply_mutated(hint, &d.name) {
             "deepBox"
         } else {
             "box"
@@ -605,8 +1399,14 @@ fn rewrite_script(script: &str, vars: &[ReactiveVar]) -> String {
             .init_range
             .and_then(|ir| ir.slice(script))
             .unwrap_or("undefined");
-        let init = rewrite_expr(init_raw, vars);
-        let text = format!("const {} = {}(c, {}, {})", d.name, kind, var.index, init);
+        let init = rewrite_expr(init_raw, vars, &[]);
+        let text = format!(
+            "const {} = {}(c, {}, {})",
+            d.name,
+            box_name(kind),
+            var.index,
+            init
+        );
         edits.push((d.stmt_range.start().raw(), d.stmt_range.end().raw(), text));
         decl_ranges.push(d.stmt_range);
     }
@@ -652,12 +1452,20 @@ fn apply_edits(src: &str, mut edits: Vec<(u32, u32, String)>) -> String {
 
 /// Rewrites a standalone JS expression so reactive references become `name.v`.
 /// Uses scope-aware [`free_identifiers_with_spans`] so shadowed locals (e.g. an
-/// arrow parameter of the same name) are left alone.
-fn rewrite_expr(expr: &str, vars: &[ReactiveVar]) -> String {
+/// arrow parameter of the same name) are left alone. `shadowed` names (loop
+/// bindings of enclosing `:for` items) are excluded from rewriting.
+fn rewrite_expr(expr: &str, vars: &[ReactiveVar], shadowed: &[String]) -> String {
     if vars.is_empty() {
         return expr.trim().to_string();
     }
-    let reactive: std::collections::HashSet<&str> = vars.iter().map(|v| v.name.as_str()).collect();
+    let reactive: std::collections::HashSet<&str> = vars
+        .iter()
+        .map(|v| v.name.as_str())
+        .filter(|n| !shadowed.iter().any(|s| s == n))
+        .collect();
+    if reactive.is_empty() {
+        return expr.trim().to_string();
+    }
     let spans = match lunas_script::free_identifiers_with_spans(expr) {
         Ok(s) => s,
         Err(_) => return expr.trim().to_string(),
@@ -710,10 +1518,6 @@ fn idl_property(attr: &str) -> Option<&'static str> {
 
 // --- small emit utilities ------------------------------------------------
 
-fn ref_name(i: usize) -> String {
-    format!("e{i}")
-}
-
 /// Strips the common leading whitespace shared by all non-blank lines, so a
 /// script block written with source indentation re-emits cleanly.
 fn dedent(s: &str) -> String {
@@ -735,25 +1539,22 @@ fn dedent(s: &str) -> String {
         .join("\n")
 }
 
-fn slot_kind_name(c: &SlotContent) -> &'static str {
-    match c {
-        SlotContent::Text(_) => "text",
-        SlotContent::If(_) => "if",
-        SlotContent::For(_) => "for",
-        SlotContent::Component(_) => "component",
-    }
-}
-
 fn has_interpolation(v: &StaticValue) -> bool {
     v.segments
         .iter()
         .any(|s| matches!(s, TextSegment::Interpolation(_)))
 }
 
-/// Emits `n.childNodes[i]…` navigation from `c.root` for a positional path.
-/// `[]` is the root itself.
-fn push_node_at(b: &mut String, path: &[u32]) {
-    b.push_str("c.root");
+fn push_indent(b: &mut String, level: usize) {
+    for _ in 0..level {
+        b.push_str("  ");
+    }
+}
+
+/// Emits `base.childNodes[i]…` navigation for a positional path. `[]` is the
+/// base itself.
+fn push_node_at(b: &mut String, base: &str, path: &[u32]) {
+    b.push_str(base);
     for i in path {
         b.push_str(".childNodes[");
         b.push_str(&i.to_string());

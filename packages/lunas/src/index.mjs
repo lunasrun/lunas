@@ -13,6 +13,7 @@ export {
   beginScope,
   endScope,
   dropScope,
+  runScope,
 } from "./core.mjs";
 
 export { box, deepBox, shared } from "./boxes.mjs";
@@ -27,17 +28,19 @@ export {
   component,
   refs,
   on,
+  fromHTML,
   anchorBefore,
   anchorBeforeSplit,
   anchorAppend,
 } from "./dom.mjs";
 
-export { ifBlock, forBlock, mountChild } from "./blocks.mjs";
+export { ifBlock, ifChain, forBlock, mountChild } from "./blocks.mjs";
 
 export {
   createForState,
   seedForState,
   reconcile,
+  extractKeys,
   longestIncreasingSubsequence,
 } from "./for_diff.mjs";
 

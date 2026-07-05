@@ -4,9 +4,9 @@
 
 use swc_common::{sync::Lrc, FileName, SourceMap};
 use swc_ecma_ast::{
-    ArrayPat, AssignExpr, AssignTarget, AssignTargetPat, Decl, Expr, Ident, ImportSpecifier,
-    ModuleDecl, ModuleItem, ObjectPat, ObjectPatProp, Pat, SimpleAssignTarget, Stmt, UpdateExpr,
-    VarDecl,
+    ArrayPat, AssignExpr, AssignTarget, AssignTargetPat, CallExpr, Callee, Decl, Expr, Ident,
+    ImportSpecifier, MemberProp, ModuleDecl, ModuleItem, ObjectPat, ObjectPatProp, Pat,
+    SimpleAssignTarget, Stmt, UpdateExpr, VarDecl,
 };
 use swc_ecma_parser::{lexer::Lexer, Parser, StringInput, Syntax, TsSyntax};
 use swc_ecma_visit::{Visit, VisitWith};
@@ -613,6 +613,50 @@ impl Visit for AssignCollector {
         }
         n.arg.visit_with(self);
     }
+
+    fn visit_call_expr(&mut self, n: &CallExpr) {
+        // A mutating method call on a binding deep-mutates it: `items.push(x)`,
+        // `list.splice(…)`, `set.add(…)`, `map.clear()`, … all change the value
+        // the binding holds even though nothing is assigned. Report the root
+        // object so the binding is treated as reactive (and later boxed with a
+        // `deepBox`). Only *known* mutators count — a `.filter()`/`.map()` is
+        // non-mutating and must not spuriously mark the binding.
+        if let Callee::Expr(callee) = &n.callee {
+            if let Expr::Member(m) = &**callee {
+                if let MemberProp::Ident(method) = &m.prop {
+                    if is_mutating_method(&method.sym) {
+                        if let Some(id) = root_ident(&m.obj) {
+                            self.names.push(id.sym.to_string());
+                        }
+                    }
+                }
+            }
+        }
+        // Still recurse: arguments (and the callee object) may contain further
+        // assignments / mutations.
+        n.visit_children_with(self);
+    }
+}
+
+/// Array / collection methods that mutate the receiver in place. A call to one
+/// of these on a binding is a deep mutation of that binding.
+fn is_mutating_method(name: &str) -> bool {
+    matches!(
+        name,
+        "push"
+            | "pop"
+            | "shift"
+            | "unshift"
+            | "splice"
+            | "sort"
+            | "reverse"
+            | "fill"
+            | "copyWithin"
+            | "set"
+            | "add"
+            | "delete"
+            | "clear"
+    )
 }
 
 impl AssignCollector {

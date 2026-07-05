@@ -25,12 +25,12 @@
 //   host.remove(node)
 //       Detach `node` from the parent.
 //
-//   makeItem(itemData, key) -> node
+//   makeItem(itemData, key, index) -> node
 //       Build the DOM (or handle) for a new item and return its host node.
 //       In the runtime this parses the item's own innerHTML branch, wires its
 //       binds, and returns the single-root node or a multi-root handle.
 //
-//   patchItem(node, itemData)  [optional]
+//   patchItem(node, itemData, index)  [optional]
 //       Update an existing item's reactive scope with new data (same key,
 //       possibly new value/index). No-op if omitted.
 //
@@ -78,8 +78,10 @@ const NADA = -1;
 // only loses the "reuse by identity" optimization. A warning is surfaced via
 // the optional `onWarn` hook.
 //
-// Returns { keys, duped }.
-function extractKeys(items, keyOf, onWarn) {
+// Returns { keys, duped }. Exported so the runtime's bulk initial render
+// (blocks.mjs forBlock, html/wire mode) seeds the reconciler state with exactly
+// the same key semantics — including the duplicate-key index fallback.
+export function extractKeys(items, keyOf, onWarn) {
   const n = items.length;
   const keys = new Array(n);
   const seen = new Map(); // key -> first index, for the warning
@@ -169,7 +171,7 @@ export function reconcile(state, host, items, makeItem, opts) {
     // Everything is new. Append in order (refNode = null => before anchor).
     const nodes = new Array(newLen);
     for (let i = 0; i < newLen; i++) {
-      const node = makeItem(items[i], newKeys[i]);
+      const node = makeItem(items[i], newKeys[i], i);
       host.insertBefore(node, null);
       nodes[i] = node;
     }
@@ -186,7 +188,7 @@ export function reconcile(state, host, items, makeItem, opts) {
     start < minLen &&
     sameKey(effOldKeys[start], newKeys[start])
   ) {
-    if (patchItem) patchItem(oldNodes[start], items[start]);
+    if (patchItem) patchItem(oldNodes[start], items[start], start);
     start++;
   }
 
@@ -198,7 +200,7 @@ export function reconcile(state, host, items, makeItem, opts) {
     newEnd >= start &&
     sameKey(effOldKeys[oldEnd], newKeys[newEnd])
   ) {
-    if (patchItem) patchItem(oldNodes[oldEnd], items[newEnd]);
+    if (patchItem) patchItem(oldNodes[oldEnd], items[newEnd], newEnd);
     oldEnd--;
     newEnd--;
   }
@@ -217,7 +219,7 @@ export function reconcile(state, host, items, makeItem, opts) {
     const refNode =
       newEnd + 1 < newLen ? resultNodes[newEnd + 1] : null;
     for (let i = start; i <= newEnd; i++) {
-      const node = makeItem(items[i], newKeys[i]);
+      const node = makeItem(items[i], newKeys[i], i);
       host.insertBefore(node, refNode);
       resultNodes[i] = node;
     }
@@ -260,7 +262,7 @@ export function reconcile(state, host, items, makeItem, opts) {
       newToOld[rel] = oi;
       oldUsed[oi - start] = true;
       resultNodes[ni] = oldNodes[oi];
-      if (patchItem) patchItem(oldNodes[oi], items[ni]);
+      if (patchItem) patchItem(oldNodes[oi], items[ni], ni);
       patched++;
     }
   }
@@ -289,7 +291,7 @@ export function reconcile(state, host, items, makeItem, opts) {
 
     if (newToOld[rel] === NADA) {
       // new key -> create + insert
-      const node = makeItem(items[ni], k);
+      const node = makeItem(items[ni], k, ni);
       host.insertBefore(node, refNode);
       resultNodes[ni] = node;
     } else if (lisPtr >= 0 && lis[lisPtr] === rel) {
