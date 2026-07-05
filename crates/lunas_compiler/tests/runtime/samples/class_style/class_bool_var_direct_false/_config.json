@@ -1,0 +1,3 @@
+{
+  "description": "false alone short-circuits normClass's null/false check and yields empty string"
+}

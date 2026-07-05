@@ -1,0 +1,5 @@
+html:
+    <div class="box" :class="items" @click="add()"></div>
+script:
+    let items = ["a"]
+    function add(){ items = [...items, "b"] }

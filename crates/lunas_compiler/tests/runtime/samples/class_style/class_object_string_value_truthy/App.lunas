@@ -1,0 +1,3 @@
+html:
+    <div :class="{active: 'yes', disabled: ''}"></div>
+script:

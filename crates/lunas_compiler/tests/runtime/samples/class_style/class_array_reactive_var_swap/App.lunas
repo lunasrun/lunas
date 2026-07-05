@@ -1,0 +1,5 @@
+html:
+    <div :class="['base', extra]" @click="swap()"></div>
+script:
+    let extra = "one"
+    function swap(){ extra = "two" }

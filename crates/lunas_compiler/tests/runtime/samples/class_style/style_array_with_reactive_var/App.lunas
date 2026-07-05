@@ -1,0 +1,5 @@
+html:
+    <div :style="[base, {color: hue}]"></div>
+script:
+    let base = "font-weight: bold;"
+    let hue = "teal"

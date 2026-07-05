@@ -1,0 +1,5 @@
+html:
+    <div class="tgt" :style="expr" @click="swap()"></div>
+script:
+    let expr = {color: "red"}
+    function swap(){ expr = "color: blue; font-weight: bold;" }

@@ -1,0 +1,4 @@
+html:
+    <div :class="cls"></div>
+script:
+    let cls = ""

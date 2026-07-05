@@ -1,0 +1,3 @@
+{
+  "description": "non-string/array/object array items go through String(value) in normClass"
+}

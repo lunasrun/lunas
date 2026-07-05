@@ -1,0 +1,4 @@
+html:
+    <div :class="cond ? 'yes' : 'no'"></div>
+script:
+    let cond = true

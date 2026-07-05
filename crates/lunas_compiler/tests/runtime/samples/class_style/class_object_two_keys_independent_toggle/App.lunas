@@ -1,0 +1,10 @@
+html:
+    <div>
+        <div class="box" :class="{active: activeFlag, error: errorFlag}" @click="toggleActive()"></div>
+        <button @click="toggleError()">err</button>
+    </div>
+script:
+    let activeFlag = false
+    let errorFlag = false
+    function toggleActive(){ activeFlag = !activeFlag }
+    function toggleError(){ errorFlag = !errorFlag }

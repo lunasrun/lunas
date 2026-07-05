@@ -1,0 +1,5 @@
+html:
+    <div class="tgt" :class="expr" @click="swap()"></div>
+script:
+    let expr = {a: true, b: false}
+    function swap(){ expr = "plain-string" }

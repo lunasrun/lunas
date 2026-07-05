@@ -1,0 +1,3 @@
+{
+  "description": "a CSS value that itself contains a semicolon/quote -- documents raw passthrough (no escaping in normStyle)"
+}

@@ -1,0 +1,5 @@
+html:
+    <div :style="`color: ${hue}; font-size: ${size}px;`"></div>
+script:
+    let hue = "red"
+    let size = 14

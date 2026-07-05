@@ -1,0 +1,3 @@
+html:
+    <div :style="{'--main-color': 'red', color: 'var(--main-color)'}"></div>
+script:

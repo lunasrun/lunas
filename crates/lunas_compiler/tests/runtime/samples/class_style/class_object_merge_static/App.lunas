@@ -1,0 +1,4 @@
+html:
+    <div class="base" :class="{active: on}"></div>
+script:
+    let on = true

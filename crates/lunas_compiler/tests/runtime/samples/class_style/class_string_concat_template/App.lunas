@@ -1,0 +1,4 @@
+html:
+    <div :class="`item-${kind}`"></div>
+script:
+    let kind = "primary"

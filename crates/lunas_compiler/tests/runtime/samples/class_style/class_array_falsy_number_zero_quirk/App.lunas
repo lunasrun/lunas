@@ -1,0 +1,4 @@
+html:
+    <div :class="['a', 0, zero, 'b']"></div>
+script:
+    let zero = 0

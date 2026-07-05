@@ -1,0 +1,10 @@
+html:
+    <div>
+        <div class="one" :class="{on: onA}" @click="toggleA()"></div>
+        <div class="two" :class="{on: onB}" @click="toggleB()"></div>
+    </div>
+script:
+    let onA = false
+    let onB = true
+    function toggleA(){ onA = !onA }
+    function toggleB(){ onB = !onB }

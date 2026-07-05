@@ -1,0 +1,4 @@
+html:
+    <div :class="{[keyName]: true}"></div>
+script:
+    let keyName = "dynamic"

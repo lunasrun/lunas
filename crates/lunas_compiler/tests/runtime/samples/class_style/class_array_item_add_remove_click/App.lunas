@@ -1,0 +1,10 @@
+html:
+    <div>
+        <div class="tgt" :class="tags"></div>
+        <button class="add" @click="addTag()">add</button>
+        <button class="rm" @click="removeTag()">rm</button>
+    </div>
+script:
+    let tags = ["a", "b"]
+    function addTag(){ tags = [...tags, "c"] }
+    function removeTag(){ tags = tags.slice(0, -1) }

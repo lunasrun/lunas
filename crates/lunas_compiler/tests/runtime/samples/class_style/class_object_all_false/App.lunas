@@ -1,0 +1,3 @@
+html:
+    <div class="base" :class="{a: false, b: false}"></div>
+script:

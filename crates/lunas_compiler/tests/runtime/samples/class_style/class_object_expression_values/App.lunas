@@ -1,0 +1,4 @@
+html:
+    <div :class="{big: count > 5, small: count <= 5}"></div>
+script:
+    let count = 10

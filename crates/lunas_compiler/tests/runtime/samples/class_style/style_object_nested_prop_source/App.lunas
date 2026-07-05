@@ -1,0 +1,4 @@
+html:
+    <div :style="{color: theme.color}"></div>
+script:
+    let theme = {color: "purple"}

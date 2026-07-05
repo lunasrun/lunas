@@ -1,0 +1,4 @@
+html:
+    <div :class="{ready: state.ready}"></div>
+script:
+    let state = {ready: true}

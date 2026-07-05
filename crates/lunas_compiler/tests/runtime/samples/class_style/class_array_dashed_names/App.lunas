@@ -1,0 +1,3 @@
+html:
+    <div :class="['is-active', 'has-error']"></div>
+script:

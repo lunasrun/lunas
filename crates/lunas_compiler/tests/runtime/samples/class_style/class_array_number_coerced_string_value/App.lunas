@@ -1,0 +1,4 @@
+html:
+    <div :class="[count]"></div>
+script:
+    let count = 42

@@ -1,0 +1,7 @@
+html:
+    <ul>
+        <li class="row" :for="item of items" :key="item.id" :style="{color: item.hue}" @click="cycle(item.id)">${item.label}</li>
+    </ul>
+script:
+    let items = [{id:1,label:"a",hue:"red"},{id:2,label:"b",hue:"blue"}]
+    function cycle(id){ items = items.map(it => it.id === id ? {...it, hue: "green"} : it) }

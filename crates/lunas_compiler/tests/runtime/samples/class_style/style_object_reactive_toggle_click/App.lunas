@@ -1,0 +1,5 @@
+html:
+    <div class="tgt" :style="{color: hue}" @click="go()"></div>
+script:
+    let hue = "red"
+    function go(){ hue = "blue" }

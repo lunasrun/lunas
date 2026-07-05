@@ -1,0 +1,5 @@
+html:
+    <div class="tgt" :style="styleObj" @click="toggle()"></div>
+script:
+    let styleObj = {color: "red"}
+    function toggle(){ styleObj = styleObj.border ? {color: "red"} : {color: "red", border: "1px solid black"} }
