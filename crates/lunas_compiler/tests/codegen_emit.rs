@@ -761,3 +761,188 @@ fn arbitrary_control_flow_nesting_never_panics() {
         let _ = js;
     }
 }
+
+// --- slots (c-slots) --------------------------------------------------------
+
+#[test]
+fn slot_outlet_emits_slotblock_with_fallback() {
+    // A child <slot> with fallback content compiles to slotBlock reading the
+    // parent-provided factory, plus a fallback factory building its own content.
+    let js = emit("html:\n    <div><slot>fallback</slot></div>\n");
+    assert!(js.contains("import { component"), "{js}");
+    assert!(js.contains("slotBlock"), "uses slotBlock: {js}");
+    assert!(
+        js.contains("props.$slots && props.$slots[\"default\"]"),
+        "reads parent-provided default slot: {js}"
+    );
+    assert!(
+        js.contains("fromHTML(HTML_1, a0)"),
+        "fallback built from its own hoisted skeleton: {js}"
+    );
+    assert!(js.contains("const HTML_1 = \"fallback\";"), "{js}");
+}
+
+#[test]
+fn slot_outlet_without_fallback_passes_null() {
+    let js = emit("html:\n    <div><slot></slot></div>\n");
+    assert!(
+        js.contains("props.$slots && props.$slots[\"default\"], null);"),
+        "no fallback -> null factory: {js}"
+    );
+}
+
+#[test]
+fn named_slot_outlet_uses_its_name() {
+    let js = emit("html:\n    <div><slot name=\"foot\"></slot></div>\n");
+    assert!(
+        js.contains("props.$slots && props.$slots[\"foot\"]"),
+        "named slot keyed by its name: {js}"
+    );
+}
+
+#[test]
+fn scoped_slot_outlet_emits_props_getter() {
+    // A bound attr on <slot> becomes a scoped-slot props getter passed to slotBlock.
+    let js = emit(
+        "html:\n    <div><slot :item=\"row\"></slot></div>\nscript:\n    let row = 1\n    function f(){ row = 2 }\n",
+    );
+    assert!(
+        js.contains("() => ({ item: (row.v) })"),
+        "scoped slot props getter reads the bound expr: {js}"
+    );
+}
+
+#[test]
+fn parent_passes_default_slot_content() {
+    // Bare children of a component become the default slot factory.
+    let js = emit(
+        "@use Card from \"./Card.lunas\"\nhtml:\n    <Card>hi ${msg}</Card>\nscript:\n    let msg = \"a\"\n    function f(){ msg = \"b\" }\n",
+    );
+    assert!(js.contains("slotContent"), "wraps parent content: {js}");
+    assert!(
+        js.contains("$slots: s0"),
+        "passes $slots to mountChild: {js}"
+    );
+    assert!(
+        js.contains("default: (slotProps, onCleanup) => "),
+        "default slot factory: {js}"
+    );
+    assert!(
+        js.contains("mountChild(c, a0, Card, { $slots: s0 })"),
+        "{js}"
+    );
+}
+
+#[test]
+fn parent_named_slot_via_template_hash() {
+    // `<template #foot>` routes to the named slot `foot`.
+    let js = emit(
+        "@use Card from \"./Card.lunas\"\nhtml:\n    <Card><template #foot>ft</template></Card>\n",
+    );
+    assert!(js.contains("foot: (slotProps, onCleanup) =>"), "{js}");
+    assert!(
+        !js.contains("default:"),
+        "no default group when only named: {js}"
+    );
+}
+
+#[test]
+fn parent_scoped_slot_binding_names_param() {
+    // `<template #default="p">` binds `p` to the slot props inside the content.
+    let js = emit(
+        "@use Card from \"./Card.lunas\"\nhtml:\n    <Card><template #default=\"p\">${p.item}</template></Card>\n",
+    );
+    assert!(
+        js.contains("slotContent(c, (p) => {"),
+        "scoped binding names the inner build param: {js}"
+    );
+}
+
+#[test]
+fn component_without_children_has_no_slots_member() {
+    let js = emit("@use Card from \"./Card.lunas\"\nhtml:\n    <Card/>\n");
+    assert!(!js.contains("$slots"), "no children -> no $slots: {js}");
+    assert!(!js.contains("slotContent"), "{js}");
+}
+
+// --- non-reactive script var read by the template (pre-existing bug fix) -----
+
+#[test]
+fn never_mutated_var_read_by_template_is_emitted() {
+    // A const declared in script, never mutated, but read by the template used
+    // to be DROPPED (the whole script was omitted when reactive_vars was empty),
+    // leaving the output referencing an undefined name. It must be emitted as a
+    // plain const in setup.
+    let js = emit("html:\n    <p>${WIDTH}</p>\nscript:\n    const WIDTH = 5\n");
+    assert!(
+        js.contains("const WIDTH = 5"),
+        "non-reactive declared var must still be emitted: {js}"
+    );
+    assert!(js.contains("t0.data = `${WIDTH}`;"), "{js}");
+    // No box import: the var is not reactive.
+    assert!(
+        !js.contains(", box"),
+        "no box helper for a plain const: {js}"
+    );
+}
+
+#[test]
+fn empty_script_edge_emits_no_body() {
+    // An empty script block must not produce stray output or panic.
+    let js = emit("html:\n    <p>hi</p>\nscript:\n");
+    assert!(js.contains("const HTML = \"<p>hi</p>\";"), "{js}");
+    // The setup body is empty (no dangling declarations).
+    assert!(
+        js.contains("(c, props) => {\n});"),
+        "empty setup body: {js}"
+    );
+}
+
+#[test]
+fn multiple_non_reactive_vars_all_emitted() {
+    // Several never-mutated vars, all read by the template.
+    let js = emit("html:\n    <p>${A}-${B}</p>\nscript:\n    const A = 1\n    const B = 2\n");
+    assert!(js.contains("const A = 1"), "{js}");
+    assert!(js.contains("const B = 2"), "{js}");
+}
+
+#[test]
+fn slot_and_template_arbitrary_nesting_never_panics() {
+    // <slot> and <template> tags in arbitrary nesting (inside :if / :for /
+    // components, named/scoped/bare) must compile without panicking and never
+    // emit invalid JS (reaching the end without a panic is the assertion).
+    let fragments = [
+        "<slot></slot>",
+        "<slot>fb</slot>",
+        "<slot name=\"x\"></slot>",
+        "<slot :item=\"v\"></slot>",
+        "<slot name=\"y\" :item=\"v\">f</slot>",
+        "<template #a>x</template>",
+        "<template #a=\"p\">${p.k}</template>",
+        "<template slot=\"b\">y</template>",
+        "<Card><slot></slot></Card>",
+        "<Card><template #a><slot name=\"a\"></slot></template></Card>",
+        "<div :if=\"v\"><slot></slot></div>",
+        "<div :for=\"i of xs\" :key=\"i\"><slot :item=\"i\"></slot></div>",
+        "<slot><slot>deep</slot></slot>",
+    ];
+    let script =
+        "\nscript:\n    let v = 0\n    let xs = []\n    function f(){ v = 1; xs.push(v) }\n";
+    for frag in fragments {
+        for wrap in [
+            frag.to_string(),
+            format!("<div :if=\"v\">{frag}</div>"),
+            format!("<Card>{frag}</Card>"),
+            format!("<div>{frag}{frag}</div>"),
+        ] {
+            let source = format!("@use Card from \"./Card.lunas\"\nhtml:\n    {wrap}{script}");
+            let (js, diags) = compile(&source);
+            // Never a hard error-panic; diagnostics are allowed. If a module was
+            // emitted, it must be non-empty text (well-formed enough to be a module).
+            let _ = diags;
+            if let Some(js) = js {
+                assert!(!js.is_empty(), "emitted empty module for {wrap}");
+            }
+        }
+    }
+}
