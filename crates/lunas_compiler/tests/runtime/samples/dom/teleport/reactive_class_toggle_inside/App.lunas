@@ -1,0 +1,10 @@
+html:
+    <div>
+        <button @click="toggle()">toggle</button>
+        <teleport to="#portal">
+            <div class="ported-reactive-class-toggle" :class="mode"></div>
+        </teleport>
+    </div>
+script:
+    let mode = "off"
+    function toggle() { mode = mode === "off" ? "on" : "off" }

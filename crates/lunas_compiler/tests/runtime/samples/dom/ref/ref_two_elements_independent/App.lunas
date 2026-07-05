@@ -1,0 +1,12 @@
+html:
+    <div>
+        <input :ref="a">
+        <input :ref="b">
+        <button @click="fillA()">fill a</button>
+        <button @click="fillB()">fill b</button>
+    </div>
+script:
+    let a
+    let b
+    function fillA() { a.value = "A" }
+    function fillB() { b.value = "B" }

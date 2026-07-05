@@ -1,0 +1,6 @@
+html:
+    <p class="target" :class="{ active: on }">content</p>
+    <button @click="toggle()">toggle</button>
+script:
+    let on = false
+    function toggle() { on = !on }

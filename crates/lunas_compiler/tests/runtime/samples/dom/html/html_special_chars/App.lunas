@@ -1,0 +1,4 @@
+html:
+    <article :html="markup"></article>
+script:
+    let markup = "<p>5 &gt; 3 &amp; 2 &lt; 4</p>"

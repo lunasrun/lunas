@@ -1,0 +1,10 @@
+@use Panel from "./Panel.lunas"
+@use Notice from "./Notice.lunas"
+html:
+    <div>
+        <component :is="view"/>
+        <button @click="swap()">swap</button>
+    </div>
+script:
+    let view = Panel
+    function swap() { view = Notice }

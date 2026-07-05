@@ -1,0 +1,4 @@
+html:
+    <teleport to="#portal">
+        <p class="ported-appears-on-mount">now mounted</p>
+    </teleport>

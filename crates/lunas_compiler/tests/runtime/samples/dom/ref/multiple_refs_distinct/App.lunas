@@ -1,0 +1,13 @@
+html:
+    <div>
+        <p :ref="first">a</p>
+        <p :ref="second">b</p>
+        <button @click="swap()">swap</button>
+    </div>
+script:
+    let first
+    let second
+    function swap() {
+        first.setAttribute("data-tag", "first")
+        second.setAttribute("data-tag", "second")
+    }

@@ -1,0 +1,18 @@
+@use TextEditor from "./TextEditor.lunas"
+@use NumberEditor from "./NumberEditor.lunas"
+@use ToggleEditor from "./ToggleEditor.lunas"
+html:
+    <div>
+        <component :is="editorFor(kind)"/>
+        <button @click="pick('text')">text</button>
+        <button @click="pick('number')">number</button>
+        <button @click="pick('toggle')">toggle</button>
+    </div>
+script:
+    let kind = "text"
+    function pick(k) { kind = k }
+    function editorFor(k) {
+        if (k === "number") return NumberEditor
+        if (k === "toggle") return ToggleEditor
+        return TextEditor
+    }

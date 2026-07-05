@@ -1,0 +1,10 @@
+html:
+    <button @click="toggle()">toggle</button>
+    <div :if="open">
+        <p :if="detail">deep detail</p>
+        <p :if="!detail">shallow</p>
+    </div>
+script:
+    let open = true
+    let detail = true
+    function toggle() { open = !open }

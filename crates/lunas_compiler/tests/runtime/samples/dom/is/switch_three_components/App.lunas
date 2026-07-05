@@ -1,0 +1,15 @@
+@use A from "./A.lunas"
+@use B from "./B.lunas"
+@use Cc from "./Cc.lunas"
+html:
+    <div>
+        <component :is="view"/>
+        <button @click="toB()">b</button>
+        <button @click="toC()">c</button>
+        <button @click="toA()">a</button>
+    </div>
+script:
+    let view = A
+    function toA() { view = A }
+    function toB() { view = B }
+    function toC() { view = Cc }

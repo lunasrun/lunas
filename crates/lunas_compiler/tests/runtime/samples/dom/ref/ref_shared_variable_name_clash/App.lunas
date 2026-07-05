@@ -1,0 +1,12 @@
+html:
+    <div>
+        <input :ref="el" placeholder="a">
+        <button @click="use()">use</button>
+        <span :if="el">${label}</span>
+    </div>
+script:
+    let el
+    let label = "no ref yet"
+    function use() {
+        label = "has ref: " + (el ? "yes" : "no")
+    }

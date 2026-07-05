@@ -1,0 +1,1 @@
+{ "diagnostics": "expected", "description": "static children + :html conflict warns; :html wins at runtime" }

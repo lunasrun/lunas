@@ -1,0 +1,6 @@
+html:
+    <article :html="'<em>' + label + '</em>'"></article>
+    <button @click="rename()">rename</button>
+script:
+    let label = "start"
+    function rename() { label = "end" }

@@ -1,0 +1,7 @@
+html:
+    <div>
+        <p>local</p>
+        <teleport to="#portal">
+            <p class="ported-static-paragraph">static teleported</p>
+        </teleport>
+    </div>

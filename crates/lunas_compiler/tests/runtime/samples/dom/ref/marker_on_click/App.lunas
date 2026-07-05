@@ -1,0 +1,10 @@
+html:
+    <div>
+        <span :ref="marker">idle</span>
+        <button @click="mark()">mark</button>
+    </div>
+script:
+    let marker
+    function mark() {
+        marker.setAttribute("data-state", "marked")
+    }

@@ -1,0 +1,3 @@
+@use TableBody from "./TableBody.lunas"
+html:
+    <table><TableBody/></table>

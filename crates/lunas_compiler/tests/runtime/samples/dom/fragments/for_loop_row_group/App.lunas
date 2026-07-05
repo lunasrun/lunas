@@ -1,0 +1,10 @@
+html:
+    <table>
+        <tbody>
+            <tr :for="item of items" :key="item.id" class="main"><td>${item.label}</td></tr>
+        </tbody>
+    </table>
+    <button @click="add()">add</button>
+script:
+    let items = [{id:1,label:"a"},{id:2,label:"b"}]
+    function add() { items.push({id:3,label:"c"}) }

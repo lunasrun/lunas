@@ -1,0 +1,6 @@
+html:
+    <article :html="on ? '<b>on</b>' : '<i>off</i>'"></article>
+    <button @click="toggle()">toggle</button>
+script:
+    let on = true
+    function toggle() { on = !on }

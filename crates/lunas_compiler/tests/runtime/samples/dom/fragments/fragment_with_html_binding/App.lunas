@@ -1,0 +1,3 @@
+@use Card from "./Card.lunas"
+html:
+    <div><Card/></div>

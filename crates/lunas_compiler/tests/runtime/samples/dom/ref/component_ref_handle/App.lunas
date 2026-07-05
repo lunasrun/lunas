@@ -1,0 +1,13 @@
+@use Child from "./Child.lunas"
+html:
+    <div>
+        <Child :ref="childHandle" :count="n"/>
+        <button @click="bump()">bump</button>
+    </div>
+script:
+    let n = 1
+    let childHandle
+    function bump() {
+        n++
+        childHandle.setProp("count", n)
+    }

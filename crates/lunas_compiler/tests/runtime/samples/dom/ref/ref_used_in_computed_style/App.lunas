@@ -1,0 +1,12 @@
+html:
+    <div>
+        <p :ref="box" :style="{ color: tone }">colored</p>
+        <button @click="paint()">paint</button>
+    </div>
+script:
+    let tone = "black"
+    let box
+    function paint() {
+        tone = "red"
+        box.setAttribute("data-painted", "yes")
+    }

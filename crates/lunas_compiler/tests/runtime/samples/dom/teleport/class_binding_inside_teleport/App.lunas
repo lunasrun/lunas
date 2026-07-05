@@ -1,0 +1,10 @@
+html:
+    <div>
+        <button @click="toggle()">toggle</button>
+        <teleport to="#portal">
+            <p class="ported-class-binding" :class="{ active: on }">styled</p>
+        </teleport>
+    </div>
+script:
+    let on = false
+    function toggle() { on = !on }

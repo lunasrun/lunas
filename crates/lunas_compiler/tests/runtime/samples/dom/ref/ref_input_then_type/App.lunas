@@ -1,0 +1,11 @@
+html:
+    <div>
+        <input :ref="field" :value="name" @input="onInput()">
+        <span>${name}</span>
+    </div>
+script:
+    let name = "x"
+    let field
+    function onInput() {
+        name = field.value
+    }

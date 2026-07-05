@@ -1,0 +1,9 @@
+@use Counter from "./Counter.lunas"
+html:
+    <div>
+        <component :is="viewA"/>
+        <component :is="viewB"/>
+    </div>
+script:
+    let viewA = Counter
+    let viewB = Counter

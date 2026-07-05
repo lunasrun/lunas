@@ -1,0 +1,15 @@
+@use Panel from "./Panel.lunas"
+@use Notice from "./Notice.lunas"
+html:
+    <div>
+        <div :if="show">
+            <component :is="view"/>
+        </div>
+        <button class="toggle" @click="toggleShow()">toggle</button>
+        <button class="swap" @click="swap()">swap</button>
+    </div>
+script:
+    let show = true
+    let view = Panel
+    function toggleShow() { show = !show }
+    function swap() { view = Notice }

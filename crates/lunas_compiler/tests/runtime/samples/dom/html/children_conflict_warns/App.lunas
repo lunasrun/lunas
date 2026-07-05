@@ -1,0 +1,4 @@
+html:
+    <div :html="markup">keep me</div>
+script:
+    let markup = "<b>x</b>"

@@ -1,0 +1,5 @@
+@use MultiRoot from "./MultiRoot.lunas"
+html:
+    <div><MultiRoot :heading="title"/></div>
+script:
+    let title = "Hello"

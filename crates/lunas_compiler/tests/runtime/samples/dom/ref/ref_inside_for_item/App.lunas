@@ -1,0 +1,11 @@
+html:
+    <div>
+        <ul><li :for="item of items" :key="item.id" :ref="lastRef">${item.label}</li></ul>
+        <button @click="mark()">mark</button>
+    </div>
+script:
+    let items = [{id:1,label:"a"},{id:2,label:"b"}]
+    let lastRef
+    function mark() {
+        if (lastRef) lastRef.setAttribute("data-marked", "yes")
+    }

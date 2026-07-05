@@ -1,0 +1,10 @@
+html:
+    <div>
+        <p :ref="box">content</p>
+        <button @click="highlight()">highlight</button>
+    </div>
+script:
+    let box
+    function highlight() {
+        box.classList.add("hot")
+    }
