@@ -1,0 +1,5 @@
+html:
+    <input :value="name" @focus="clear()">
+script:
+    let name = "alice"
+    function clear(){ name = "" }

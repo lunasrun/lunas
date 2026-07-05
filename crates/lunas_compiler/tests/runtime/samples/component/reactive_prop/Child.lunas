@@ -1,0 +1,6 @@
+@input count:number = 0
+html:
+    <section><button @click="bump()">c</button><span>${count}+${local}</span></section>
+script:
+    let local = 0
+    function bump(){ local++ }
