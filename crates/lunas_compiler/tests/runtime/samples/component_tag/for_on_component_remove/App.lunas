@@ -1,0 +1,6 @@
+@use Row from "./Row.lunas"
+html:
+    <div><button @click="drop()">d</button><ul><Row :for="item of items" :key="item.id" :label="item.label"/></ul></div>
+script:
+    let items = [{id:1,label:"a"},{id:2,label:"b"},{id:3,label:"c"}]
+    function drop(){ items.splice(1, 1) }

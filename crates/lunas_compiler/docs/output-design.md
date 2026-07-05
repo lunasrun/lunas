@@ -211,7 +211,13 @@ export function setStyle(el, staticStyle, v) { /* merge staticStyle with normSty
 
 // --- control flow (anchors are runtime text nodes) ---
 export function ifBlock(c, before, deps, cond, make) { /* insert/remove make() at a text anchor */ }
-export function forBlock(c, into, deps, items, make) { /* keyed list at a text anchor */ }
+export function forBlock(c, into, deps, items, opts) { /* keyed list at a text anchor.
+                                                          opts: compiled { html, wire } (bulk
+                                                          innerHTML), make { make } (per-item
+                                                          builder), or mount { mount } — the
+                                                          `:for`-over-a-component mode where
+                                                          opts.mount(d,key,i) → { node, patch }
+                                                          mounts one child per item. keyOf optional */ }
 export function mountChild(c, before, Child, props) { /* Child(props) inserted at a text anchor;
                                                           returns { root, ctx, setProp(name,value),
                                                           unmount() } — setProp drives a reactive
@@ -383,7 +389,7 @@ No signal-tracking stack, no VDOM, no per-node effect objects.
 | `@event="n = n+1"` / `@event="n++"` / `@event="o.k = v"` (inline mutation) | `on(el, "event", () => { n.v = n.v+1 })` — the handler body is `.v`-rewritten (program-mode) so the inline assignment/update reaches the box setter and marks the var; the mutated binding is numbered reactive (its assignment target counts as a mutation). Multiple statements (`a++; b++`) and member/index writes (→ `deepBox`) are supported |
 | static `class="a ${x}"` | text nodes / attr set; interpolations become `bind`s |
 | `:if` / `:elseif` / `:else` | one `ifBlock` chain per cascade, anchored; branch built by its own `innerHTML` when shown. A branch body that is a **component tag** (`<Child :if=…/>`) mounts the child via `mountChild` inside the branch `make` (teardown rides the branch scope); a bare multi-child `<template :if>` unwraps into a multi-root branch (no literal `<template>`) |
-| `:for="n of items"` | `forBlock`; **initial render = one `innerHTML` of the concatenated items**, updates = keyed diff |
+| `:for="n of items"` | `forBlock`; **initial render = one `innerHTML` of the concatenated items**, updates = keyed diff. A **component** body (`<Child :for=…/>`) uses forBlock *mount mode*: one `mountChild` per item (props from the item) instead of a static item skeleton; the item `make` returns `{ node, patch }` and the child teardown rides the item scope |
 | `<Child :p="e"/>` | `mountChild(c, anchor, Child, { p: () => e, static: "x" })` at an anchor; reactive props are getters, static props are values (see below) |
 | `<Child @save="h($event)"/>` | an `onSave: ($event) => h($event)` entry on the mountChild props object; the child raises it with `emit(c, "save", payload)` (§5, c-emits). `@save-all` → `onSaveAll` (camel-cased). Handler runs in the parent; it does not auto-mark the parent dirty |
 | `@input name:type = v` | `const name = prop(c, "name", i, props.name, v)` at the top of `setup` — every prop is a reactive box (see below) |

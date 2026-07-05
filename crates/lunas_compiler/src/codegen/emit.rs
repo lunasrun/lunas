@@ -1870,8 +1870,15 @@ impl<'a> Emitter<'a> {
             );
             return;
         };
-        let body_el: &TemplateElement = match &*block.body {
-            TemplateNode::Element(e) => e,
+        // A `:for` over a component tag mounts one child instance per item; a
+        // `:for` over a plain element uses the bulk-innerHTML compiled path.
+        let for_component: Option<&ComponentUse> = match &*block.body {
+            TemplateNode::Component(c) => Some(c),
+            _ => None,
+        };
+        let body_el: Option<&TemplateElement> = match &*block.body {
+            TemplateNode::Element(e) => Some(e),
+            TemplateNode::Component(_) => None,
             TemplateNode::If(_) => {
                 self.void_block(
                     b,
@@ -1888,7 +1895,7 @@ impl<'a> Emitter<'a> {
                     b,
                     frag,
                     block.range,
-                    "`:for` on a component is not supported yet",
+                    "unsupported `:for` body (expected an element or component)",
                     diags,
                 );
                 return;
@@ -1925,11 +1932,6 @@ impl<'a> Emitter<'a> {
             }
         }
 
-        // Strip the `:key` bound attribute off the item root: it configures
-        // the reconciler and is never written to the DOM.
-        let mut item_el = body_el.clone();
-        let key_expr = take_key_attr(&mut item_el);
-
         let anchor = self.alloc_anchor();
         self.emit_anchor(b, &anchor, pos, frag);
 
@@ -1951,6 +1953,27 @@ impl<'a> Emitter<'a> {
             .unwrap_or_default(),
             frag.shadowed,
         );
+
+        // `:for` over a component tag: mount-mode forBlock (one child per item).
+        if let Some(comp) = for_component {
+            self.emit_for_component(
+                b,
+                comp,
+                &parsed,
+                &anchor,
+                &items_expr,
+                &deps,
+                &child_shadowed,
+                frag,
+                diags,
+            );
+            return;
+        }
+
+        // Strip the `:key` bound attribute off the item root: it configures
+        // the reconciler and is never written to the DOM.
+        let mut item_el = body_el.expect("element body when not a component").clone();
+        let key_expr = take_key_attr(&mut item_el);
 
         // The item's own skeleton (single-root: the item element).
         let tpl = Template {
@@ -2016,6 +2039,119 @@ impl<'a> Emitter<'a> {
             b.push_str(&d_key);
             b.push_str(") => { const ");
             b.push_str(parsed.binding.trim());
+            b.push_str(" = ");
+            b.push_str(&d_key);
+            b.push_str("; return (");
+            b.push_str(&key_js);
+            b.push_str("); },\n");
+        }
+        push_indent(b, frag.indent);
+        b.push_str("});\n");
+    }
+
+    /// `:for` directly on a component tag (`<Child :for="x of xs" :p="x"/>`):
+    /// mount-mode `forBlock`. Each item mounts one child instance via
+    /// `mountChild` inside the item `make` (props read the loop binding), and the
+    /// returned `patch` updates the item's data cell so a re-run drives the
+    /// child's reactive props with the new item value. The child's teardown rides
+    /// the item scope (dropScope on item removal). `:key` (a prop on the tag) is
+    /// pulled out as the reconciler key.
+    #[allow(clippy::too_many_arguments)]
+    fn emit_for_component(
+        &mut self,
+        b: &mut String,
+        comp: &ComponentUse,
+        parsed: &lunas_script::ParsedFor,
+        anchor: &str,
+        items_expr: &str,
+        deps: &[u32],
+        child_shadowed: &[String],
+        frag: &Frag,
+        diags: &mut Vec<Diagnostic>,
+    ) {
+        // Pull `:key` off the component's props (it configures the reconciler).
+        let mut item_comp = comp.clone();
+        let key_expr = item_comp.props.iter().position(
+            |a| matches!(a, TemplateAttr::Bound { name, .. } if name.eq_ignore_ascii_case("key")),
+        );
+        let key_expr = key_expr.map(|idx| match item_comp.props.remove(idx) {
+            TemplateAttr::Bound { expr, .. } => expr.text,
+            _ => unreachable!(),
+        });
+
+        let binding = parsed.binding.trim();
+        let d_data = self.alloc_data();
+
+        self.use_helper("forBlock");
+        push_indent(b, frag.indent);
+        b.push_str(self.helper("forBlock"));
+        b.push('(');
+        b.push_str(self.ctx());
+        b.push_str(", ");
+        b.push_str(anchor);
+        b.push_str(", ");
+        push_dep_list(b, deps);
+        b.push_str(", () => ");
+        b.push_str(items_expr);
+        b.push_str(", {\n");
+
+        // mount: (d, key, i) => { let <binding> = d; const chN = mountChild(...);
+        //                         <driving binds>; return { node: chN.root,
+        //                         patch: (d2) => { <binding> = d2 } }; }
+        push_indent(b, frag.indent + 1);
+        b.push_str("mount: (");
+        b.push_str(&d_data);
+        b.push_str(", ");
+        // key + index params are unused by the mount body but keep the signature.
+        b.push_str("$key, $i) => {\n");
+        push_indent(b, frag.indent + 2);
+        b.push_str("let ");
+        b.push_str(binding);
+        b.push_str(" = ");
+        b.push_str(&d_data);
+        b.push_str(";\n");
+
+        let inner = Frag {
+            base: frag.base,
+            shadowed: child_shadowed,
+            indent: frag.indent + 2,
+            depth: frag.depth + 1,
+            strip: frag.strip,
+        };
+        let handle = self
+            .emit_child_mount(b, &item_comp, anchor, &inner, diags)
+            .unwrap_or_else(|| {
+                // Voided (no @use import): still return a well-formed empty item.
+                let h = self.alloc_child();
+                push_indent(b, inner.indent);
+                b.push_str("const ");
+                b.push_str(&h);
+                b.push_str(" = { root: [] };\n");
+                h
+            });
+
+        push_indent(b, frag.indent + 2);
+        b.push_str("return { node: ");
+        b.push_str(&handle);
+        b.push_str(".root, patch: (");
+        let d_patch = self.alloc_data();
+        b.push_str(&d_patch);
+        b.push_str(") => { (");
+        b.push_str(binding);
+        b.push_str(" = ");
+        b.push_str(&d_patch);
+        b.push_str("); } };\n");
+        push_indent(b, frag.indent + 1);
+        b.push_str("},\n");
+
+        if let Some(key) = key_expr {
+            let d_key = self.alloc_data();
+            let key_js = rewrite_expr(&key, &self.component.reactive_vars, child_shadowed);
+            push_indent(b, frag.indent + 1);
+            b.push_str("keyOf: (");
+            b.push_str(&d_key);
+            b.push_str(") => { const ");
+            b.push_str(binding);
             b.push_str(" = ");
             b.push_str(&d_key);
             b.push_str("; return (");

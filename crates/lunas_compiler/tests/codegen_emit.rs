@@ -311,7 +311,10 @@ fn if_on_component_reactive_prop_drives_in_branch_scope() {
     );
     let mount = js.find("mountChild(c, a0, Child").expect("child mounted");
     let drive = js.find("ch0.setProp(\"n\"").expect("setProp bind");
-    assert!(drive > mount, "driving bind follows the mount in the make: {js}");
+    assert!(
+        drive > mount,
+        "driving bind follows the mount in the make: {js}"
+    );
 }
 
 #[test]
@@ -383,6 +386,50 @@ fn keyed_for_emits_forblock_with_keyof() {
     assert!(
         !js.contains("setAttribute(\"key\""),
         "key is not a DOM attr: {js}"
+    );
+}
+
+#[test]
+fn for_on_component_uses_mount_mode() {
+    // `:for` directly on a component tag uses forBlock mount-mode: one
+    // mountChild per item, props from the loop binding, a patch closure to
+    // refresh the item data, and keyOf for the keyed diff.
+    let (js, diags) = compile(
+        "@use Row from \"./Row.lunas\"\nhtml:\n    <ul><Row :for=\"item of items\" :key=\"item.id\" :label=\"item.label\"/></ul>\nscript:\n    let items = [{id:1,label:\"a\"}]\n    function add(){ items.push({id:2,label:\"b\"}) }\n",
+    );
+    let js = js.unwrap();
+    assert!(
+        js.contains("forBlock(c, a0, [0], () => Array.from((items.v) || []), {"),
+        "iterable reactive on items: {js}"
+    );
+    assert!(
+        js.contains("mount: (d0, $key, $i) => {"),
+        "mount mode (no bulk html/wire): {js}"
+    );
+    assert!(js.contains("let item = d0;"), "item bound from data: {js}");
+    assert!(
+        js.contains("const ch0 = mountChild(c, a0, Row, { label: () => (item.label) });"),
+        "one child mounted per item with item props: {js}"
+    );
+    assert!(
+        js.contains("bind(c, [], () => { ch0.setProp(\"label\", item.label); });"),
+        "item-coupled driving bind (refreshed by runScope): {js}"
+    );
+    assert!(
+        js.contains("return { node: ch0.root, patch: (d1) => { (item = d1); } };"),
+        "returns node + patch to update the item data cell: {js}"
+    );
+    assert!(
+        js.contains("keyOf: (d2) => { const item = d2; return (item.id); },"),
+        ":key becomes keyOf: {js}"
+    );
+    assert!(
+        !js.contains("html: HTML"),
+        "no bulk-innerHTML item skeleton for a component item: {js}"
+    );
+    assert!(
+        !diags.iter().any(|d| d.message.contains("not supported")),
+        "no unsupported warning: {diags:?}"
     );
 }
 
