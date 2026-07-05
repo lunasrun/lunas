@@ -380,6 +380,7 @@ No signal-tracking stack, no VDOM, no per-node effect objects.
 | `:name="e"` | `bind(c, deps, () => setAttr(el, "name", e))` (or `el.prop =` for known props) |
 | `::name="lv"` | above **+** `on(el, "input", () => lv = el.value)` (write-back) |
 | `@event="h()"` | `on(el, "event", h)` — box setters notify, so no explicit write mask needed |
+| `@event="n = n+1"` / `@event="n++"` / `@event="o.k = v"` (inline mutation) | `on(el, "event", () => { n.v = n.v+1 })` — the handler body is `.v`-rewritten (program-mode) so the inline assignment/update reaches the box setter and marks the var; the mutated binding is numbered reactive (its assignment target counts as a mutation). Multiple statements (`a++; b++`) and member/index writes (→ `deepBox`) are supported |
 | static `class="a ${x}"` | text nodes / attr set; interpolations become `bind`s |
 | `:if` / `:elseif` / `:else` | one `ifBlock` chain per cascade, anchored; branch built by its own `innerHTML` when shown |
 | `:for="n of items"` | `forBlock`; **initial render = one `innerHTML` of the concatenated items**, updates = keyed diff |
