@@ -83,6 +83,28 @@ fn alias_name(helper: &str, reserved: &std::collections::HashSet<String>) -> Str
     name
 }
 
+/// The default names of the compiler-injected setup-closure parameters: the
+/// runtime context and the props object. These are emitted verbatim in the
+/// common case; a user binding that would collide with one (e.g. `let c`,
+/// `let props`) triggers a mangle via [`reserved_name`].
+const DEFAULT_CTX: &str = "c";
+const DEFAULT_PROPS: &str = "props";
+
+/// A collision-proof mangled form for a compiler-injected local (the context /
+/// props params) whose default name is taken by a user binding. JS identifiers
+/// permit any `$`/`_` sequence, so no fixed prefix is provably un-collidable;
+/// like [`alias_name`] this escalates deterministically (`$$name`, then trailing
+/// underscores) until the name is free of every reserved name. In practice the
+/// `$$` prefix is never hit — it fires only when a component literally declares
+/// `let c` / `let props`.
+fn reserved_name(base: &str, reserved: &std::collections::HashSet<String>) -> String {
+    let mut name = format!("$${base}");
+    while reserved.contains(&name) {
+        name.push('_');
+    }
+    name
+}
+
 /// Compiles a `.lunas` source string into a runnable ES module.
 ///
 /// Never panics. Returns `None` for the module only when there is nothing to
@@ -142,12 +164,17 @@ fn emit_module(component: &ResolvedComponent, diags: &mut Vec<Diagnostic>) -> Op
     // wires against it (positional refs still navigate `c.root` = the host), and
     // returns the child-node group as the mountable unit. Single-root stays on
     // the cheap `component(...)` path.
+    let closure_params = format!("({}, {})", e.ctx, e.props_param);
     if multi_root {
-        out.push_str("export default fragment({}, HTML, (c, props) => {\n");
+        out.push_str("export default fragment({}, HTML, ");
+        out.push_str(&closure_params);
+        out.push_str(" => {\n");
     } else {
         out.push_str("export default component(");
         push_js_string(&mut out, ROOT_TAG);
-        out.push_str(", {}, HTML, (c, props) => {\n");
+        out.push_str(", {}, HTML, ");
+        out.push_str(&closure_params);
+        out.push_str(" => {\n");
     }
     out.push_str(&setup_body);
     out.push_str("});\n");
@@ -228,6 +255,22 @@ struct Emitter<'a> {
     /// assignment per two-way member/index lvalue (`::value="o.k"` deep-writes
     /// `o`, so `o` needs a `deepBox` even if the script never mutates it).
     deep_hint: String,
+    /// The name of the injected runtime-context setup parameter. Defaults to
+    /// `c`; mangled to a reserved form when a user binding would shadow it (a
+    /// component that declares `let c` in script, which otherwise emits
+    /// `const c = box(c, …)` → `SyntaxError`).
+    ctx: String,
+    /// The name of the injected props setup parameter. Defaults to `props`;
+    /// mangled to a reserved form on the same collision hazard as [`ctx`].
+    props_param: String,
+    /// Prefix prepended to every compiler-generated local (refs `e{n}`, text
+    /// anchors `t{n}`, anchors `a{n}`, targets `g{n}`, roots `r{n}`, data
+    /// `d{n}`, child handles `ch{n}`, slot objects `s{n}`, hoisted `HTML_{n}`).
+    /// Empty in the common case — the bare `e0`/`t0`/… names — so existing
+    /// output is unchanged. Set to a reserved `$$` marker only when a user
+    /// top-level binding would collide with one of those generated shapes, so
+    /// e.g. a component with `let e0` still emits valid, non-clashing JS.
+    local_prefix: String,
     n_ref: usize,    // e{n}
     n_text: usize,   // t{n}
     n_anchor: usize, // a{n}
@@ -284,6 +327,42 @@ impl<'a> Emitter<'a> {
             }
         }
 
+        // The injected setup-closure params. They stay `c` / `props` unless a
+        // user top-level binding (or prop) would shadow them — a component that
+        // declares `let c` / `let props` — in which case they are mangled to a
+        // reserved form so the emitted `box(ctx, …)` / `props.foo` references
+        // never collide with the user's own declaration.
+        let ctx = if reserved.contains(DEFAULT_CTX) {
+            reserved_name(DEFAULT_CTX, &reserved)
+        } else {
+            DEFAULT_CTX.to_string()
+        };
+        let props_param = if reserved.contains(DEFAULT_PROPS) {
+            reserved_name(DEFAULT_PROPS, &reserved)
+        } else {
+            DEFAULT_PROPS.to_string()
+        };
+
+        // Generated locals (`e0`, `t0`, `g0`, `ch0`, `HTML_1`, …) share the
+        // setup scope with user script bindings, so a component that declares a
+        // name of the same shape (`let e0`) would produce a duplicate `const`.
+        // In the common case the bare names are collision-free and the prefix is
+        // empty (output unchanged); if ANY user binding matches a generated
+        // shape, every generated local is emitted under a reserved `$$` prefix
+        // (escalated with underscores) that no such match can reach.
+        let local_prefix = if reserved.iter().any(|n| matches_generated_local(n)) {
+            let mut p = String::from("$$");
+            while reserved
+                .iter()
+                .any(|n| n.starts_with(&p) && matches_generated_local(&n[p.len()..]))
+            {
+                p.push('_');
+            }
+            p
+        } else {
+            String::new()
+        };
+
         // Child-component imports: only for `@use` entries whose tag is actually
         // used in the template (avoids dead imports). Each gets a collision-proof
         // local identifier — its own name unless that collides with a helper
@@ -332,6 +411,9 @@ impl<'a> Emitter<'a> {
             hoisted: Vec::new(),
             child_imports,
             deep_hint,
+            ctx,
+            props_param,
+            local_prefix,
             n_ref: 0,
             n_text: 0,
             n_anchor: 0,
@@ -377,51 +459,62 @@ impl<'a> Emitter<'a> {
         self.aliases.get(name).map(|s| s.as_str()).unwrap_or(name)
     }
 
+    /// The injected runtime-context param name (`c`, or a mangled form when a
+    /// user binding would shadow it).
+    fn ctx(&self) -> &str {
+        &self.ctx
+    }
+
+    /// The injected props param name (`props`, or a mangled form on collision).
+    fn props(&self) -> &str {
+        &self.props_param
+    }
+
     // --- name allocation ----------------------------------------------------
 
     fn alloc_ref(&mut self) -> String {
         let n = self.n_ref;
         self.n_ref += 1;
-        format!("e{n}")
+        format!("{}e{n}", self.local_prefix)
     }
     fn alloc_text(&mut self) -> String {
         let n = self.n_text;
         self.n_text += 1;
-        format!("t{n}")
+        format!("{}t{n}", self.local_prefix)
     }
     fn alloc_anchor(&mut self) -> String {
         let n = self.n_anchor;
         self.n_anchor += 1;
-        format!("a{n}")
+        format!("{}a{n}", self.local_prefix)
     }
     fn alloc_target(&mut self) -> String {
         let n = self.n_target;
         self.n_target += 1;
-        format!("g{n}")
+        format!("{}g{n}", self.local_prefix)
     }
     fn alloc_root(&mut self) -> String {
         let n = self.n_root;
         self.n_root += 1;
-        format!("r{n}")
+        format!("{}r{n}", self.local_prefix)
     }
     fn alloc_data(&mut self) -> String {
         let n = self.n_data;
         self.n_data += 1;
-        format!("d{n}")
+        format!("{}d{n}", self.local_prefix)
     }
     fn alloc_child(&mut self) -> String {
         let n = self.n_child;
         self.n_child += 1;
-        format!("ch{n}")
+        format!("{}ch{n}", self.local_prefix)
     }
     fn alloc_slots(&mut self) -> String {
         let n = self.n_slots;
         self.n_slots += 1;
-        format!("s{n}")
+        format!("{}s{n}", self.local_prefix)
     }
     fn hoist_html(&mut self, html: String) -> String {
         self.n_html += 1;
-        let name = format!("HTML_{}", self.n_html);
+        let name = format!("{}HTML_{}", self.local_prefix, self.n_html);
         self.hoisted.push((name.clone(), html));
         name
     }
@@ -433,8 +526,9 @@ impl<'a> Emitter<'a> {
 
         self.emit_props(&mut b);
         self.emit_boxes(&mut b);
+        let root_base = format!("{}.root", self.ctx());
         let frag = Frag {
-            base: "c.root",
+            base: &root_base,
             shadowed: &[],
             indent: 1,
             depth: 0,
@@ -467,11 +561,15 @@ impl<'a> Emitter<'a> {
             b.push_str(&name);
             b.push_str(" = ");
             b.push_str(&prop_fn);
-            b.push_str("(c, ");
+            b.push('(');
+            b.push_str(self.ctx());
+            b.push_str(", ");
             push_js_string(b, &p.name);
             b.push_str(", ");
             b.push_str(&index.to_string());
-            b.push_str(", props.");
+            b.push_str(", ");
+            b.push_str(self.props());
+            b.push('.');
             b.push_str(&p.name);
             b.push_str(", ");
             match &p.default_value {
@@ -523,6 +621,7 @@ impl<'a> Emitter<'a> {
             &self.deep_hint,
             &self.component.reactive_vars,
             &self.aliases,
+            self.ctx(),
         );
         let body = dedent(&rewritten);
         let body = body.trim();
@@ -718,7 +817,9 @@ impl<'a> Emitter<'a> {
         } else {
             self.use_helper("bind");
             b.push_str(self.helper("bind"));
-            b.push_str("(c, ");
+            b.push('(');
+            b.push_str(self.ctx());
+            b.push_str(", ");
             push_dep_list(b, deps);
             b.push_str(", () => { ");
             b.push_str(stmt);
@@ -913,7 +1014,9 @@ impl<'a> Emitter<'a> {
         b.push_str(&handle);
         b.push_str(" = ");
         b.push_str(self.helper("mountChild"));
-        b.push_str("(c, ");
+        b.push('(');
+        b.push_str(self.ctx());
+        b.push_str(", ");
         b.push_str(&anchor);
         b.push_str(", ");
         b.push_str(&local);
@@ -978,7 +1081,9 @@ impl<'a> Emitter<'a> {
             b.push_str(": (slotProps, onCleanup) => ");
             self.use_helper("slotContent");
             b.push_str(self.helper("slotContent"));
-            b.push_str("(c, (");
+            b.push('(');
+            b.push_str(self.ctx());
+            b.push_str(", (");
             // Scoped-slot parameter: `#x="p"` binds `p` to slotProps inside the
             // content; otherwise a throwaway parameter name keeps the signature.
             b.push_str(group.scoped_binding.as_deref().unwrap_or("slotProps"));
@@ -998,7 +1103,9 @@ impl<'a> Emitter<'a> {
             b.push_str(self.helper("fromHTML"));
             b.push('(');
             b.push_str(&html_name);
-            b.push_str(", c.root);\n");
+            b.push_str(", ");
+            b.push_str(self.ctx());
+            b.push_str(".root);\n");
             let inner = Frag {
                 base: &root,
                 shadowed: frag.shadowed,
@@ -1113,7 +1220,9 @@ impl<'a> Emitter<'a> {
         b.push_str(&handle);
         b.push_str(" = ");
         b.push_str(self.helper("dynamicBlock"));
-        b.push_str("(c, ");
+        b.push('(');
+        b.push_str(self.ctx());
+        b.push_str(", ");
         b.push_str(&anchor);
         b.push_str(", ");
         // When the :is expr is item-coupled but has no reactive deps, pass an
@@ -1207,7 +1316,9 @@ impl<'a> Emitter<'a> {
         self.use_helper("teleportBlock");
         push_indent(b, frag.indent);
         b.push_str(self.helper("teleportBlock"));
-        b.push_str("(c, ");
+        b.push('(');
+        b.push_str(self.ctx());
+        b.push_str(", ");
         b.push_str(&anchor);
         b.push_str(", () => (");
         b.push_str(&target);
@@ -1318,9 +1429,16 @@ impl<'a> Emitter<'a> {
         self.use_helper("slotBlock");
         push_indent(b, frag.indent);
         b.push_str(self.helper("slotBlock"));
-        b.push_str("(c, ");
+        b.push('(');
+        b.push_str(self.ctx());
+        b.push_str(", ");
         b.push_str(&anchor);
-        b.push_str(", props.$slots && props.$slots[");
+        b.push_str(", ");
+        let props = self.props();
+        b.push_str(props);
+        b.push_str(".$slots && ");
+        b.push_str(props);
+        b.push_str(".$slots[");
         push_js_string(b, &slot_name);
         b.push(']');
 
@@ -1529,7 +1647,9 @@ impl<'a> Emitter<'a> {
             self.use_helper("ifBlock");
             push_indent(b, frag.indent);
             b.push_str(self.helper("ifBlock"));
-            b.push_str("(c, ");
+            b.push('(');
+            b.push_str(self.ctx());
+            b.push_str(", ");
             b.push_str(&anchor);
             b.push_str(", ");
             push_dep_list(b, &deps);
@@ -1545,7 +1665,9 @@ impl<'a> Emitter<'a> {
             self.use_helper("ifChain");
             push_indent(b, frag.indent);
             b.push_str(self.helper("ifChain"));
-            b.push_str("(c, ");
+            b.push('(');
+            b.push_str(self.ctx());
+            b.push_str(", ");
             b.push_str(&anchor);
             b.push_str(", ");
             push_dep_list(b, &deps);
@@ -1754,7 +1876,9 @@ impl<'a> Emitter<'a> {
         self.use_helper("forBlock");
         push_indent(b, frag.indent);
         b.push_str(self.helper("forBlock"));
-        b.push_str("(c, ");
+        b.push('(');
+        b.push_str(self.ctx());
+        b.push_str(", ");
         b.push_str(&anchor);
         b.push_str(", ");
         push_dep_list(b, &deps);
@@ -2370,12 +2494,53 @@ fn binding_names(pattern: &str) -> Vec<String> {
     lunas_script::free_identifiers(&as_expr).unwrap_or_default()
 }
 
-/// Whether a user name would collide with the emitter's generated locals.
+/// Whether a user name would collide with the single-letter positional generated
+/// locals (refs `e{n}`, text `t{n}`, anchors `a{n}`, roots `r{n}`, data `d{n}`).
+/// Used to reject a `:for` binding of that shape (which the emitter cannot
+/// re-scope) and to keep child-import identifiers clear of them.
 fn is_generated_name(name: &str) -> bool {
     let mut chars = name.chars();
     matches!(chars.next(), Some('e' | 't' | 'a' | 'r' | 'd'))
         && chars.as_str().chars().all(|c| c.is_ascii_digit())
         && name.len() > 1
+}
+
+/// Whether a name matches ANY compiler-generated local shape emitted into the
+/// setup scope: the single-letter positional locals ([`is_generated_name`]) plus
+/// targets `g{n}`, child handles `ch{n}`, slot objects `s{n}`, and hoisted
+/// `HTML_{n}`. A user top-level binding of any of these shapes shares the setup
+/// scope and would otherwise duplicate-declare a generated local, so its
+/// presence switches every generated local onto the reserved `$$` prefix.
+fn matches_generated_local(name: &str) -> bool {
+    if is_generated_name(name) {
+        return true;
+    }
+    // `g{n}` targets.
+    if let Some(rest) = name.strip_prefix('g') {
+        if !rest.is_empty() && rest.chars().all(|c| c.is_ascii_digit()) {
+            return true;
+        }
+    }
+    // `ch{n}` child handles.
+    if let Some(rest) = name.strip_prefix("ch") {
+        if !rest.is_empty() && rest.chars().all(|c| c.is_ascii_digit()) {
+            return true;
+        }
+    }
+    // `s{n}` slot objects.
+    if let Some(rest) = name.strip_prefix('s') {
+        if !rest.is_empty() && rest.chars().all(|c| c.is_ascii_digit()) {
+            return true;
+        }
+    }
+    // `HTML_{n}` hoisted skeletons (module scope, but reserve it too so a user
+    // binding never shadows the module const a setup reference reads).
+    if let Some(rest) = name.strip_prefix("HTML_") {
+        if !rest.is_empty() && rest.chars().all(|c| c.is_ascii_digit()) {
+            return true;
+        }
+    }
+    false
 }
 
 /// Whether `expr` reads any of the (loop-binding) `names`. Conservative: an
@@ -2563,6 +2728,7 @@ fn rewrite_script(
     hint: &str,
     vars: &[ReactiveVar],
     aliases: &std::collections::BTreeMap<&'static str, String>,
+    ctx: &str,
 ) -> String {
     if vars.is_empty() {
         return script.to_string();
@@ -2602,9 +2768,10 @@ fn rewrite_script(
             .unwrap_or("undefined");
         let init = rewrite_expr(init_raw, vars, &[]);
         let text = format!(
-            "const {} = {}(c, {}, {})",
+            "const {} = {}({}, {}, {})",
             d.name,
             box_name(kind),
+            ctx,
             var.index,
             init
         );
