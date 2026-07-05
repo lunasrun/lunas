@@ -102,3 +102,79 @@ fn empty_unquoted_value_after_eq_is_recovered() {
     let _ = attrs("<a b=>");
     let _ = attrs("<a b= >");
 }
+
+/// An unterminated open tag (no `>` before EOF) must still produce an element
+/// whose `open_tag_range` and `range` contain every attribute it parsed. Prior
+/// to the fix, the range ended right after the tag name, leaving the attribute
+/// dangling past the element and violating span containment.
+fn assert_open_tag_contains_attrs(source: &str) {
+    let e = first_element(source);
+    assert!(
+        e.open_tag_range.start() <= e.range.start() && e.range.end() >= e.open_tag_range.end(),
+        "open tag {:?} not within element range {:?} for {source:?}",
+        e.open_tag_range,
+        e.range
+    );
+    for attr in &e.attributes {
+        assert!(
+            e.open_tag_range.start() <= attr.range.start()
+                && attr.range.end() <= e.open_tag_range.end(),
+            "attr {:?} ({:?}) escapes open tag {:?} for {source:?}",
+            attr.name,
+            attr.range,
+            e.open_tag_range
+        );
+        assert!(
+            attr.range.end() <= e.range.end(),
+            "attr {:?} escapes element range for {source:?}",
+            attr.name
+        );
+    }
+}
+
+#[test]
+fn unterminated_open_tag_single_quoted_attr_contained() {
+    // The original bug report: `<a b="x"` with no closing `>`.
+    assert_open_tag_contains_attrs("<a b=\"x\"");
+    let e = first_element("<a b=\"x\"");
+    assert_eq!(e.attributes.len(), 1);
+    assert_eq!(e.attributes[0].value.as_deref(), Some("x"));
+}
+
+#[test]
+fn unterminated_open_tag_multiple_attrs_contained() {
+    assert_open_tag_contains_attrs("<a b=\"x\" c=\"y\" d=\"z\"");
+    let e = first_element("<a b=\"x\" c=\"y\" d=\"z\"");
+    assert_eq!(e.attributes.len(), 3);
+}
+
+#[test]
+fn unterminated_open_tag_unquoted_attr_contained() {
+    assert_open_tag_contains_attrs("<div id=main class=box");
+    let e = first_element("<div id=main class=box");
+    assert_eq!(e.attributes.len(), 2);
+    assert_eq!(e.attributes[1].value.as_deref(), Some("box"));
+}
+
+#[test]
+fn unterminated_open_tag_boolean_attr_contained() {
+    assert_open_tag_contains_attrs("<input checked disabled");
+    let e = first_element("<input checked disabled");
+    assert_eq!(e.attributes.len(), 2);
+}
+
+#[test]
+fn unterminated_self_close_missing_gt_contained() {
+    // `<br /` — a self-close started but the `>` never arrived. The stray `/`
+    // is skipped by the lexer; the tag stays unterminated but still contains
+    // its attribute.
+    assert_open_tag_contains_attrs("<br a=1 /");
+}
+
+#[test]
+fn unterminated_open_tag_bare_name_range() {
+    // No attributes at all: element range still starts at `<` and is non-empty.
+    let e = first_element("<a");
+    assert_eq!(e.range.start(), e.open_tag_range.start());
+    assert!(e.range.end() >= e.open_tag_range.end());
+}
