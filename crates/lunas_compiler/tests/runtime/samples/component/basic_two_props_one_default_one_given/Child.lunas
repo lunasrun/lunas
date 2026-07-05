@@ -1,0 +1,4 @@
+@input a:string = "da"
+@input b:string = "db"
+html:
+    <span>${a}-${b}</span>

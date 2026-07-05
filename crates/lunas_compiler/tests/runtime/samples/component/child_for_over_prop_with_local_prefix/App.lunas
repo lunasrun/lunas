@@ -1,0 +1,5 @@
+@use List from "./List.lunas"
+html:
+    <div><List :items="data"/></div>
+script:
+    let data = ["x", "y"]

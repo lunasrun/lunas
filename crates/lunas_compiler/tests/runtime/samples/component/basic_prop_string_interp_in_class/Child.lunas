@@ -1,0 +1,3 @@
+@input tone:string = "plain"
+html:
+    <span class="badge ${tone}">x</span>

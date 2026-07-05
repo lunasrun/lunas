@@ -1,0 +1,6 @@
+@use Child from "./Child.lunas"
+html:
+    <div><button @click="add()">p</button><Child :items="list"/></div>
+script:
+    let list = ["a"]
+    function add(){ list = [...list, "b"] }

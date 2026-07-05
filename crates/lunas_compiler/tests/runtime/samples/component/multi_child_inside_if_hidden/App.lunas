@@ -1,0 +1,6 @@
+@use Child from "./Child.lunas"
+html:
+    <div><span :if="on"><Child :label="msg"/></span></div>
+script:
+    let on = false
+    let msg = "hidden"

@@ -1,0 +1,6 @@
+@use Child from "./Child.lunas"
+html:
+    <div><button @click="rename()">p</button><Child :user="obj"/></div>
+script:
+    let obj = { name: "ada" }
+    function rename(){ obj = { name: "grace" } }

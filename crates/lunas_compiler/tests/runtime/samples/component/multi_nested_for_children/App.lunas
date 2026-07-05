@@ -1,0 +1,5 @@
+@use Cell from "./Cell.lunas"
+html:
+    <div :for="row of rows" :key="row.id" class="row"><span :for="c of row.cells" :key="c.k"><Cell :v="c.v"/></span></div>
+script:
+    let rows = [{id:1,cells:[{k:1,v:1},{k:2,v:2}]},{id:2,cells:[{k:3,v:3},{k:4,v:4}]}]

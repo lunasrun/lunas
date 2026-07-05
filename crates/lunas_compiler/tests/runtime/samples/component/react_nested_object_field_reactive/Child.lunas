@@ -1,0 +1,3 @@
+@input cfg:object = {}
+html:
+    <span>lvl ${cfg.level}</span>

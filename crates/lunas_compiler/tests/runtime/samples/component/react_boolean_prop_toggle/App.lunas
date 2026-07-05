@@ -1,0 +1,6 @@
+@use Child from "./Child.lunas"
+html:
+    <div><button @click="toggle()">p</button><Child :on="flag"/></div>
+script:
+    let flag = false
+    function toggle(){ flag = !flag }

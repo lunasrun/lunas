@@ -1,0 +1,4 @@
+@use Num from "./Num.lunas"
+@use Str from "./Str.lunas"
+html:
+    <div><Num :value="7"/><Str :value="'seven'"/></div>

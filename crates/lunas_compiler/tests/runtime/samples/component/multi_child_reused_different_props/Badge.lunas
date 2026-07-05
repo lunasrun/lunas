@@ -1,0 +1,4 @@
+@input text:string = "?"
+@input tone:string = "plain"
+html:
+    <span class="badge ${tone}">${text}</span>

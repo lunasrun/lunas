@@ -1,0 +1,3 @@
+@input items:array = []
+html:
+    <ul><li :for="it of items" :key="it">${it}</li></ul>

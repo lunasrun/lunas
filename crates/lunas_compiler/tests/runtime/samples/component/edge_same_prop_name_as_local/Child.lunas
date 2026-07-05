@@ -1,0 +1,5 @@
+@input value:string = ""
+html:
+    <span>${value}|${value2}</span>
+script:
+    let value2 = "child"

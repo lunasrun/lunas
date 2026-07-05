@@ -1,0 +1,4 @@
+@input a:number = 0
+@input b:number = 0
+html:
+    <span>${a}/${b}</span>

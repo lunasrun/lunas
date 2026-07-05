@@ -1,0 +1,3 @@
+@input hue:string = "black"
+html:
+    <span :style="{ color: hue }">x</span>

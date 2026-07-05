@@ -1,0 +1,6 @@
+@input label:string = ""
+html:
+    <div><button @click="toggle()">t</button><p :if="open">${label}</p></div>
+script:
+    let open = false
+    function toggle(){ open = !open }

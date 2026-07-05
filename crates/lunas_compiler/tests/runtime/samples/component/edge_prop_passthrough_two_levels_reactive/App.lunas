@@ -1,0 +1,6 @@
+@use Mid from "./Mid.lunas"
+html:
+    <div><button @click="swap()">p</button><Mid :msg="text"/></div>
+script:
+    let text = "one"
+    function swap(){ text = "two" }

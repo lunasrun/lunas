@@ -1,0 +1,6 @@
+@use Child from "./Child.lunas"
+html:
+    <div><button @click="go()">p</button><Child :url="link"/></div>
+script:
+    let link = "/a"
+    function go(){ link = "/b" }

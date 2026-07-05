@@ -1,0 +1,5 @@
+@use Child from "./Child.lunas"
+html:
+    <div><Child :disabled="d"/></div>
+script:
+    let d = true

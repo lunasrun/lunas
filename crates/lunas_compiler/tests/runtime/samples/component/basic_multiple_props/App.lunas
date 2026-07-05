@@ -1,0 +1,7 @@
+@use Child from "./Child.lunas"
+html:
+    <div><Child :name="who" :count="n" :on="flag"/></div>
+script:
+    let who = "ada"
+    let n = 3
+    let flag = true

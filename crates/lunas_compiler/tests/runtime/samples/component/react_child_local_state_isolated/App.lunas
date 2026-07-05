@@ -1,0 +1,5 @@
+@use Child from "./Child.lunas"
+html:
+    <div><span class="p">${n}</span><Child/></div>
+script:
+    let n = 0

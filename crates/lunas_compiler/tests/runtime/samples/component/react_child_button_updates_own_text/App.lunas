@@ -1,0 +1,5 @@
+@use Counter from "./Counter.lunas"
+html:
+    <div><Counter :start="seed"/></div>
+script:
+    let seed = 5

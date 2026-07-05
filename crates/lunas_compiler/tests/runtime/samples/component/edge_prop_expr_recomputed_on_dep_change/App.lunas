@@ -1,0 +1,8 @@
+@use Child from "./Child.lunas"
+html:
+    <div><button class="a" @click="incA()">a</button><button class="b" @click="incB()">b</button><Child :sum="a + b"/></div>
+script:
+    let a = 1
+    let b = 2
+    function incA(){ a++ }
+    function incB(){ b++ }

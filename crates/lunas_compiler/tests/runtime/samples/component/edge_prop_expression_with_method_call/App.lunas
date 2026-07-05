@@ -1,0 +1,5 @@
+@use Child from "./Child.lunas"
+html:
+    <div><Child :label="name.toUpperCase()"/></div>
+script:
+    let name = "ada"

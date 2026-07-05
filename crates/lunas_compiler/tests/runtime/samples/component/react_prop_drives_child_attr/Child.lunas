@@ -1,0 +1,3 @@
+@input url:string = "/"
+html:
+    <a :href="url">go</a>

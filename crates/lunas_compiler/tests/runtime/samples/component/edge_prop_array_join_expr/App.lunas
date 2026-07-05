@@ -1,0 +1,5 @@
+@use Child from "./Child.lunas"
+html:
+    <div><Child :csv="parts.join(',')"/></div>
+script:
+    let parts = ["a", "b", "c"]

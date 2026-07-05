@@ -1,0 +1,7 @@
+@use Child from "./Child.lunas"
+html:
+    <div><button @click="go()">p</button><Child :a="x" :b="y"/></div>
+script:
+    let x = 1
+    let y = 10
+    function go(){ x++; y = y + 10 }

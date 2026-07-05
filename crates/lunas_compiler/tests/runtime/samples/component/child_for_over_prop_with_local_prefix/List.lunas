@@ -1,0 +1,5 @@
+@input items:array = []
+html:
+    <ul><li :for="it of items" :key="it">${prefix}${it}</li></ul>
+script:
+    let prefix = "- "

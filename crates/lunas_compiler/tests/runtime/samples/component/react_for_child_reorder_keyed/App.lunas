@@ -1,0 +1,6 @@
+@use Item from "./Item.lunas"
+html:
+    <div><button @click="rev()">p</button><ul><li :for="it of items" :key="it.id"><Item :label="it.label"/></li></ul></div>
+script:
+    let items = [{id:1,label:"a"},{id:2,label:"b"},{id:3,label:"c"}]
+    function rev(){ items = [items[2], items[1], items[0]] }
