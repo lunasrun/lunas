@@ -1,0 +1,5 @@
+html:
+    <div><span class="badge ${status}">s</span><button @click="next()">n</button></div>
+script:
+    let status = "idle"
+    function next(){ status = "busy" }

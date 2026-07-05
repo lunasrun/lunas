@@ -1,0 +1,4 @@
+html:
+    <div :role="r">alert box</div>
+script:
+    let r = "alert"

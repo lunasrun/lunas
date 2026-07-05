@@ -1,0 +1,5 @@
+html:
+    <a :href="base + '/' + slug">link</a>
+script:
+    let base = "https://site.test"
+    let slug = "posts/1"

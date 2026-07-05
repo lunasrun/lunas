@@ -1,0 +1,4 @@
+html:
+    <a href="/x" :target="targetVal">link</a>
+script:
+    let targetVal = "_blank"

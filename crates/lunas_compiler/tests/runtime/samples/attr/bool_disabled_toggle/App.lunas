@@ -1,0 +1,5 @@
+html:
+    <div><button :disabled="locked">save</button><button @click="unlock()">unlock</button></div>
+script:
+    let locked = true
+    function unlock(){ locked = false }

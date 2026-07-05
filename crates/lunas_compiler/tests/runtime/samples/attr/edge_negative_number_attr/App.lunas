@@ -1,0 +1,4 @@
+html:
+    <div :tabindex="n">x</div>
+script:
+    let n = -1

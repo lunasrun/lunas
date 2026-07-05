@@ -1,0 +1,4 @@
+html:
+    <div data-count="count: ${n}">x</div>
+script:
+    let n = 5

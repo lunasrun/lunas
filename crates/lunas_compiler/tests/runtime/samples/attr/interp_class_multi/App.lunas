@@ -1,0 +1,5 @@
+html:
+    <div class="a ${x} b ${y} c">x</div>
+script:
+    let x = "one"
+    let y = "two"

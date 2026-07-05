@@ -1,0 +1,4 @@
+html:
+    <div :id="elId">x</div>
+script:
+    let elId = "main-panel"

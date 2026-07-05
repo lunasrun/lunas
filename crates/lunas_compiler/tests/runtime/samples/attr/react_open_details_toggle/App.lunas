@@ -1,0 +1,5 @@
+html:
+    <details :open="isOpen"><summary @click="toggle()">s</summary>body</details>
+script:
+    let isOpen = false
+    function toggle(){ isOpen = !isOpen }

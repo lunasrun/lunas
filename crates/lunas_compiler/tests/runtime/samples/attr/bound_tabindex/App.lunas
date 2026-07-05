@@ -1,0 +1,4 @@
+html:
+    <div :tabindex="idx">focusable</div>
+script:
+    let idx = -1

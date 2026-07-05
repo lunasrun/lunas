@@ -1,0 +1,4 @@
+html:
+    <img src="/static/logo.png" :alt="altText">
+script:
+    let altText = "company logo"

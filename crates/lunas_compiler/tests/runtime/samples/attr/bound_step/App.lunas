@@ -1,0 +1,4 @@
+html:
+    <input type="number" :step="s">
+script:
+    let s = 0.5

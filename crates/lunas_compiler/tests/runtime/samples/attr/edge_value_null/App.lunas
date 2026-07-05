@@ -1,0 +1,4 @@
+html:
+    <input :value="v">
+script:
+    let v = null

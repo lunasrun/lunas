@@ -1,0 +1,4 @@
+html:
+    <input :readonly="ro">
+script:
+    let ro = true

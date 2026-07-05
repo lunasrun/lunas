@@ -1,0 +1,7 @@
+html:
+    <input :id="elId" :placeholder="ph" :disabled="d" @focus="activate()">
+script:
+    let elId = "field1"
+    let ph = "type here"
+    let d = true
+    function activate(){ d = false }

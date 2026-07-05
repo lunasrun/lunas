@@ -1,0 +1,4 @@
+html:
+    <form :action="endpoint">form</form>
+script:
+    let endpoint = "/submit"

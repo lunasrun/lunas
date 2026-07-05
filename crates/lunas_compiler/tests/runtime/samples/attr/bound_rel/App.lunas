@@ -1,0 +1,4 @@
+html:
+    <a href="/x" :rel="relVal">link</a>
+script:
+    let relVal = "noopener noreferrer"

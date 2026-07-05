@@ -1,0 +1,6 @@
+html:
+    <a :href="url" :title="label" @click="go()">nav</a>
+script:
+    let url = "/step1"
+    let label = "Step 1"
+    function go(){ url = "/step2"; label = "Step 2" }

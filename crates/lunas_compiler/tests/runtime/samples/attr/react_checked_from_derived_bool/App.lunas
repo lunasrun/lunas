@@ -1,0 +1,5 @@
+html:
+    <input type="checkbox" :checked="remaining == 0" @click="dec()">
+script:
+    let remaining = 1
+    function dec(){ remaining-- }

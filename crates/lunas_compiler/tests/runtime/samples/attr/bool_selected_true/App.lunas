@@ -1,0 +1,4 @@
+html:
+    <select><option :selected="isSel" value="a">A</option></select>
+script:
+    let isSel = true

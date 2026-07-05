@@ -1,0 +1,6 @@
+html:
+    <input :disabled="d" :readonly="r" :required="req">
+script:
+    let d = true
+    let r = false
+    let req = true

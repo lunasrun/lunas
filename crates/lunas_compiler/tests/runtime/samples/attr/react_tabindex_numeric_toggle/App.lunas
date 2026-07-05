@@ -1,0 +1,5 @@
+html:
+    <span :tabindex="idx" @click="cycle()">x</span>
+script:
+    let idx = 0
+    function cycle(){ idx = idx + 1 }

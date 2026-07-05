@@ -1,0 +1,4 @@
+html:
+    <div :data-x="x">x</div>
+script:
+    let x = ""

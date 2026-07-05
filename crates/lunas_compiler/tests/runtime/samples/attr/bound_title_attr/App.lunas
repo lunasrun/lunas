@@ -1,0 +1,4 @@
+html:
+    <span :title="hint">hover me</span>
+script:
+    let hint = "helpful text"

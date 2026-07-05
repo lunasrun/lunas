@@ -1,0 +1,5 @@
+html:
+    <div><button :disabled="busy" @click="go()">a</button><button :disabled="busy" @click="go()">b</button></div>
+script:
+    let busy = false
+    function go(){ busy = true }

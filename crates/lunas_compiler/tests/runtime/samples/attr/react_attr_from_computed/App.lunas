@@ -1,0 +1,5 @@
+html:
+    <span :title="count + ' clicks'" @click="inc()">x</span>
+script:
+    let count = 0
+    function inc(){ count++ }

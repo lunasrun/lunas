@@ -1,0 +1,4 @@
+html:
+    <button :disabled="d">go</button>
+script:
+    let d = undefined

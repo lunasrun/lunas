@@ -1,0 +1,4 @@
+html:
+    <div :title="isBig ? 'big' : 'small'">x</div>
+script:
+    let isBig = true

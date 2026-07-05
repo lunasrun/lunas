@@ -1,0 +1,5 @@
+html:
+    <input :required="r" :disabled="d">
+script:
+    let r = false
+    let d = false
