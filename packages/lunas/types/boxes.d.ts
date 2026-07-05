@@ -19,6 +19,13 @@ export function box<T>(c: Context, i: number, v: T): Box<T>;
  * Reads through `.v` return a Proxy that marks the variable dirty on any
  * nested set/delete. Nested objects are wrapped lazily on property access;
  * wrappers are cached per underlying object so identity is stable.
+ *
+ * Map/Set (and WeakMap/WeakSet) are collection-aware: accessors and methods
+ * run against the real collection so native internal slots accept the
+ * receiver, and mutating operations (Map `set`/`delete`/`clear`, Set
+ * `add`/`delete`/`clear`) mark the variable dirty. Values stored inside a
+ * collection are NOT deeply wrapped — reassign an entry to make a nested
+ * change reactive. WeakMap/WeakSet do not throw but are not deeply reactive.
  */
 export function deepBox<T>(c: Context, i: number, v: T): Box<T>;
 

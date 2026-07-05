@@ -312,21 +312,15 @@ await test("deepBox: two different deepBox instances wrapping equal-shaped objec
   assert.notStrictEqual(d1.v, d2.v, "distinct underlying objects -> distinct proxies");
 });
 
-await test("deepBox: Map/Set values are NOT safely deep-reactive -- accessing native accessors through the plain Proxy throws (TODO: needs a dedicated collection handler, cross-module change, not fixed here)", () => {
+await test("deepBox: Map accessors/methods work through the collection-aware handler (no more incompatible-receiver throw)", () => {
   const c = createContext(null);
   const d = deepBox(c, 0, new Map([["a", 1]]));
-  // Reading `.size` (an accessor with internal slots) through the generic
-  // get-trap's Reflect.get(target, key, receiver=proxy) fails because Map's
-  // internal [[MapData]] slot isn't on the proxy receiver. This documents a
-  // real limitation of the current Proxy-based deep wrap rather than a
-  // regression: fixing it needs a collection-aware handler (unwrap-and-bind
-  // methods, or special-case Map/Set in makeWrap), which is a cross-module
-  // design change out of scope for this test-only pass.
-  assert.throws(
-    () => d.v.size,
-    /incompatible receiver/,
-    "Map accessors break through the generic Proxy handler"
-  );
+  // `.size` (an accessor with internal slots) and `.get`/`.has` (methods) now
+  // run against the real Map, so the native internal-slot check passes.
+  assert.strictEqual(d.v.size, 1, ".size reads without throwing");
+  assert.strictEqual(d.v.get("a"), 1, ".get returns the entry");
+  assert.strictEqual(d.v.has("a"), true, ".has works");
+  assert.strictEqual(d.v.has("z"), false);
 });
 
 console.log("boxes.deep.test.mjs: all " + passed + " tests passed");
