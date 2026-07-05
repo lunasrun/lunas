@@ -18,11 +18,12 @@ export {
   beginScope,
   endScope,
   dropScope,
+  runScope,
 } from "./core.js";
 
 export type { Box, Shared } from "./boxes.js";
 
-export { box, deepBox, shared } from "./boxes.js";
+export { box, deepBox, shared, prop } from "./boxes.js";
 
 export type { Computed } from "./computed.js";
 
@@ -38,15 +39,25 @@ export type {
   RootAttrs,
   SetupFn,
   ComponentFactory,
+  FragmentNodes,
+  FragmentFactory,
+  ClassValue,
+  StyleValue,
 } from "./dom.js";
 
 export {
   component,
+  fragment,
   refs,
   on,
+  fromHTML,
   anchorBefore,
   anchorBeforeSplit,
   anchorAppend,
+  normClass,
+  setClass,
+  normStyle,
+  setStyle,
 } from "./dom.js";
 
 export type {
@@ -55,9 +66,22 @@ export type {
   ForBlockOpts,
   ChildFactory,
   MountedChild,
+  DynamicBlockHandle,
+  TeleportHandle,
+  SlotOnCleanup,
+  SlotFactory,
 } from "./blocks.js";
 
-export { ifBlock, forBlock, mountChild } from "./blocks.js";
+export {
+  ifBlock,
+  ifChain,
+  forBlock,
+  mountChild,
+  dynamicBlock,
+  teleportBlock,
+  slotBlock,
+  slotContent,
+} from "./blocks.js";
 
 export type {
   Key,
@@ -75,12 +99,36 @@ export {
   createForState,
   seedForState,
   reconcile,
+  extractKeys,
   longestIncreasingSubsequence,
 } from "./for_diff.js";
 
 export type { Store, StoreField, Unsubscribe } from "./store.js";
 
 export { createStore, useStore, derivedStore } from "./store.js";
+
+export type {
+  Query,
+  Params,
+  Route,
+  RouteState,
+  HistoryAdapter,
+  RouterOptions,
+  Router,
+  OutletHandle,
+  OutletOptions,
+  LinkOptions,
+} from "./router.js";
+
+export {
+  createRouter,
+  memoryHistory,
+  historyAdapter,
+  routerOutlet,
+  routerLink,
+  parseQuery,
+  normalizePath,
+} from "./router.js";
 
 export type {
   AsyncModule,

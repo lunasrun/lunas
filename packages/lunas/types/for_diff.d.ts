@@ -61,6 +61,19 @@ export interface ReconcileOpts<T = unknown, N = unknown> {
   onWarn?: WarnFn;
 }
 
+/**
+ * extractKeys(items, keyOf, onWarn) — compute keys for a fresh items array,
+ * falling back to positional (index) keys and warning via `onWarn` if any
+ * duplicate key is found. Exported so the runtime's bulk initial render
+ * (blocks.mjs forBlock, html/wire mode) seeds the reconciler state with
+ * exactly the same key semantics.
+ */
+export function extractKeys<T = unknown>(
+  items: T[],
+  keyOf: KeyOf<T>,
+  onWarn?: WarnFn
+): { keys: Key[]; duped: boolean };
+
 /** createForState() — an empty ForState to seed or reconcile against. */
 export function createForState<T = unknown, N = unknown>(): ForState<T, N>;
 

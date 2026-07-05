@@ -23,6 +23,22 @@ export function box<T>(c: Context, i: number, v: T): Box<T>;
 export function deepBox<T>(c: Context, i: number, v: T): Box<T>;
 
 /**
+ * prop(c, name, i, raw, def, deep) — adopt an `@input` prop as a reactive
+ * variable at index i. The child reads it as a box (`.v`), so its own
+ * template binds react when the prop changes. The seed is `raw` when the
+ * parent passed a value, else the compiled default `def`. `deep` selects a
+ * deepBox (the child deeply mutates the prop locally).
+ */
+export function prop<T>(
+  c: Context,
+  name: string,
+  i: number,
+  raw: T | (() => T) | undefined,
+  def: T,
+  deep?: boolean
+): Box<T>;
+
+/**
  * A value shared across components (prop passed down and mutated). Each
  * dependent component attaches with its own reactive index; a write marks
  * the variable dirty in every attached component.
