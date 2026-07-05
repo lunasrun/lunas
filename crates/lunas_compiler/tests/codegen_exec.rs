@@ -151,3 +151,134 @@ fn mixed_text_anchor_updates_in_place() {
     let out = run_component("mixed", source, driver);
     assert!(out.contains("INITIAL:a=1 b=2!"), "mixed render: {out}");
 }
+
+#[test]
+fn two_way_input_writes_back_to_state() {
+    if !node_available() {
+        eprintln!("skipping codegen_exec: node not found at {NODE}");
+        return;
+    }
+    // `::value` binds the property from state AND writes back on input. A text
+    // node mirrors the state so we can see the write-back land.
+    let source = "html:\n\
+        \x20   <div><input ::value=\"name\"><span>${name}</span></div>\n\
+        script:\n\
+        \x20   let name = \"a\"\n";
+
+    let driver = "\
+        const root = factory({});\n\
+        const input = root.childNodes[0].childNodes[0];\n\
+        const span = root.childNodes[0].childNodes[1];\n\
+        console.log('INITIAL:' + input.value + '/' + span.innerHTMLString());\n\
+        input.value = 'zed';\n\
+        input.dispatch('input');\n\
+        await tick();\n\
+        console.log('AFTER:' + span.innerHTMLString());\n";
+
+    let out = run_component("twoway", source, driver);
+    assert!(out.contains("INITIAL:a/a"), "initial reflects state: {out}");
+    assert!(
+        out.contains("AFTER:zed"),
+        "input write-back updates state and dependent text: {out}"
+    );
+}
+
+#[test]
+fn if_toggles_branch_on_event() {
+    if !node_available() {
+        eprintln!("skipping codegen_exec: node not found at {NODE}");
+        return;
+    }
+    let source = "html:\n\
+        \x20   <div><button @click=\"toggle()\">t</button><span :if=\"on\">HERE</span></div>\n\
+        script:\n\
+        \x20   let on = false\n\
+        \x20   function toggle(){ on = !on }\n";
+
+    let driver = "\
+        const root = factory({});\n\
+        const box = root.childNodes[0];\n\
+        const btn = box.childNodes[0];\n\
+        console.log('INITIAL:' + box.innerHTMLString());\n\
+        btn.dispatch('click');\n\
+        await tick();\n\
+        console.log('SHOWN:' + box.innerHTMLString());\n\
+        btn.dispatch('click');\n\
+        await tick();\n\
+        console.log('HIDDEN:' + box.innerHTMLString());\n";
+
+    let out = run_component("iftoggle", source, driver);
+    assert!(
+        out.lines()
+            .any(|l| l.starts_with("INITIAL:") && !l.contains("HERE")),
+        "initially hidden: {out}"
+    );
+    assert!(
+        out.lines()
+            .any(|l| l.starts_with("SHOWN:") && l.contains("<span>HERE</span>")),
+        "branch built and inserted on toggle: {out}"
+    );
+    assert!(
+        out.lines()
+            .any(|l| l.starts_with("HIDDEN:") && !l.contains("HERE")),
+        "branch removed on toggle back: {out}"
+    );
+}
+
+#[test]
+fn for_initial_push_splice_and_reorder() {
+    if !node_available() {
+        eprintln!("skipping codegen_exec: node not found at {NODE}");
+        return;
+    }
+    // Keyed :for over a deeply-mutated array. Mutations are driven through
+    // button click handlers (the only way to reach setup-local state from the
+    // driver): .push/.splice and a whole-array reassignment (reorder) all mark
+    // the list reactive; the keyed reconciler preserves node identity for
+    // surviving keys across a reorder.
+    let source = "html:\n\
+        \x20   <div>\n\
+        \x20     <button @click=\"push3()\">p</button>\n\
+        \x20     <button @click=\"drop2()\">d</button>\n\
+        \x20     <button @click=\"reorder()\">r</button>\n\
+        \x20     <ul><li :for=\"item of items\" :key=\"item.id\">${item.label}</li></ul>\n\
+        \x20   </div>\n\
+        script:\n\
+        \x20   let items = [{id:1,label:\"a\"},{id:2,label:\"b\"}]\n\
+        \x20   function push3(){ items.push({id:3,label:\"c\"}) }\n\
+        \x20   function drop2(){ items.splice(1, 1) }\n\
+        \x20   function reorder(){ items = [items[1], items[0]] }\n";
+
+    let driver = "\
+        const root = factory({});\n\
+        const div = root.childNodes[0];\n\
+        const [pBtn, dBtn, rBtn, ul] = div.childNodes;\n\
+        const lis = () => ul.childNodes.filter(n => n.tag === 'li');\n\
+        const labels = () => lis().map(n => n.innerHTMLString()).join(',');\n\
+        console.log('INITIAL:' + labels());\n\
+        const [firstA, firstB] = lis();\n\
+        pBtn.dispatch('click'); await tick();\n\
+        console.log('PUSH:' + labels());\n\
+        dBtn.dispatch('click'); await tick();\n\
+        console.log('SPLICE:' + labels());\n\
+        rBtn.dispatch('click'); await tick();\n\
+        const after = lis();\n\
+        console.log('REORDER:' + labels());\n\
+        console.log('IDENTITY:' + (after[after.length-1] === firstA));\n";
+
+    let out = run_component("forkeyed", source, driver);
+    assert!(out.contains("INITIAL:a,b"), "initial bulk render: {out}");
+    assert!(out.contains("PUSH:a,b,c"), "push appends: {out}");
+    assert!(
+        out.contains("SPLICE:a,c"),
+        "splice removes the middle: {out}"
+    );
+    assert!(
+        out.contains("REORDER:c,a"),
+        "reorder reflects new order: {out}"
+    );
+    assert!(
+        out.contains("IDENTITY:true"),
+        "surviving key keeps its DOM node across a reorder: {out}"
+    );
+}
