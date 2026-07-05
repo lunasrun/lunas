@@ -48,8 +48,8 @@ tree:
         - { id: cg-two-way, title: "Two-way bindings", status: done }
         - { id: cg-if, title: "Conditional rendering (:if/:elseif/:else)", status: done }
         - { id: cg-for, title: "List rendering (keyed :for)", status: done }
-        - { id: cg-components, title: "Child component mounting", status: todo }
-        - { id: cg-inputs, title: "@input props handling", status: todo }
+        - { id: cg-components, title: "Child component mounting", status: done }
+        - { id: cg-inputs, title: "@input props handling", status: done }
         - { id: cg-e2e, title: "End-to-end snapshot + browser smoke tests", status: todo }
     - id: runtime
       title: Runtime (ES2015 + Proxy floor)
@@ -89,7 +89,7 @@ tree:
       title: Component model
       status: todo
       children:
-        - { id: c-props, title: "Props (@input)", status: in_progress }
+        - { id: c-props, title: "Props (@input)", status: done }
         - { id: c-slots, title: "Slots (default / named / scoped)", status: todo }
         - { id: c-emits, title: "Events / emits (child → parent)", status: todo }
         - { id: c-lifecycle, title: "Lifecycle hooks (mount/update/destroy)", status: todo }

@@ -16,7 +16,7 @@ export {
   runScope,
 } from "./core.mjs";
 
-export { box, deepBox, shared } from "./boxes.mjs";
+export { box, deepBox, shared, prop } from "./boxes.mjs";
 
 export { computed } from "./computed.mjs";
 

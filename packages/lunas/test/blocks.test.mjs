@@ -11,7 +11,7 @@ import {
   endScope,
   dropScope,
 } from "../src/core.mjs";
-import { box, deepBox } from "../src/boxes.mjs";
+import { box, deepBox, prop } from "../src/boxes.mjs";
 import {
   anchorBefore,
   anchorBeforeSplit,
@@ -507,6 +507,86 @@ await test("on() wires an event listener (fake dispatch)", () => {
   on(el, "click", () => clicks++);
   el.dispatch("click");
   assert.strictEqual(clicks, 1);
+});
+
+// --- mountChild reactive props (setProp bridge) -------------------------------
+
+await test("mountChild.setProp drives a child's reactive prop box", async () => {
+  const parent = createContext(null);
+  const host = fakeDoc.createElement("div");
+  const anchor = anchorAppend(host);
+
+  // A child built like a compiled component: its own context, a prop box, and
+  // a text node bound to the prop. The context is exposed on the root so the
+  // parent can drive it.
+  let childText = null;
+  const Child = (props) => {
+    const root = fakeDoc.createElement("kid");
+    const c = createContext(root);
+    root.__lunasCtx = c;
+    const v = prop(c, "v", 0, props.v, 0);
+    const t = fakeDoc.createTextNode("");
+    root.appendChild(t);
+    childText = t;
+    bind(c, [0], () => {
+      t.data = String(v.v);
+    });
+    return root;
+  };
+
+  // Parent seeds via a getter and drives via setProp inside its own bind.
+  let n = box(parent, 0, 1);
+  const m = mountChild(parent, anchor, Child, { v: () => n.v });
+  bind(parent, [0], () => m.setProp("v", n.v));
+  assert.strictEqual(childText.data, "1", "seed from getter");
+  assert.ok(m.ctx, "handle exposes the child context");
+
+  n.v = 4;
+  await tick();
+  assert.strictEqual(childText.data, "4", "parent change flows into child");
+});
+
+await test("child event mutates only the child context, not the parent", async () => {
+  const parent = createContext(null);
+  const host = fakeDoc.createElement("div");
+  const anchor = anchorAppend(host);
+
+  let parentRuns = 0;
+  // A parent bind that would run if the parent's own var changed.
+  const pv = box(parent, 0, 0);
+  bind(parent, [0], () => {
+    parentRuns++;
+  });
+  const runsAfterInit = parentRuns;
+
+  let local = null;
+  const Child = (props) => {
+    const root = fakeDoc.createElement("kid");
+    const c = createContext(root);
+    root.__lunasCtx = c;
+    local = box(c, 0, 0);
+    bind(c, [0], () => {}); // child-local reaction
+    return root;
+  };
+  mountChild(parent, anchor, Child, {});
+
+  // Mutate the child's box: only the child flushes; the parent's bind count
+  // is untouched (separate contexts, separate queues).
+  local.v = 9;
+  await tick();
+  assert.strictEqual(
+    parentRuns,
+    runsAfterInit,
+    "child mutation did not re-run any parent bind"
+  );
+});
+
+await test("prop() falls back to the default when the parent omits it", () => {
+  const c = createContext(null);
+  const p = prop(c, "label", 0, undefined, "def");
+  assert.strictEqual(p.v, "def");
+  // Registered under its name for the parent bridge.
+  assert.ok(c._props && c._props.label === p);
 });
 
 console.log("blocks.test.mjs: all " + passed + " tests passed");

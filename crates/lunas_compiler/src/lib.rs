@@ -42,7 +42,7 @@ pub use model::{Deps, DynamicKind, DynamicPart, ReactiveVar, ResolvedComponent, 
 pub fn resolve(source: &str) -> (ResolvedComponent, Vec<Diagnostic>) {
     let (file, mut diags) = parse(source);
 
-    let props = file
+    let props: Vec<lunas_parser::PropInput> = file
         .directives
         .iter()
         .filter_map(|d| match d {
@@ -67,10 +67,28 @@ pub fn resolve(source: &str) -> (ResolvedComponent, Vec<Diagnostic>) {
         .map(|h| two_way_mutation_roots(&h.template))
         .unwrap_or_default();
 
-    let reactive_vars = match &file.script {
+    let mut reactive_vars = match &file.script {
         Some(script) => resolve_reactive_vars(script, &template_mutated, &mut diags),
         None => Vec::new(),
     };
+
+    // `@input` props are reactive too: a parent can change a prop after init,
+    // so the child's template reads of it must re-run. Each prop that is not
+    // already a reactive script binding gets its own index appended after the
+    // script vars (output-design.md §6). Numbering stays stable: script vars
+    // first (in declaration order), then props (in `@input` order).
+    let mut next_index = reactive_vars.len() as u32;
+    for p in &props {
+        if reactive_vars.iter().any(|v| v.name == p.name) {
+            continue;
+        }
+        reactive_vars.push(ReactiveVar {
+            name: p.name.clone(),
+            index: next_index,
+            decl_range: Some(p.range),
+        });
+        next_index += 1;
+    }
 
     // Annotate every dynamic template expression with the reactive variables it
     // reads, and every handler with what it writes.

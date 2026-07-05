@@ -23,8 +23,8 @@
 //! refresh them when the item's data cell changes.
 
 use lunas_parser::{
-    Diagnostic, ForBlock, IfChain, StaticValue, Template, TemplateAttr, TemplateElement,
-    TemplateNode, TemplateText, TextRange, TextSegment,
+    ComponentUse, Diagnostic, ForBlock, IfChain, StaticValue, Template, TemplateAttr,
+    TemplateElement, TemplateNode, TemplateText, TextRange, TextSegment,
 };
 use lunas_script::{module_binding_references, parse_for, ForKind};
 
@@ -52,6 +52,7 @@ const ALL_HELPERS: &[&str] = &[
     "bind",
     "box",
     "deepBox",
+    "prop",
     "anchorBefore",
     "anchorBeforeSplit",
     "anchorAppend",
@@ -59,6 +60,7 @@ const ALL_HELPERS: &[&str] = &[
     "ifChain",
     "forBlock",
     "fromHTML",
+    "mountChild",
     // `component` is intentionally excluded: it is only referenced at module
     // scope (the default export), where user bindings — emitted inside the
     // setup closure — cannot shadow it.
@@ -103,6 +105,15 @@ fn emit_module(component: &ResolvedComponent, diags: &mut Vec<Diagnostic>) -> Op
     let mut out = String::new();
     out.push_str(&e.import_line());
     out.push('\n');
+    // Child-component imports from the `@use` table (path as written). Emitted
+    // in tag-name order after the runtime import, before the module body.
+    for (local, path) in e.child_imports.values() {
+        out.push_str("import ");
+        out.push_str(local);
+        out.push_str(" from ");
+        push_js_string(&mut out, path);
+        out.push_str(";\n");
+    }
     out.push('\n');
     out.push_str("const HTML = ");
     push_js_string(&mut out, &skeleton.html);
@@ -158,6 +169,10 @@ struct Emitter<'a> {
     /// Hoisted static HTML strings for control-flow fragments: (const name,
     /// html), emitted at module scope in creation order.
     hoisted: Vec<(String, String)>,
+    /// Child-component imports referenced in the template: component tag name
+    /// (as written) -> (local import identifier, module path as written in
+    /// `@use`). Emitted as `import Local from "path";` at module scope.
+    child_imports: std::collections::BTreeMap<String, (String, String)>,
     /// Text used for deep-mutation detection: the script plus one synthetic
     /// assignment per two-way member/index lvalue (`::value="o.k"` deep-writes
     /// `o`, so `o` needs a `deepBox` even if the script never mutates it).
@@ -168,6 +183,7 @@ struct Emitter<'a> {
     n_root: usize,   // r{n}
     n_data: usize,   // d{n}
     n_html: usize,   // HTML_{n}
+    n_child: usize,  // c{n} (child-component instance handle)
 }
 
 impl<'a> Emitter<'a> {
@@ -208,11 +224,42 @@ impl<'a> Emitter<'a> {
             }
         }
 
+        // Child-component imports: only for `@use` entries whose tag is actually
+        // used in the template (avoids dead imports). Each gets a collision-proof
+        // local identifier — its own name unless that collides with a helper
+        // import, a user binding, or a generated local.
+        let used_component_tags = component
+            .template
+            .as_ref()
+            .map(component_tags_in_template)
+            .unwrap_or_default();
+        let mut import_reserved: std::collections::HashSet<String> = reserved.clone();
+        for a in aliases.values() {
+            import_reserved.insert(a.clone());
+        }
+        for &h in ALL_HELPERS {
+            import_reserved.insert(h.to_string());
+        }
+        import_reserved.insert("component".to_string());
+        let mut child_imports = std::collections::BTreeMap::new();
+        for u in &component.imports {
+            if !used_component_tags.contains(&u.component_name) {
+                continue;
+            }
+            if child_imports.contains_key(&u.component_name) {
+                continue;
+            }
+            let local = child_local_name(&u.component_name, &import_reserved);
+            import_reserved.insert(local.clone());
+            child_imports.insert(u.component_name.clone(), (local, u.path.clone()));
+        }
+
         Emitter {
             component,
             used: std::collections::BTreeSet::new(),
             aliases,
             hoisted: Vec::new(),
+            child_imports,
             deep_hint,
             n_ref: 0,
             n_text: 0,
@@ -220,6 +267,7 @@ impl<'a> Emitter<'a> {
             n_root: 0,
             n_data: 0,
             n_html: 0,
+            n_child: 0,
         }
     }
 
@@ -279,6 +327,11 @@ impl<'a> Emitter<'a> {
         self.n_data += 1;
         format!("d{n}")
     }
+    fn alloc_child(&mut self) -> String {
+        let n = self.n_child;
+        self.n_child += 1;
+        format!("ch{n}")
+    }
     fn hoist_html(&mut self, html: String) -> String {
         self.n_html += 1;
         let name = format!("HTML_{}", self.n_html);
@@ -309,19 +362,52 @@ impl<'a> Emitter<'a> {
 
     fn emit_props(&mut self, b: &mut String) {
         for p in &self.component.props {
-            // `@input name = default` -> `let name = props.name ?? default;`
-            // Reactive props are still boxed below; the plain `let` seeds them.
-            b.push_str("  let ");
+            // Every `@input` prop is reactive (a parent can change it), so it is
+            // adopted as a reactive box at its index via the `prop` helper and
+            // referenced through `.v` everywhere. The parent seeds it (a getter
+            // for a reactive prop, a plain value for a static prop) and drives
+            // later changes via the mountChild handle's setProp — which writes
+            // this box, re-running the child's own binds (output-design.md §6).
+            let index = self
+                .component
+                .reactive_index(&p.name)
+                .expect("every @input prop is numbered as a reactive var");
+            let deep = is_deeply_mutated(&self.deep_hint, &p.name);
+            self.use_helper("prop");
+            let prop_fn = self.helper("prop").to_string();
+            let name = self.rewrite_binding_name(&p.name);
+            b.push_str("  const ");
+            b.push_str(&name);
+            b.push_str(" = ");
+            b.push_str(&prop_fn);
+            b.push_str("(c, ");
+            push_js_string(b, &p.name);
+            b.push_str(", ");
+            b.push_str(&index.to_string());
+            b.push_str(", props.");
             b.push_str(&p.name);
-            b.push_str(" = props.");
-            b.push_str(&p.name);
-            if let Some(d) = &p.default_value {
-                b.push_str(" ?? (");
-                b.push_str(d.trim());
-                b.push(')');
+            b.push_str(", ");
+            match &p.default_value {
+                Some(d) => {
+                    b.push('(');
+                    b.push_str(&rewrite_expr(d.trim(), &self.component.reactive_vars, &[]));
+                    b.push(')');
+                }
+                None => b.push_str("undefined"),
             }
-            b.push_str(";\n");
+            if deep {
+                b.push_str(", true");
+            }
+            b.push_str(");\n");
         }
+    }
+
+    /// The local name a reactive binding is emitted under. A prop whose name
+    /// collides with a runtime helper would, when boxed as `const name = …`,
+    /// need no alias (only *helper* references are aliased); the binding keeps
+    /// its own name. This exists as a single point in case that changes.
+    fn rewrite_binding_name(&self, name: &str) -> String {
+        name.to_string()
     }
 
     // --- boxes ------------------------------------------------------------
@@ -347,8 +433,24 @@ impl<'a> Emitter<'a> {
         let body = dedent(&rewritten);
         let body = body.trim();
         if !body.is_empty() {
-            for (kind, _) in reactive_box_kinds(&self.deep_hint, &self.component.reactive_vars) {
-                self.use_helper(kind);
+            // Import a box helper only for reactive vars actually DECLARED in the
+            // script (props are boxed by the `prop` helper, not here, so they
+            // must not pull in an unused `box`/`deepBox` import).
+            let declared: std::collections::HashSet<String> =
+                lunas_script::declared_bindings(script_text)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .collect();
+            for (kind, index) in reactive_box_kinds(&self.deep_hint, &self.component.reactive_vars)
+            {
+                if self
+                    .component
+                    .reactive_vars
+                    .iter()
+                    .any(|v| v.index == index && declared.contains(&v.name))
+                {
+                    self.use_helper(kind);
+                }
             }
             for line in body.lines() {
                 b.push_str("  ");
@@ -423,9 +525,8 @@ impl<'a> Emitter<'a> {
                 SlotContent::Text(t) => self.emit_text_slot(b, t, &slot.pos, frag),
                 SlotContent::If(chain) => self.emit_if_slot(b, chain, &slot.pos, frag, diags),
                 SlotContent::For(block) => self.emit_for_slot(b, block, &slot.pos, frag, diags),
-                SlotContent::Component(_) => {
-                    push_indent(b, frag.indent);
-                    b.push_str("/* TODO(components): child component not yet emitted */\n");
+                SlotContent::Component(comp) => {
+                    self.emit_component_slot(b, comp, &slot.pos, frag, diags)
                 }
             }
         }
@@ -513,6 +614,200 @@ impl<'a> Emitter<'a> {
                 b.push_str(");\n");
             }
         }
+    }
+
+    // --- child components -------------------------------------------------
+
+    /// Emits a child-component mount at a text anchor (output-design.md §6):
+    /// an anchor, `mountChild(c, anchor, Child, initialProps)`, and one parent
+    /// `bind` per reactive prop that drives the child via `setProp`. Reactive
+    /// props seed the child through getters in the initial object and stay live
+    /// through the binds; static props pass as plain values. The two contexts
+    /// are independent — pushing a prop marks the child dirty, never the parent.
+    fn emit_component_slot(
+        &mut self,
+        b: &mut String,
+        comp: &ComponentUse,
+        pos: &InsertPos,
+        frag: &Frag,
+        diags: &mut Vec<Diagnostic>,
+    ) {
+        // Resolve the child factory local. An unknown tag (not in the `@use`
+        // table) is voided: nothing to mount.
+        let Some((local, _)) = self.child_imports.get(&comp.name).cloned() else {
+            self.void_block(
+                b,
+                frag,
+                comp.open_tag_range,
+                "child component tag has no matching `@use` import",
+                diags,
+            );
+            return;
+        };
+
+        // Classify each prop into an initial-object entry and (for reactive
+        // props) a driving bind. `reactive` collects (prop_name, expr, deps).
+        struct ReactiveProp {
+            name: String,
+            expr: String,
+            deps: Vec<u32>,
+            /// Reads an enclosing `:for` loop binding: no reactive deps of its
+            /// own, but the item's patch path (`runScope`) must re-run it.
+            coupled: bool,
+        }
+        // Initial props object members: `name: <value-or-getter>`.
+        let mut members: Vec<String> = Vec::new();
+        let mut reactive: Vec<ReactiveProp> = Vec::new();
+
+        for attr in &comp.props {
+            match attr {
+                TemplateAttr::Bound { name, expr, .. } => {
+                    let deps =
+                        self.filter_deps(self.bound_attr_deps(name, &expr.text), frag.shadowed);
+                    let value =
+                        rewrite_expr(&expr.text, &self.component.reactive_vars, frag.shadowed);
+                    // Pass a getter so the child seeds from the current value;
+                    // a bind keeps it live if it has deps (or is item-coupled).
+                    members.push(format!("{}: () => ({})", prop_key(name), value));
+                    let coupled = reads_any(&expr.text, frag.shadowed);
+                    if !deps.is_empty() || coupled {
+                        reactive.push(ReactiveProp {
+                            name: name.clone(),
+                            expr: value,
+                            deps,
+                            coupled,
+                        });
+                    }
+                }
+                TemplateAttr::Static {
+                    name,
+                    value: Some(v),
+                    ..
+                } if has_interpolation(v) => {
+                    // `prop="a ${x}"` — an interpolated string prop.
+                    let (lit, deps, coupled) = self.attr_text_value(name, v, frag);
+                    members.push(format!("{}: () => ({})", prop_key(name), lit));
+                    if !deps.is_empty() || coupled {
+                        reactive.push(ReactiveProp {
+                            name: name.clone(),
+                            expr: lit,
+                            deps,
+                            coupled,
+                        });
+                    }
+                }
+                TemplateAttr::Static { name, value, .. } => {
+                    let val = match value {
+                        Some(v) => {
+                            let mut s = String::from("`");
+                            for seg in &v.segments {
+                                if let TextSegment::Literal { text, .. } = seg {
+                                    push_template_literal_chunk(&mut s, text);
+                                }
+                            }
+                            s.push('`');
+                            s
+                        }
+                        // Valueless attr `<Child flag/>` -> boolean true.
+                        None => "true".to_string(),
+                    };
+                    members.push(format!("{}: {}", prop_key(name), val));
+                }
+                TemplateAttr::TwoWay { name, .. } => {
+                    self.void_block(
+                        b,
+                        frag,
+                        comp.open_tag_range,
+                        &format!("two-way binding `::{name}` on a component is not supported yet"),
+                        diags,
+                    );
+                }
+                TemplateAttr::Event { event, .. } => {
+                    self.void_block(
+                        b,
+                        frag,
+                        comp.open_tag_range,
+                        &format!("component event binding `@{event}` is not supported yet"),
+                        diags,
+                    );
+                }
+            }
+        }
+
+        let anchor = self.alloc_anchor();
+        self.emit_anchor(b, &anchor, pos, frag);
+
+        let handle = self.alloc_child();
+        self.use_helper("mountChild");
+        push_indent(b, frag.indent);
+        b.push_str("const ");
+        b.push_str(&handle);
+        b.push_str(" = ");
+        b.push_str(self.helper("mountChild"));
+        b.push_str("(c, ");
+        b.push_str(&anchor);
+        b.push_str(", ");
+        b.push_str(&local);
+        b.push_str(", {");
+        for (i, m) in members.iter().enumerate() {
+            if i > 0 {
+                b.push(',');
+            }
+            b.push(' ');
+            b.push_str(m);
+        }
+        if !members.is_empty() {
+            b.push(' ');
+        }
+        b.push_str("});\n");
+
+        // Drive each reactive prop from the parent. The bind's initial run seeds
+        // the same value (a box no-ops on equal), later parent changes flow in.
+        for rp in &reactive {
+            let stmt = format!("{handle}.setProp({}, {});", js_string(&rp.name), rp.expr);
+            self.emit_update(b, frag, &rp.deps, rp.coupled, &stmt);
+        }
+    }
+
+    /// Builds the template-literal value, deps, and item-coupling flag for an
+    /// interpolated static attribute/prop value (`a ${x} b`). Shared by element
+    /// attribute-text wiring and component string-prop wiring.
+    fn attr_text_value(
+        &self,
+        attr: &str,
+        value: &StaticValue,
+        frag: &Frag,
+    ) -> (String, Vec<u32>, bool) {
+        let mut deps = Vec::new();
+        let mut coupled = false;
+        let mut lit = String::from("`");
+        for seg in &value.segments {
+            match seg {
+                TextSegment::Literal { text, .. } => push_template_literal_chunk(&mut lit, text),
+                TextSegment::Interpolation(interp) => {
+                    lit.push_str("${");
+                    lit.push_str(&rewrite_expr(
+                        &interp.expr,
+                        &self.component.reactive_vars,
+                        frag.shadowed,
+                    ));
+                    lit.push('}');
+                    coupled = coupled || reads_any(&interp.expr, frag.shadowed);
+                    if let Some(part) = self.find_dynamic(
+                        DynamicKind::AttributeText(attr.to_string()),
+                        &interp.expr,
+                        interp.expr_range,
+                    ) {
+                        deps.extend(part.deps.indices().iter().copied());
+                    }
+                }
+            }
+        }
+        lit.push('`');
+        deps.sort_unstable();
+        deps.dedup();
+        let deps = self.filter_deps(deps, frag.shadowed);
+        (lit, deps, coupled)
     }
 
     /// The combined dependency indices of every interpolation in a text run.
@@ -985,36 +1280,7 @@ impl<'a> Emitter<'a> {
         value: &StaticValue,
         frag: &Frag,
     ) {
-        let mut deps = Vec::new();
-        let mut coupled = false;
-        let mut lit = String::from("`");
-        for seg in &value.segments {
-            match seg {
-                TextSegment::Literal { text, .. } => push_template_literal_chunk(&mut lit, text),
-                TextSegment::Interpolation(interp) => {
-                    lit.push_str("${");
-                    lit.push_str(&rewrite_expr(
-                        &interp.expr,
-                        &self.component.reactive_vars,
-                        frag.shadowed,
-                    ));
-                    lit.push('}');
-                    coupled = coupled || reads_any(&interp.expr, frag.shadowed);
-                    if let Some(part) = self.find_dynamic(
-                        DynamicKind::AttributeText(attr.to_string()),
-                        &interp.expr,
-                        interp.expr_range,
-                    ) {
-                        deps.extend(part.deps.indices().iter().copied());
-                    }
-                }
-            }
-        }
-        lit.push('`');
-        deps.sort_unstable();
-        deps.dedup();
-        let deps = self.filter_deps(deps, frag.shadowed);
-
+        let (lit, deps, coupled) = self.attr_text_value(attr, value, frag);
         let set = attr_set_statement(node, attr, &lit);
         self.emit_update(b, frag, &deps, coupled, &set);
     }
@@ -1122,6 +1388,31 @@ impl<'a> Emitter<'a> {
 }
 
 // --- template helpers ------------------------------------------------------
+
+/// The set of component tag names actually used anywhere in the template
+/// (branch/item bodies included). Drives which `@use` imports are emitted.
+fn component_tags_in_template(template: &Template) -> std::collections::HashSet<String> {
+    let mut out = std::collections::HashSet::new();
+    template.visit(&mut |node: &TemplateNode| {
+        if let TemplateNode::Component(c) = node {
+            out.insert(c.name.clone());
+        }
+    });
+    out
+}
+
+/// A collision-proof local import identifier for a child component. Its own tag
+/// name when free; otherwise `<Name>$`, adding underscores until unused.
+fn child_local_name(tag: &str, reserved: &std::collections::HashSet<String>) -> String {
+    if !reserved.contains(tag) && !is_generated_name(tag) {
+        return tag.to_string();
+    }
+    let mut name = format!("{tag}$");
+    while reserved.contains(&name) {
+        name.push('_');
+    }
+    name
+}
 
 /// Every two-way lvalue expression in the template (branch/item bodies
 /// included).
@@ -1584,6 +1875,27 @@ fn push_dep_list(b: &mut String, deps: &[u32]) {
         b.push_str(&d.to_string());
     }
     b.push(']');
+}
+
+/// A double-quoted JS string literal for `s`.
+fn js_string(s: &str) -> String {
+    let mut out = String::new();
+    push_js_string(&mut out, s);
+    out
+}
+
+/// A JS object-literal key for a prop name: the bare name if it is a valid
+/// identifier, else a quoted string key (an attribute name like `data-x` is not
+/// a valid bare key).
+fn prop_key(name: &str) -> String {
+    let mut chars = name.chars();
+    let ok = matches!(chars.next(), Some(c) if c.is_ascii_alphabetic() || c == '_' || c == '$')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$');
+    if ok {
+        name.to_string()
+    } else {
+        js_string(name)
+    }
 }
 
 /// Emits `s` as a double-quoted JS string literal.

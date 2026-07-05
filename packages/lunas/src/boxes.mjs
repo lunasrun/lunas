@@ -82,6 +82,24 @@ export function makeWrap(notify) {
   return wrap;
 }
 
+// prop(c, i, raw, def) — adopt an `@input` prop as a reactive variable at
+// index i (output-design.md §6). The child reads it as a box (`.v`), so its
+// own template binds react when the prop changes. The seed is `raw` when the
+// parent passed a value, else the compiled default `def`. A getter-valued
+// `raw` (the parent passes `() => expr` for a reactive prop) is invoked once
+// to seed; the parent keeps it live by pushing new values through the
+// mountChild handle's setProp, which writes `child._props[name].v`.
+//
+// The box is registered under `name` in `c._props` so a parent's mountChild
+// can find and drive it. `deep` selects a deepBox (the child deeply mutates
+// the prop locally) — parent-driven whole-value replacement still works.
+export function prop(c, name, i, raw, def, deep) {
+  const seed = raw === undefined ? def : typeof raw === "function" ? raw() : raw;
+  const b = deep ? deepBox(c, i, seed) : box(c, i, seed);
+  (c._props || (c._props = {}))[name] = b;
+  return b;
+}
+
 // shared(v) — a value shared across components (prop passed down and
 // mutated). Each dependent component attaches with its own reactive index;
 // a write marks the variable dirty in EVERY attached component.

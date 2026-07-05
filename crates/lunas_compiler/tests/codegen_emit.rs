@@ -114,10 +114,29 @@ fn event_listener() {
 
 #[test]
 fn props_seeded_from_input() {
+    // Every `@input` prop is reactive: adopted as a `prop` box at its index
+    // (props numbered after script vars) so the child's template reads react
+    // when a parent pushes a new value. The default seeds it when the parent
+    // omits the prop.
     let js = emit(
         "@input start:number = 0\nhtml:\n    <p>${start}</p>\nscript:\n    let count = start\n    function f(){ count = 1 }\n",
     );
-    assert!(js.contains("let start = props.start ?? (0);"), "{js}");
+    // `count` is reactive var 0 (script, declared first); `start` is 1 (prop).
+    assert!(
+        js.contains("const start = prop(c, \"start\", 1, props.start, (0));"),
+        "prop adopted as a reactive box with its default: {js}"
+    );
+    // The template read of the prop is now a reactive bind on the prop index.
+    assert!(
+        js.contains("bind(c, [1], () => { t0.data = `${start.v}`; });"),
+        "prop read is reactive: {js}"
+    );
+    // Script that reads the prop sees it through the box.
+    assert!(
+        js.contains("const count = box(c, 0, start.v)"),
+        "script read of the prop rewritten through the box: {js}"
+    );
+    assert!(js.contains(", prop }"), "prop helper imported: {js}");
 }
 
 #[test]
@@ -342,6 +361,157 @@ fn box_helper_collision_is_aliased() {
     );
 }
 
+// --- child components -----------------------------------------------------
+
+#[test]
+fn simple_child_mounts_at_anchor() {
+    // A childless static child: import from the `@use` table, anchor, mount.
+    let js = emit("@use Child from \"./Child.lunas\"\nhtml:\n    <div><Child/></div>\n");
+    assert!(
+        js.contains("import Child from \"./Child.lunas\";"),
+        "child module imported from @use, path as written: {js}"
+    );
+    assert!(
+        js.contains("const a0 = anchorAppend(c.root.childNodes[0]);"),
+        "anchor created inside the host element: {js}"
+    );
+    assert!(
+        js.contains("const ch0 = mountChild(c, a0, Child, {});"),
+        "mounted with an empty props object: {js}"
+    );
+}
+
+#[test]
+fn child_reactive_and_static_props() {
+    // Reactive prop -> getter seed + driving bind on its deps; static prop ->
+    // plain value in the initial object (no bind).
+    let js = emit(
+        "@use Card from \"./Card.lunas\"\nhtml:\n    <div><Card :count=\"n\" title=\"hi\"/></div>\nscript:\n    let n = 0\n    function inc(){ n++ }\n",
+    );
+    assert!(js.contains("import Card from \"./Card.lunas\";"), "{js}");
+    assert!(
+        js.contains("mountChild(c, a0, Card, { count: () => (n.v), title: `hi` });"),
+        "reactive prop is a getter, static prop is a value: {js}"
+    );
+    assert!(
+        js.contains("bind(c, [0], () => { ch0.setProp(\"count\", n.v); });"),
+        "parent drives the reactive prop through setProp on its deps: {js}"
+    );
+    // A static-only prop must NOT get a driving bind.
+    assert!(
+        !js.contains("setProp(\"title\""),
+        "static prop is not driven: {js}"
+    );
+}
+
+#[test]
+fn child_boolean_and_interpolated_props() {
+    // Valueless prop -> boolean true; interpolated string prop -> reactive
+    // template-literal getter + driving bind.
+    let js = emit(
+        "@use B from \"./B.lunas\"\nhtml:\n    <div><B flag greeting=\"hi ${name}\"/></div>\nscript:\n    let name = \"x\"\n    function f(){ name = \"y\" }\n",
+    );
+    assert!(js.contains("flag: true"), "valueless prop -> true: {js}");
+    assert!(
+        js.contains("greeting: () => (`hi ${name.v}`)"),
+        "interpolated string prop seeds via a template-literal getter: {js}"
+    );
+    assert!(
+        js.contains("ch0.setProp(\"greeting\", `hi ${name.v}`);"),
+        "interpolated prop driven on its deps: {js}"
+    );
+}
+
+#[test]
+fn child_in_if_branch() {
+    // A child inside an `:if` branch is wired inside the branch fragment,
+    // recursively; the import is still emitted.
+    let js = emit(
+        "@use Panel from \"./Panel.lunas\"\nhtml:\n    <div :if=\"show\"><Panel :v=\"n\"/></div>\nscript:\n    let show = true\n    let n = 0\n    function f(){ show = false; n++ }\n",
+    );
+    assert!(js.contains("import Panel from \"./Panel.lunas\";"), "{js}");
+    assert!(
+        js.contains("ifBlock(c, a0, [0], () => (show.v), () => {"),
+        "outer :if: {js}"
+    );
+    assert!(
+        js.contains("mountChild(c, a1, Panel, { v: () => (n.v) });"),
+        "child mounted inside the branch fragment: {js}"
+    );
+    // `n` is reactive var 1 (after `show`); the driving bind uses that index.
+    assert!(
+        js.contains("bind(c, [1], () => { ch0.setProp(\"v\", n.v); });"),
+        "driving bind uses the prop-source dep index: {js}"
+    );
+}
+
+#[test]
+fn child_in_for_item() {
+    // A child inside a `:for` item: the loop binding shadows reactive vars, so
+    // the prop getter reads the item binding directly (no `.v`), and the
+    // driving bind is item-coupled (empty deps, refreshed by runScope).
+    let js = emit(
+        "@use Row from \"./Row.lunas\"\nhtml:\n    <ul><li :for=\"item of items\" :key=\"item.id\"><Row :data=\"item\"/></li></ul>\nscript:\n    let items = []\n    function add(){ items.push({id:1}) }\n",
+    );
+    assert!(js.contains("import Row from \"./Row.lunas\";"), "{js}");
+    assert!(
+        js.contains("mountChild(c, a1, Row, { data: () => (item) });"),
+        "prop getter reads the loop binding (not rewritten to .v): {js}"
+    );
+    assert!(
+        js.contains("bind(c, [], () => { ch0.setProp(\"data\", item); });"),
+        "item-coupled driving bind (empty deps, item scope refreshes it): {js}"
+    );
+}
+
+#[test]
+fn multiple_children_and_dedup_imports() {
+    // Two uses of the same child + one of another: each import appears once,
+    // one handle per instance.
+    let js = emit(
+        "@use A from \"./A.lunas\"\n@use Bee from \"./Bee.lunas\"\nhtml:\n    <div><A/><Bee/><A/></div>\n",
+    );
+    assert_eq!(
+        js.matches("import A from \"./A.lunas\";").count(),
+        1,
+        "duplicate child imported once: {js}"
+    );
+    assert!(js.contains("import Bee from \"./Bee.lunas\";"), "{js}");
+    assert!(js.contains("const ch0 = mountChild(c, a0, A, {});"), "{js}");
+    assert!(
+        js.contains("const ch1 = mountChild(c, a1, Bee, {});"),
+        "{js}"
+    );
+    assert!(js.contains("const ch2 = mountChild(c, a2, A, {});"), "{js}");
+}
+
+#[test]
+fn unused_use_import_is_not_emitted() {
+    // A declared-but-unused `@use` produces no dead import.
+    let js = emit("@use Unused from \"./Unused.lunas\"\nhtml:\n    <p>hi</p>\n");
+    assert!(
+        !js.contains("import Unused"),
+        "unused @use is not imported: {js}"
+    );
+}
+
+#[test]
+fn child_import_name_collision_is_aliased() {
+    // A component tag that collides with a runtime helper name is imported
+    // under an alias, and the mount references the alias.
+    let js = emit(
+        "@use bind from \"./bind.lunas\"\nhtml:\n    <div><bind :v=\"n\"/></div>\nscript:\n    let n = 0\n    function f(){ n++ }\n",
+    );
+    assert!(
+        js.contains("import bind$ from \"./bind.lunas\";"),
+        "colliding child import aliased: {js}"
+    );
+    assert!(
+        js.contains("mountChild(c, a0, bind$, {"),
+        "mount references the aliased local: {js}"
+    );
+}
+
 #[test]
 fn no_template_emits_nothing() {
     let (js, diags) = compile("script:\n    let x = 0\n");
@@ -365,6 +535,10 @@ fn malformed_inputs_do_not_panic() {
         "html:\n    <div :x=\"{ a }\"></div>\nscript:\n    let a = 0\n    function f(){ a = 1 }",
         "html:\n    <p>a ${x} b ${y} c</p>\nscript:\n    let x=0\n    let y=0\n    function f(){ x=1; y=2 }",
         "html:\n    <input ::value=\"o.k\">\nscript:\n    let o = {}\n    function f(){ o.k = 1 }",
+        // Child components with adversarial / unsupported props.
+        "@use X from \"./X.lunas\"\nhtml:\n    <X :p=\"a.(\" ::two=\"b\" @go=\"h()\" q=\"${z}\"/>\nscript:\n    let a=0\n    let b=0\n    let z=0",
+        "@use X from \"./X.lunas\"\nhtml:\n    <X/>",
+        "html:\n    <Undeclared :p=\"x\"/>\nscript:\n    let x = 0",
     ];
     for case in cases {
         let (_js, _diags) = compile(case);
@@ -380,10 +554,14 @@ fn arbitrary_control_flow_nesting_never_panics() {
     // depths. Leaves include a two-way bind and an interpolation so wiring runs
     // inside every level.
     fn leaf(depth: usize) -> String {
-        match depth % 3 {
+        // Include a child component with a reactive prop, a static prop, and a
+        // valueless prop at some leaves so component wiring runs at arbitrary
+        // depth inside :if/:for.
+        match depth % 4 {
             0 => "<span>${x}</span>".to_string(),
             1 => "<input ::value=\"x\">".to_string(),
-            _ => "<b :if=\"x\">${x}</b>".to_string(),
+            2 => "<Kid :v=\"x\" tag=\"t\" flag/>".to_string(),
+            _ => "<b :if=\"x\">${x}<Kid :v=\"x\"/></b>".to_string(),
         }
     }
     fn wrap_if(inner: &str) -> String {
@@ -404,7 +582,7 @@ fn arbitrary_control_flow_nesting_never_panics() {
                 wrap_for(&body)
             };
         }
-        let source = format!("html:\n    {body}{script}");
+        let source = format!("@use Kid from \"./Kid.lunas\"\nhtml:\n    {body}{script}");
         let (js, diags) = compile(&source);
         assert!(
             !diags.iter().any(|d| d.is_error()),
