@@ -272,6 +272,43 @@ fn function_mutations_ignores_locals_but_keeps_outer() {
 }
 
 #[test]
+fn function_mutations_detects_array_mutators() {
+    // In-place array/collection mutation deep-mutates the binding even though
+    // nothing is assigned, so the receiver's root is reported.
+    let muts =
+        function_mutations("function f(){ items.push(1); q.splice(0, 1); s.add(2); m.clear() }")
+            .unwrap();
+    assert_eq!(muts[0].0, "f");
+    for name in ["items", "q", "s", "m"] {
+        assert!(
+            muts[0].1.contains(&name.to_string()),
+            "{name} mutated: {muts:?}"
+        );
+    }
+}
+
+#[test]
+fn function_mutations_ignores_non_mutating_methods() {
+    // filter/map/slice return a new value; they do not mutate the receiver, so
+    // a binding read only through them is not reported as mutated.
+    let muts =
+        function_mutations("function f(){ const x = items.filter(a => a).map(b => b) }").unwrap();
+    assert_eq!(muts[0].0, "f");
+    assert!(
+        !muts[0].1.contains(&"items".to_string()),
+        "non-mutating chain must not mark items: {muts:?}"
+    );
+}
+
+#[test]
+fn function_mutations_member_receiver_reports_root() {
+    // `state.list.push(x)` mutates `state`.
+    let muts = function_mutations("function f(){ state.list.push(1) }").unwrap();
+    assert_eq!(muts[0].0, "f");
+    assert!(muts[0].1.contains(&"state".to_string()), "{muts:?}");
+}
+
+#[test]
 fn function_mutations_on_real_fixture() {
     // counter-game's functions and what they mutate.
     let path = format!(
