@@ -1,0 +1,5 @@
+@use Card from "./Card.lunas"
+html:
+    <div><Card><template slot-scope="p">rows: ${p.count}</template></Card></div>
+script:
+    let x = 1

@@ -625,10 +625,17 @@ impl<'a> Emitter<'a> {
         }
         // Rewrite the script body so reactive declarations become boxes and all
         // references become `.v`.
+        let prop_names: Vec<String> = self
+            .component
+            .props
+            .iter()
+            .map(|p| p.name.clone())
+            .collect();
         let rewritten = rewrite_script(
             script_text,
             &self.deep_hint,
             &self.component.reactive_vars,
+            &prop_names,
             &self.aliases,
             self.ctx(),
         );
@@ -951,11 +958,20 @@ impl<'a> Emitter<'a> {
                         format!("two-way binding `::{name}` on a component is not supported yet"),
                     ));
                 }
-                TemplateAttr::Event { event, .. } => {
-                    diags.push(Diagnostic::warning(
-                        range,
-                        format!("component event binding `@{event}` is not supported yet"),
-                    ));
+                TemplateAttr::Event { event, handler, .. } => {
+                    // `@save="h($event)"` on a component tag (or `<component :is>`)
+                    // becomes an `onSave` handler prop the child raises via
+                    // `emit(c, "save", payload)` (output-design.md §5, c-emits).
+                    // The handler body is `.v`-rewritten like an element handler;
+                    // `$event` is the payload parameter. Names camel-case:
+                    // `save-all` → `onSaveAll`.
+                    let body = rewrite_handler(
+                        &handler.text,
+                        &self.component.reactive_vars,
+                        frag.shadowed,
+                    );
+                    let key = event_prop_name(event);
+                    members.push(format!("{}: ($event) => {{ {body}; }}", prop_key(&key)));
                 }
             }
         }
@@ -976,6 +992,25 @@ impl<'a> Emitter<'a> {
         frag: &Frag,
         diags: &mut Vec<Diagnostic>,
     ) {
+        let anchor = self.alloc_anchor();
+        self.emit_anchor(b, &anchor, pos, frag);
+        self.emit_child_mount(b, comp, &anchor, frag, diags);
+    }
+
+    /// Mounts a child component at an already-emitted `anchor`: classifies props,
+    /// emits the `$slots` object, `mountChild(c, anchor, Child, initialProps)`, a
+    /// `:ref` handle assignment, and one driving `bind` per reactive prop. Shared
+    /// by the plain component slot, the `:if`-on-a-component branch, and the
+    /// `:for`-over-a-component item. Returns the mount-handle local, or `None`
+    /// when the tag has no `@use` import (voided).
+    fn emit_child_mount(
+        &mut self,
+        b: &mut String,
+        comp: &ComponentUse,
+        anchor: &str,
+        frag: &Frag,
+        diags: &mut Vec<Diagnostic>,
+    ) -> Option<String> {
         // Resolve the child factory local. An unknown tag (not in the `@use`
         // table) is voided: nothing to mount.
         let Some((local, _)) = self.child_imports.get(&comp.name).cloned() else {
@@ -986,7 +1021,7 @@ impl<'a> Emitter<'a> {
                 "child component tag has no matching `@use` import",
                 diags,
             );
-            return;
+            return None;
         };
 
         // A `:ref="name"` on a component exposes the mountChild handle to the
@@ -1009,9 +1044,6 @@ impl<'a> Emitter<'a> {
 
         // Slot content: the component's children become slot factories wired in
         // THIS (parent) scope and passed to the child via a `$slots` object.
-        let anchor = self.alloc_anchor();
-        self.emit_anchor(b, &anchor, pos, frag);
-
         if let Some(slots_local) = self.emit_slot_factories(b, &comp.children, frag, diags) {
             members.push(format!("$slots: {slots_local}"));
         }
@@ -1026,7 +1058,7 @@ impl<'a> Emitter<'a> {
         b.push('(');
         b.push_str(self.ctx());
         b.push_str(", ");
-        b.push_str(&anchor);
+        b.push_str(anchor);
         b.push_str(", ");
         b.push_str(&local);
         b.push_str(", {");
@@ -1053,6 +1085,7 @@ impl<'a> Emitter<'a> {
             let stmt = format!("{handle}.setProp({}, {});", js_string(&rp.name), rp.expr);
             self.emit_update(b, frag, &rp.deps, rp.coupled, &stmt);
         }
+        Some(handle)
     }
 
     /// Emits the parent-side `$slots` object for a component's children
@@ -1202,12 +1235,22 @@ impl<'a> Emitter<'a> {
             return;
         };
 
-        // Classify the remaining props (everything but `:is`) into an initial
-        // object + driving binds, reusing the child-prop machinery.
+        // A `:ref="name"` exposes the dynamic-component mount handle to the
+        // script (like `:ref` on a static component), NOT a forwarded prop. Pull
+        // it out before prop classification.
+        let ref_target = el.attrs.iter().find_map(|a| match a {
+            TemplateAttr::Bound { name, expr, .. } if name == "ref" => Some(expr.text.clone()),
+            _ => None,
+        });
+
+        // Classify the remaining props (everything but `:is` / `:ref`) into an
+        // initial object + driving binds, reusing the child-prop machinery.
         let props: Vec<TemplateAttr> = el
             .attrs
             .iter()
-            .filter(|a| !matches!(a, TemplateAttr::Bound { name, .. } if name == "is"))
+            .filter(
+                |a| !matches!(a, TemplateAttr::Bound { name, .. } if name == "is" || name == "ref"),
+            )
             .cloned()
             .collect();
         let (members, reactive) = self.build_child_props(&props, frag, el.open_tag_range, diags);
@@ -1252,6 +1295,11 @@ impl<'a> Emitter<'a> {
         }
         b.push_str("});\n");
         let _ = is_coupled;
+
+        // Component ref: assign the (stable) dynamicBlock handle into the box.
+        if let Some(target) = ref_target {
+            self.emit_ref_assign(b, &handle, &target, frag, el.open_tag_range, diags);
+        }
 
         for rp in &reactive {
             let stmt = format!("{handle}.setProp({}, {});", js_string(&rp.name), rp.expr);
@@ -1607,16 +1655,19 @@ impl<'a> Emitter<'a> {
             );
             return;
         }
-        // Every branch body must be an element (the parser guarantees this for
-        // plain cascades; a component body means child-component mounting,
-        // which is a later wave).
+        // A branch body is either a plain element or a component tag (`:if` on a
+        // component mounts the child only while the branch is live). Any other
+        // node shape here is unexpected and voided.
         for branch in &chain.branches {
-            if !matches!(&*branch.body, TemplateNode::Element(_)) {
+            if !matches!(
+                &*branch.body,
+                TemplateNode::Element(_) | TemplateNode::Component(_)
+            ) {
                 self.void_block(
                     b,
                     frag,
                     branch.range,
-                    "`:if` on a component is not supported yet",
+                    "unsupported `:if` branch body (expected an element or component)",
                     diags,
                 );
                 return;
@@ -1721,11 +1772,40 @@ impl<'a> Emitter<'a> {
         frag: &Frag,
         diags: &mut Vec<Diagnostic>,
     ) {
+        // `:if` on a component tag: the branch body is the component itself.
+        // Mount the child at the branch anchor and return its root node group.
+        // The mount runs inside the branch `make` (an open scope), so the child's
+        // teardown (onDestroy, `_children` unlink) rides the branch's dropScope
+        // when the condition goes false. The child inserts before the anchor;
+        // returning its nodes lets the block track them for removal.
+        if let TemplateNode::Component(comp) = body {
+            match self.emit_child_mount(b, comp, anchor, frag, diags) {
+                Some(handle) => {
+                    push_indent(b, frag.indent + 1);
+                    b.push_str("return ");
+                    b.push_str(&handle);
+                    b.push_str(".root;\n");
+                }
+                None => {
+                    // Voided (no `@use` import): return an empty node group so the
+                    // block still has a well-formed (empty) branch.
+                    push_indent(b, frag.indent + 1);
+                    b.push_str("return [];\n");
+                }
+            }
+            return;
+        }
+
+        // A bare `<template>` body (`<template :if="…">a b</template>`) is a
+        // grouping wrapper, not a real element: unwrap it so its children become
+        // the branch content directly, rather than leaving a literal `<template>`
+        // node in the live DOM. A multi-child unwrap is a multi-root branch.
+        let nodes = unwrap_template_body(body);
         let tpl = Template {
-            nodes: vec![body.clone()],
+            nodes: nodes.clone(),
         };
         let skel = build_skeleton(&tpl);
-        let multi_root = has_top_level_slot(&skel);
+        let multi_root = has_top_level_slot(&skel) || count_rendered_top_level(&nodes) != 1;
         let html_name = self.hoist_html(skel.html.clone());
         let root = self.alloc_root();
         self.use_helper("fromHTML");
@@ -1790,8 +1870,15 @@ impl<'a> Emitter<'a> {
             );
             return;
         };
-        let body_el: &TemplateElement = match &*block.body {
-            TemplateNode::Element(e) => e,
+        // A `:for` over a component tag mounts one child instance per item; a
+        // `:for` over a plain element uses the bulk-innerHTML compiled path.
+        let for_component: Option<&ComponentUse> = match &*block.body {
+            TemplateNode::Component(c) => Some(c),
+            _ => None,
+        };
+        let body_el: Option<&TemplateElement> = match &*block.body {
+            TemplateNode::Element(e) => Some(e),
+            TemplateNode::Component(_) => None,
             TemplateNode::If(_) => {
                 self.void_block(
                     b,
@@ -1808,7 +1895,7 @@ impl<'a> Emitter<'a> {
                     b,
                     frag,
                     block.range,
-                    "`:for` on a component is not supported yet",
+                    "unsupported `:for` body (expected an element or component)",
                     diags,
                 );
                 return;
@@ -1845,11 +1932,6 @@ impl<'a> Emitter<'a> {
             }
         }
 
-        // Strip the `:key` bound attribute off the item root: it configures
-        // the reconciler and is never written to the DOM.
-        let mut item_el = body_el.clone();
-        let key_expr = take_key_attr(&mut item_el);
-
         let anchor = self.alloc_anchor();
         self.emit_anchor(b, &anchor, pos, frag);
 
@@ -1871,6 +1953,27 @@ impl<'a> Emitter<'a> {
             .unwrap_or_default(),
             frag.shadowed,
         );
+
+        // `:for` over a component tag: mount-mode forBlock (one child per item).
+        if let Some(comp) = for_component {
+            self.emit_for_component(
+                b,
+                comp,
+                &parsed,
+                &anchor,
+                &items_expr,
+                &deps,
+                &child_shadowed,
+                frag,
+                diags,
+            );
+            return;
+        }
+
+        // Strip the `:key` bound attribute off the item root: it configures
+        // the reconciler and is never written to the DOM.
+        let mut item_el = body_el.expect("element body when not a component").clone();
+        let key_expr = take_key_attr(&mut item_el);
 
         // The item's own skeleton (single-root: the item element).
         let tpl = Template {
@@ -1936,6 +2039,119 @@ impl<'a> Emitter<'a> {
             b.push_str(&d_key);
             b.push_str(") => { const ");
             b.push_str(parsed.binding.trim());
+            b.push_str(" = ");
+            b.push_str(&d_key);
+            b.push_str("; return (");
+            b.push_str(&key_js);
+            b.push_str("); },\n");
+        }
+        push_indent(b, frag.indent);
+        b.push_str("});\n");
+    }
+
+    /// `:for` directly on a component tag (`<Child :for="x of xs" :p="x"/>`):
+    /// mount-mode `forBlock`. Each item mounts one child instance via
+    /// `mountChild` inside the item `make` (props read the loop binding), and the
+    /// returned `patch` updates the item's data cell so a re-run drives the
+    /// child's reactive props with the new item value. The child's teardown rides
+    /// the item scope (dropScope on item removal). `:key` (a prop on the tag) is
+    /// pulled out as the reconciler key.
+    #[allow(clippy::too_many_arguments)]
+    fn emit_for_component(
+        &mut self,
+        b: &mut String,
+        comp: &ComponentUse,
+        parsed: &lunas_script::ParsedFor,
+        anchor: &str,
+        items_expr: &str,
+        deps: &[u32],
+        child_shadowed: &[String],
+        frag: &Frag,
+        diags: &mut Vec<Diagnostic>,
+    ) {
+        // Pull `:key` off the component's props (it configures the reconciler).
+        let mut item_comp = comp.clone();
+        let key_expr = item_comp.props.iter().position(
+            |a| matches!(a, TemplateAttr::Bound { name, .. } if name.eq_ignore_ascii_case("key")),
+        );
+        let key_expr = key_expr.map(|idx| match item_comp.props.remove(idx) {
+            TemplateAttr::Bound { expr, .. } => expr.text,
+            _ => unreachable!(),
+        });
+
+        let binding = parsed.binding.trim();
+        let d_data = self.alloc_data();
+
+        self.use_helper("forBlock");
+        push_indent(b, frag.indent);
+        b.push_str(self.helper("forBlock"));
+        b.push('(');
+        b.push_str(self.ctx());
+        b.push_str(", ");
+        b.push_str(anchor);
+        b.push_str(", ");
+        push_dep_list(b, deps);
+        b.push_str(", () => ");
+        b.push_str(items_expr);
+        b.push_str(", {\n");
+
+        // mount: (d, key, i) => { let <binding> = d; const chN = mountChild(...);
+        //                         <driving binds>; return { node: chN.root,
+        //                         patch: (d2) => { <binding> = d2 } }; }
+        push_indent(b, frag.indent + 1);
+        b.push_str("mount: (");
+        b.push_str(&d_data);
+        b.push_str(", ");
+        // key + index params are unused by the mount body but keep the signature.
+        b.push_str("$key, $i) => {\n");
+        push_indent(b, frag.indent + 2);
+        b.push_str("let ");
+        b.push_str(binding);
+        b.push_str(" = ");
+        b.push_str(&d_data);
+        b.push_str(";\n");
+
+        let inner = Frag {
+            base: frag.base,
+            shadowed: child_shadowed,
+            indent: frag.indent + 2,
+            depth: frag.depth + 1,
+            strip: frag.strip,
+        };
+        let handle = self
+            .emit_child_mount(b, &item_comp, anchor, &inner, diags)
+            .unwrap_or_else(|| {
+                // Voided (no @use import): still return a well-formed empty item.
+                let h = self.alloc_child();
+                push_indent(b, inner.indent);
+                b.push_str("const ");
+                b.push_str(&h);
+                b.push_str(" = { root: [] };\n");
+                h
+            });
+
+        push_indent(b, frag.indent + 2);
+        b.push_str("return { node: ");
+        b.push_str(&handle);
+        b.push_str(".root, patch: (");
+        let d_patch = self.alloc_data();
+        b.push_str(&d_patch);
+        b.push_str(") => { (");
+        b.push_str(binding);
+        b.push_str(" = ");
+        b.push_str(&d_patch);
+        b.push_str("); } };\n");
+        push_indent(b, frag.indent + 1);
+        b.push_str("},\n");
+
+        if let Some(key) = key_expr {
+            let d_key = self.alloc_data();
+            let key_js = rewrite_expr(&key, &self.component.reactive_vars, child_shadowed);
+            push_indent(b, frag.indent + 1);
+            b.push_str("keyOf: (");
+            b.push_str(&d_key);
+            b.push_str(") => { const ");
+            b.push_str(binding);
             b.push_str(" = ");
             b.push_str(&d_key);
             b.push_str("; return (");
@@ -2252,6 +2468,9 @@ struct SlotGroup {
 /// in document order.
 fn partition_slots(children: &[TemplateNode]) -> Vec<SlotGroup> {
     let mut default_nodes: Vec<TemplateNode> = Vec::new();
+    // A scoped binding for the DEFAULT slot, from a bare `<template slot-scope="p">`
+    // / `<template #="p">` (default scoped-slot long form). First non-empty wins.
+    let mut default_scoped: Option<String> = None;
     // Named groups in first-seen order: (name, nodes, scoped_binding).
     let mut named: Vec<SlotGroup> = Vec::new();
 
@@ -2259,6 +2478,17 @@ fn partition_slots(children: &[TemplateNode]) -> Vec<SlotGroup> {
         if let TemplateNode::Element(e) = child {
             if e.name == "template" {
                 if let Some((name, scoped)) = template_slot_target(e) {
+                    // A `<template slot-scope="p">` with no `slot=`/`#name` targets
+                    // the DEFAULT slot with a scoped binding — route it to the
+                    // default group (so it merges with any bare default content),
+                    // not to a separate `default`-named group (a duplicate key).
+                    if name == "default" {
+                        default_nodes.extend(e.children.iter().cloned());
+                        if default_scoped.is_none() {
+                            default_scoped = scoped;
+                        }
+                        continue;
+                    }
                     // A named/scoped <template>: its children fill slot `name`.
                     if let Some(g) = named.iter_mut().find(|g| g.name == name) {
                         g.nodes.extend(e.children.iter().cloned());
@@ -2294,7 +2524,7 @@ fn partition_slots(children: &[TemplateNode]) -> Vec<SlotGroup> {
         groups.push(SlotGroup {
             name: "default".to_string(),
             nodes: default_nodes,
-            scoped_binding: None,
+            scoped_binding: default_scoped,
         });
     }
     groups.extend(named);
@@ -2303,8 +2533,10 @@ fn partition_slots(children: &[TemplateNode]) -> Vec<SlotGroup> {
 
 /// If a `<template>` element marks a named slot, returns `(slot_name,
 /// scoped_binding)`. Recognizes `#name`, `#name="binding"`, and `slot="name"`
-/// (with optional `slot-scope="binding"`). Returns `None` for a bare
-/// `<template>` (default-slot content).
+/// (with optional `slot-scope="binding"`). A bare `<template slot-scope="p">`
+/// / `<template #="p">` (no `slot=`/`#name`) targets the `"default"` slot with
+/// scoped binding `p` (Vue-2 default scoped-slot long form). Returns `None` for
+/// a plain bare `<template>` (unscoped default-slot content).
 fn template_slot_target(el: &TemplateElement) -> Option<(String, Option<String>)> {
     // `slot="name"` form (+ optional `slot-scope="binding"`).
     let mut slot_attr: Option<String> = None;
@@ -2334,19 +2566,31 @@ fn template_slot_target(el: &TemplateElement) -> Option<(String, Option<String>)
 
     // `#name` / `#name="binding"` shorthand. The parser classifies `#x` as a
     // Static attr whose name starts with `#`; a value is the scoped binding.
+    // A bare `#="p"` (empty name) is the DEFAULT slot with scoped binding `p`.
     for a in &el.attrs {
         if let TemplateAttr::Static { name, value, .. } = a {
             if let Some(slot) = name.strip_prefix('#') {
-                if slot.is_empty() {
-                    continue;
-                }
                 let scoped = value
                     .as_ref()
                     .map(static_value_text)
                     .filter(|s| !s.is_empty());
+                if slot.is_empty() {
+                    // `#="p"` — default slot, scoped. Bare `#` with no value is
+                    // just default content; let it fall through to bare-template.
+                    if scoped.is_some() {
+                        return Some(("default".to_string(), scoped));
+                    }
+                    continue;
+                }
                 return Some((slot.to_string(), scoped));
             }
         }
+    }
+
+    // `<template slot-scope="p">` with no `slot=` / `#name`: the Vue-2 long form
+    // for the DEFAULT scoped slot. Bind `p` to the default slot's props.
+    if let Some(scope) = slot_scope.filter(|s| !s.is_empty()) {
+        return Some(("default".to_string(), Some(scope)));
     }
     None
 }
@@ -2590,6 +2834,44 @@ fn reads_any(expr: &str, names: &[String]) -> bool {
     }
 }
 
+/// Unwraps a bare `<template>` grouping element used as a control-flow body
+/// (`<template :if="…">a b</template>`): returns its children as the real
+/// content nodes. A `<template>` carrying a slot marker (`slot=` / `#name`) is
+/// NOT unwrapped here (those are handled by slot partitioning); a plain element
+/// or component body is returned as a single-node list unchanged.
+fn unwrap_template_body(body: &TemplateNode) -> Vec<TemplateNode> {
+    if let TemplateNode::Element(e) = body {
+        if e.name == "template" && !is_slot_marked_template(e) {
+            return e.children.clone();
+        }
+    }
+    vec![body.clone()]
+}
+
+/// Whether a `<template>` element marks a named/scoped slot (so it must not be
+/// unwrapped as a plain grouping wrapper).
+fn is_slot_marked_template(el: &TemplateElement) -> bool {
+    el.attrs.iter().any(|a| match a {
+        TemplateAttr::Static { name, .. } => name == "slot" || name.starts_with('#'),
+        _ => false,
+    })
+}
+
+/// Counts the rendered top-level nodes of a node list (elements, components,
+/// control flow, magic tags, non-whitespace text). Insignificant whitespace and
+/// comments do not count. Used to decide whether an unwrapped branch body is a
+/// multi-root node group.
+fn count_rendered_top_level(nodes: &[TemplateNode]) -> usize {
+    nodes
+        .iter()
+        .filter(|n| match n {
+            TemplateNode::Text(t) => !t.is_whitespace(),
+            TemplateNode::Comment(_) => false,
+            _ => true,
+        })
+        .count()
+}
+
 /// Whether a fragment skeleton has slots inserted at its top level (the
 /// fragment root group then includes runtime anchors, so the whole child list
 /// must travel as the block handle).
@@ -2758,10 +3040,18 @@ fn skip_ident(s: &str) -> Option<&str> {
 /// reference to a reactive variable becomes `name.v`. Uses scope-aware
 /// [`module_binding_references`] so shadowed uses are left alone. `hint` is
 /// the deep-mutation detection text (script + template-derived writes).
+///
+/// `prop_names` are the component's `@input` props: they are reactive boxes but
+/// are NOT declared in the script text, so `module_binding_references` (which
+/// only tracks script-declared bindings) never sees them. Their free references
+/// in the script body — a handler reading a prop, a local computed from a prop —
+/// are rewritten to `.v` via a scope-aware free-identifier scan so a prop read
+/// anywhere in the script goes through the box (not the wrapped ref object).
 fn rewrite_script(
     script: &str,
     hint: &str,
     vars: &[ReactiveVar],
+    prop_names: &[String],
     aliases: &std::collections::BTreeMap<&'static str, String>,
     ctx: &str,
 ) -> String {
@@ -2833,6 +3123,32 @@ fn rewrite_script(
             edits.push((start, end, format!("{}: {}.v", r.name, r.name)));
         } else {
             edits.push((end, end, ".v".to_string()));
+        }
+    }
+
+    // (3) `@input` props are reactive boxes that are NOT declared in the script,
+    // so step (2) (script-declared bindings only) misses them. Rewrite their
+    // FREE references in the script body to `.v`, using the scope-aware program
+    // free-identifier scan so a shadowing local (a nested `step` parameter) is
+    // left alone. References inside a rewritten declaration init are skipped —
+    // step (1) already `.v`-rewrote the whole init via `rewrite_expr`.
+    if !prop_names.is_empty() {
+        let prop_set: std::collections::HashSet<&str> =
+            prop_names.iter().map(|s| s.as_str()).collect();
+        if let Ok(free) = lunas_script::free_identifiers_with_spans_program(script) {
+            for (name, range) in free {
+                if !prop_set.contains(name.as_str()) {
+                    continue;
+                }
+                let end = range.end().raw();
+                if decl_ranges
+                    .iter()
+                    .any(|dr| end > dr.start().raw() && end <= dr.end().raw())
+                {
+                    continue;
+                }
+                edits.push((end, end, ".v".to_string()));
+            }
         }
     }
 
@@ -3030,6 +3346,32 @@ fn push_dep_list(b: &mut String, deps: &[u32]) {
 fn js_string(s: &str) -> String {
     let mut out = String::new();
     push_js_string(&mut out, s);
+    out
+}
+
+/// Maps a component `@event` name to its handler-prop key: `save` → `onSave`,
+/// `save-all` → `onSaveAll` (kebab segments camel-cased). Mirrors the runtime's
+/// `eventPropName` (emits.mjs) so the child's `emit(c, "save", …)` finds the
+/// parent's `onSave` handler.
+fn event_prop_name(name: &str) -> String {
+    let mut camel = String::with_capacity(name.len());
+    let mut upper_next = false;
+    for ch in name.chars() {
+        if ch == '-' {
+            upper_next = true;
+        } else if upper_next {
+            camel.extend(ch.to_uppercase());
+            upper_next = false;
+        } else {
+            camel.push(ch);
+        }
+    }
+    let mut out = String::from("on");
+    let mut chars = camel.chars();
+    if let Some(first) = chars.next() {
+        out.extend(first.to_uppercase());
+        out.push_str(chars.as_str());
+    }
     out
 }
 

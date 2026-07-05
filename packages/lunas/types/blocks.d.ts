@@ -41,10 +41,27 @@ export function ifChain(
   makes: Array<() => BlockNodes>
 ): BlockHandle;
 
-/** Options for forBlock; all fields besides `make` are optional. */
+/** One item's builder in mount mode: returns the child root node(s) plus an
+ * optional patch closure that updates the item's data cell on a keyed re-run. */
+export interface MountResult {
+  node: BlockNodes;
+  patch?: (itemData: unknown, index: number) => void;
+}
+
+/** Options for forBlock. Exactly one construction mode is used per call:
+ * - compiled: `html` + `wire` (bulk-innerHTML fast path for element items),
+ * - mount: `mount` (`:for` over a component tag — one mountChild per item),
+ * - make: `make` (generic per-item builder).
+ * All other fields are optional. */
 export interface ForBlockOpts<T = unknown> {
-  /** Build one item; returns node or node array. */
-  make(itemData: T, key: unknown): BlockNodes;
+  /** Generic per-item builder; returns node or node array. */
+  make?(itemData: T, key: unknown, index: number): BlockNodes;
+  /** Compiled-mode item skeleton HTML (bulk innerHTML fast path). */
+  html?: string;
+  /** Compiled-mode per-item wiring; may return a patch closure. */
+  wire?(root: Node, itemData: T, index: number): ((d: T, i: number) => void) | void;
+  /** Mount-mode per-item builder (`:for` over a component). */
+  mount?(itemData: T, key: unknown, index: number): MountResult;
   /** Compiled :key extractor (optional; falls back to item identity/index). */
   keyOf?: KeyOf<T>;
   /** Update an existing item's scope in place (optional). */

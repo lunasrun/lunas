@@ -1,0 +1,5 @@
+html:
+    <button @click="raise()">child</button>
+script:
+    let n = 42
+    function raise(){ props.onSave(n) }

@@ -141,6 +141,33 @@ fn props_seeded_from_input() {
 }
 
 #[test]
+fn prop_read_in_function_body_unwraps() {
+    // A prop read inside the child's own script function/handler body must go
+    // through the box (`.v`), not return the wrapped ref object. Props are not
+    // declared in the script, so the script-binding rewrite misses them — a
+    // scope-aware free-identifier pass rewrites their free references.
+    let js = emit(
+        "@input step:number = 1\nhtml:\n    <button @click=\"go()\">${label}</button>\nscript:\n    let label = \"x\"\n    function go(){ label = \"is \" + step }\n",
+    );
+    assert!(
+        js.contains("function go(){ label.v = \"is \" + step.v }"),
+        "prop read in a handler body unwraps to `.v`: {js}"
+    );
+}
+
+#[test]
+fn prop_read_shadowed_by_local_is_left_alone() {
+    // A nested local named like the prop shadows it and must NOT be rewritten.
+    let js = emit(
+        "@input step:number = 1\nhtml:\n    <p>${label}</p>\nscript:\n    let label = \"x\"\n    function go(){ let step = 9; label = step }\n",
+    );
+    assert!(
+        js.contains("function go(){ let step = 9; label.v = step }"),
+        "shadowing local `step` is not rewritten to `.v`: {js}"
+    );
+}
+
+#[test]
 fn deep_mutation_uses_deepbox() {
     // `o.k = 1` mutates a member, so `o` is reactive (root reported) *and*
     // deeply mutated -> deepBox.
@@ -222,6 +249,75 @@ fn plain_if_emits_ifblock() {
 }
 
 #[test]
+fn template_if_with_multiple_children_unwraps_to_fragment() {
+    // A bare `<template :if>` with several children must NOT leave a literal
+    // `<template>` element in the DOM: its children become the branch content
+    // directly, mounted as a multi-root node group.
+    let js = emit(
+        "html:\n    <div><template :if=\"show\"><span>a</span><span>b</span></template></div>\nscript:\n    let show = true\n    function t(){ show = !show }\n",
+    );
+    assert!(
+        js.contains("const HTML_1 = \"<span>a</span><span>b</span>\";"),
+        "the template wrapper is unwrapped out of the branch skeleton: {js}"
+    );
+    assert!(
+        !js.contains("<template>"),
+        "no literal <template> element survives into the HTML: {js}"
+    );
+    // Multi-root branch: the whole child node group travels together.
+    assert!(
+        js.contains("return Array.from(r0.childNodes);"),
+        "multi-child branch returns the node group: {js}"
+    );
+}
+
+#[test]
+fn if_on_component_mounts_child_in_branch() {
+    // `:if` on a component tag mounts the child only while the branch is live,
+    // inside the ifBlock make closure (so teardown rides the branch scope).
+    let (js, diags) = compile(
+        "@use Child from \"./Child.lunas\"\nhtml:\n    <div><Child :if=\"show\" :n=\"k\"/></div>\nscript:\n    let show = true\n    let k = 3\n    function t(){ show = !show }\n",
+    );
+    let js = js.unwrap();
+    assert!(
+        js.contains("ifBlock(c, a0, [0], () => (show.v), () => {"),
+        "component :if uses ifBlock: {js}"
+    );
+    assert!(
+        js.contains("const ch0 = mountChild(c, a0, Child, { n: () => (k) });"),
+        "child mounted at the branch anchor: {js}"
+    );
+    assert!(
+        js.contains("return ch0.root;"),
+        "branch returns the child root node group: {js}"
+    );
+    assert!(
+        !diags.iter().any(|d| d.message.contains("not supported")),
+        "no unsupported warning: {diags:?}"
+    );
+}
+
+#[test]
+fn if_on_component_reactive_prop_drives_in_branch_scope() {
+    // A reactive prop of a component `:if` branch is driven by a bind emitted
+    // INSIDE the make closure — scoped to the live branch.
+    let js = emit(
+        "@use Child from \"./Child.lunas\"\nhtml:\n    <div><Child :if=\"k > 0\" :n=\"k\"/></div>\nscript:\n    let k = 1\n    function bump(){ k = k + 1 }\n",
+    );
+    // The setProp driving bind appears after the child mount, inside the make.
+    assert!(
+        js.contains("bind(c, [0], () => { ch0.setProp(\"n\", k.v); });"),
+        "driving bind emitted for the reactive prop: {js}"
+    );
+    let mount = js.find("mountChild(c, a0, Child").expect("child mounted");
+    let drive = js.find("ch0.setProp(\"n\"").expect("setProp bind");
+    assert!(
+        drive > mount,
+        "driving bind follows the mount in the make: {js}"
+    );
+}
+
+#[test]
 fn if_elseif_else_emits_ifchain() {
     let js = emit(
         "html:\n    <div><p :if=\"n > 0\">pos ${n}</p><p :elseif=\"n < 0\">neg</p><p :else>zero</p></div>\nscript:\n    let n = 0\n    function set(x){ n = x }\n",
@@ -290,6 +386,50 @@ fn keyed_for_emits_forblock_with_keyof() {
     assert!(
         !js.contains("setAttribute(\"key\""),
         "key is not a DOM attr: {js}"
+    );
+}
+
+#[test]
+fn for_on_component_uses_mount_mode() {
+    // `:for` directly on a component tag uses forBlock mount-mode: one
+    // mountChild per item, props from the loop binding, a patch closure to
+    // refresh the item data, and keyOf for the keyed diff.
+    let (js, diags) = compile(
+        "@use Row from \"./Row.lunas\"\nhtml:\n    <ul><Row :for=\"item of items\" :key=\"item.id\" :label=\"item.label\"/></ul>\nscript:\n    let items = [{id:1,label:\"a\"}]\n    function add(){ items.push({id:2,label:\"b\"}) }\n",
+    );
+    let js = js.unwrap();
+    assert!(
+        js.contains("forBlock(c, a0, [0], () => Array.from((items.v) || []), {"),
+        "iterable reactive on items: {js}"
+    );
+    assert!(
+        js.contains("mount: (d0, $key, $i) => {"),
+        "mount mode (no bulk html/wire): {js}"
+    );
+    assert!(js.contains("let item = d0;"), "item bound from data: {js}");
+    assert!(
+        js.contains("const ch0 = mountChild(c, a0, Row, { label: () => (item.label) });"),
+        "one child mounted per item with item props: {js}"
+    );
+    assert!(
+        js.contains("bind(c, [], () => { ch0.setProp(\"label\", item.label); });"),
+        "item-coupled driving bind (refreshed by runScope): {js}"
+    );
+    assert!(
+        js.contains("return { node: ch0.root, patch: (d1) => { (item = d1); } };"),
+        "returns node + patch to update the item data cell: {js}"
+    );
+    assert!(
+        js.contains("keyOf: (d2) => { const item = d2; return (item.id); },"),
+        ":key becomes keyOf: {js}"
+    );
+    assert!(
+        !js.contains("html: HTML"),
+        "no bulk-innerHTML item skeleton for a component item: {js}"
+    );
+    assert!(
+        !diags.iter().any(|d| d.message.contains("not supported")),
+        "no unsupported warning: {diags:?}"
     );
 }
 
@@ -656,6 +796,63 @@ fn dynamic_component_uses_dynamicblock() {
 }
 
 #[test]
+fn component_event_becomes_on_handler_prop() {
+    // `@save="h($event)"` on a static component tag maps to an `onSave` handler
+    // prop the child raises via emit (no warning, no dropped listener).
+    let (js, diags) = compile(
+        "@use Child from \"./Child.lunas\"\nhtml:\n    <Child @save=\"onSave($event)\"/>\nscript:\n    let log = \"\"\n    function onSave(x){ log = x }\n",
+    );
+    let js = js.unwrap();
+    assert!(
+        js.contains("onSave: ($event) => { onSave($event); }"),
+        "@save -> onSave handler prop: {js}"
+    );
+    assert!(
+        !diags.iter().any(|d| d.message.contains("not supported")),
+        "no unsupported-event warning: {diags:?}"
+    );
+}
+
+#[test]
+fn component_kebab_event_camel_cases() {
+    // `@save-all` -> `onSaveAll`.
+    let js = emit(
+        "@use Child from \"./Child.lunas\"\nhtml:\n    <Child @save-all=\"go()\"/>\nscript:\n    let x = 1\n    function go(){ x = 2 }\n",
+    );
+    assert!(
+        js.contains("onSaveAll: ($event) => { go(); }"),
+        "kebab event camel-cased to onSaveAll: {js}"
+    );
+}
+
+#[test]
+fn dynamic_component_event_and_ref() {
+    // `@save` on `<component :is>` wires the onSave prop; `:ref` assigns the
+    // (stable) dynamicBlock handle to the box — NOT a forwarded prop.
+    let (js, diags) = compile(
+        "@use Foo from \"./Foo.lun\"\nhtml:\n    <component :is=\"view\" @save=\"h($event)\" :ref=\"box\"/>\nscript:\n    let view = Foo\n    let box\n    function h(x){ box = x }\n",
+    );
+    let js = js.unwrap();
+    assert!(
+        js.contains("onSave: ($event) => { h($event); }"),
+        "@save on <component :is> -> onSave prop: {js}"
+    );
+    // The ref box is assigned the dynamicBlock handle, and `ref` is NOT a prop.
+    assert!(
+        js.contains("box.v = ch0;"),
+        ":ref assigns the mount handle: {js}"
+    );
+    assert!(
+        !js.contains("ref: () =>") && !js.contains(".setProp(\"ref\""),
+        ":ref is not forwarded as a prop: {js}"
+    );
+    assert!(
+        !diags.iter().any(|d| d.message.contains("not supported")),
+        "no unsupported warnings: {diags:?}"
+    );
+}
+
+#[test]
 fn dynamic_component_without_is_is_voided() {
     let (js, diags) = compile("html:\n    <component/>\n");
     assert!(js.is_some());
@@ -863,6 +1060,37 @@ fn parent_scoped_slot_binding_names_param() {
     assert!(
         js.contains("slotContent(c, (p) => {"),
         "scoped binding names the inner build param: {js}"
+    );
+}
+
+#[test]
+fn parent_default_scoped_slot_long_form_binds() {
+    // `<template slot-scope="p">` with no `slot=`/`#` is the long form of the
+    // default scoped slot: `p` must bind the default slot's props.
+    let js = emit(
+        "@use Card from \"./Card.lunas\"\nhtml:\n    <Card><template slot-scope=\"p\">${p.item}</template></Card>\n",
+    );
+    assert!(
+        js.contains("default: (slotProps, onCleanup) => slotContent(c, (p) => {"),
+        "bare slot-scope binds the default slot's scoped param `p`: {js}"
+    );
+    // It must NOT emit a duplicate `default` object key.
+    assert_eq!(
+        js.matches("default: (slotProps").count(),
+        1,
+        "exactly one default slot entry: {js}"
+    );
+}
+
+#[test]
+fn parent_default_scoped_slot_hash_shorthand_binds() {
+    // `<template #="p">` (bare `#` with a value) is the same default scoped slot.
+    let js = emit(
+        "@use Card from \"./Card.lunas\"\nhtml:\n    <Card><template #=\"p\">${p.item}</template></Card>\n",
+    );
+    assert!(
+        js.contains("default: (slotProps, onCleanup) => slotContent(c, (p) => {"),
+        "bare #=\"p\" binds the default scoped slot: {js}"
     );
 }
 

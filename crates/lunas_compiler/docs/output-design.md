@@ -211,7 +211,13 @@ export function setStyle(el, staticStyle, v) { /* merge staticStyle with normSty
 
 // --- control flow (anchors are runtime text nodes) ---
 export function ifBlock(c, before, deps, cond, make) { /* insert/remove make() at a text anchor */ }
-export function forBlock(c, into, deps, items, make) { /* keyed list at a text anchor */ }
+export function forBlock(c, into, deps, items, opts) { /* keyed list at a text anchor.
+                                                          opts: compiled { html, wire } (bulk
+                                                          innerHTML), make { make } (per-item
+                                                          builder), or mount { mount } — the
+                                                          `:for`-over-a-component mode where
+                                                          opts.mount(d,key,i) → { node, patch }
+                                                          mounts one child per item. keyOf optional */ }
 export function mountChild(c, before, Child, props) { /* Child(props) inserted at a text anchor;
                                                           returns { root, ctx, setProp(name,value),
                                                           unmount() } — setProp drives a reactive
@@ -382,8 +388,8 @@ No signal-tracking stack, no VDOM, no per-node effect objects.
 | `@event="h()"` | `on(el, "event", h)` — box setters notify, so no explicit write mask needed |
 | `@event="n = n+1"` / `@event="n++"` / `@event="o.k = v"` (inline mutation) | `on(el, "event", () => { n.v = n.v+1 })` — the handler body is `.v`-rewritten (program-mode) so the inline assignment/update reaches the box setter and marks the var; the mutated binding is numbered reactive (its assignment target counts as a mutation). Multiple statements (`a++; b++`) and member/index writes (→ `deepBox`) are supported |
 | static `class="a ${x}"` | text nodes / attr set; interpolations become `bind`s |
-| `:if` / `:elseif` / `:else` | one `ifBlock` chain per cascade, anchored; branch built by its own `innerHTML` when shown |
-| `:for="n of items"` | `forBlock`; **initial render = one `innerHTML` of the concatenated items**, updates = keyed diff |
+| `:if` / `:elseif` / `:else` | one `ifBlock` chain per cascade, anchored; branch built by its own `innerHTML` when shown. A branch body that is a **component tag** (`<Child :if=…/>`) mounts the child via `mountChild` inside the branch `make` (teardown rides the branch scope); a bare multi-child `<template :if>` unwraps into a multi-root branch (no literal `<template>`) |
+| `:for="n of items"` | `forBlock`; **initial render = one `innerHTML` of the concatenated items**, updates = keyed diff. A **component** body (`<Child :for=…/>`) uses forBlock *mount mode*: one `mountChild` per item (props from the item) instead of a static item skeleton; the item `make` returns `{ node, patch }` and the child teardown rides the item scope |
 | `<Child :p="e"/>` | `mountChild(c, anchor, Child, { p: () => e, static: "x" })` at an anchor; reactive props are getters, static props are values (see below) |
 | `<Child @save="h($event)"/>` | an `onSave: ($event) => h($event)` entry on the mountChild props object; the child raises it with `emit(c, "save", payload)` (§5, c-emits). `@save-all` → `onSaveAll` (camel-cased). Handler runs in the parent; it does not auto-mark the parent dirty |
 | `@input name:type = v` | `const name = prop(c, "name", i, props.name, v)` at the top of `setup` — every prop is a reactive box (see below) |
@@ -391,14 +397,14 @@ No signal-tracking stack, no VDOM, no per-node effect objects.
 | `:style="e"` | `setStyle(el, "<static style>", e)` — `e` is `string \| { camelCaseProp: v }` (arrays merge), camelCase → kebab, merged with the static `style` attr (`normStyle`) |
 | `:html="e"` | `el.innerHTML = e` (initial + reactive). **XSS caveat:** the value is inserted verbatim — never bind untrusted input. Children on the same element are overwritten (a warning is emitted) |
 | `:ref="name"` | `name.v = el` at wire time — exposes the element/child to the script via the reactive box `name` (declare `let name;` in script; the ref assignment makes it reactive so the resolver numbers it). Component refs expose the mount handle |
-| `<component :is="e" :p="…"/>` | `dynamicBlock(c, anchor, deps, () => e, { p: () => … })` — remounts the child factory `e` at the anchor when `:is` changes; props flow via `setProp`. Any `@use` factory is importable by name (all `@use` imports are emitted when a `<component>` is present) |
+| `<component :is="e" :p="…" @ev="h($event)" :ref="r"/>` | `dynamicBlock(c, anchor, deps, () => e, { p: () => …, onEv: ($event) => { h($event) } })` — remounts the child factory `e` at the anchor when `:is` changes; props flow via `setProp`; `@ev` listeners wire as `on<Ev>` handler props (same as a static component tag); `:ref="r"` assigns the (stable) dynamicBlock handle to the box `r`. Any `@use` factory is importable by name (all `@use` imports are emitted when a `<component>` is present) |
 | `<teleport to="sel">…</teleport>` | `teleportBlock(c, anchor, () => "sel", () => {…build children…})` — children render into `document.querySelector(sel)` (or an element via `:to="e"`) instead of inline; nodes removed on teardown |
 | `<slot>fallback</slot>` (child) | `slotBlock(c, anchor, props.$slots && props.$slots["default"], () => {…fallback fragment…})` — renders the parent's default-slot content, else its own fallback |
 | `<slot name="x"/>` (child) | `slotBlock(c, anchor, props.$slots && props.$slots["x"], fallbackOrNull)` — a named slot keyed by `x` |
 | `<slot :item="e"/>` (child, scoped) | above **+** a trailing `() => ({ item: (e) })` scoped-props getter; the value flows up to the parent's slot content |
 | `<Child>…</Child>` (parent, bare children) | a `default` entry on the mountChild `$slots` object: `default: (slotProps, onCleanup) => slotContent(c, (slotProps) => {…wire content in the PARENT…}, slotProps, onCleanup)` |
 | `<template #x>…</template>` / `<template slot="x">…</template>` (parent) | an `x` entry on `$slots` (named slot). Bare `<template>` inlines its children into the `default` group |
-| `<template #x="p">…</template>` (parent, scoped) | the inner build binds the scoped-slot props to `p`: `slotContent(c, (p) => {…read p.…}, slotProps, onCleanup)`. `slot-scope="p"` is the long form |
+| `<template #x="p">…</template>` (parent, scoped) | the inner build binds the scoped-slot props to `p`: `slotContent(c, (p) => {…read p.…}, slotProps, onCleanup)`. `slot="x" slot-scope="p"` is the long form. A bare `<template slot-scope="p">` / `<template #="p">` (no `slot=`/`#name`) scopes the **default** slot |
 
 > **Scoped-slot reactivity (restricted form).** The child's scoped props
 > (`<slot :item="e"/>`) are captured once, at slot build time, via

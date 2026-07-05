@@ -154,7 +154,11 @@ html:
 
 - The child's `<slot :count="rows">` exposes `{ count: rows }` up to the parent.
 - The parent binds those props to `s` via `#foot="s"` and reads `s.count`.
-- `slot-scope="s"` is the long form of `#foot="s"`.
+- `slot-scope="s"` is the long form of `#foot="s"`. On a named slot it pairs with
+  `slot="foot"` (`<template slot="foot" slot-scope="s">`).
+- **Default scoped slot.** A `<template slot-scope="p">` with no `slot=`/`#name`
+  (equivalently `<template #="p">`) binds `p` to the **default** slot's props —
+  the Vue-2 long form for scoping the default slot.
 
 ### How scoped slots compile
 

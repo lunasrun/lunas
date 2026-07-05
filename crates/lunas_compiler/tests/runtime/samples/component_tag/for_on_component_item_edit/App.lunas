@@ -1,0 +1,6 @@
+@use Row from "./Row.lunas"
+html:
+    <div><button @click="edit()">e</button><ul><Row :for="item of items" :key="item.id" :n="item.n"/></ul></div>
+script:
+    let items = [{id:1,n:10},{id:2,n:20}]
+    function edit(){ items[0].n = 99 }

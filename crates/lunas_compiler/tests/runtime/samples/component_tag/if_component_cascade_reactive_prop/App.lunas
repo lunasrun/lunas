@@ -1,0 +1,6 @@
+@use Child from "./Child.lunas"
+html:
+    <div><button @click="bump()">b</button><Child :if="k > 0" :n="k"/><p :else>none</p></div>
+script:
+    let k = 1
+    function bump(){ k = k + 1 }

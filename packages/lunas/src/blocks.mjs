@@ -192,9 +192,21 @@ export function forBlock(c, anchor, deps, items, opts) {
     return root;
   };
 
+  // Build one item in mount mode (`:for` directly on a component tag): no static
+  // item HTML — `opts.mount(d, key, i)` mounts the child and returns
+  // `{ node, patch }`, where `node` is the child root (single node or multi-root
+  // group) used as the reconciler handle, and `patch(d, i)` updates the item's
+  // data cell so a re-run drives the child's props with the new item value.
+  const mountOne = (d, key, i) => {
+    const r = opts.mount(d, key, i);
+    const node = r && r.node !== undefined ? r.node : r;
+    if (r && r.patch) patches.set(node, r.patch);
+    return node;
+  };
+
   const makeItem = (d, key, i) => {
     const r = inScopeAt(c, home, () =>
-      compiled ? buildOne(d, i) : opts.make(d, key, i)
+      compiled ? buildOne(d, i) : opts.mount ? mountOne(d, key, i) : opts.make(d, key, i)
     );
     scopes.set(r.result, r.scope);
     return r.result;
