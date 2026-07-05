@@ -31,6 +31,13 @@ Claude drives development from the roadmap autonomously:
    and open a PR with `gh pr create`. The orchestrator merges PRs (squash)
    once checks pass — merging is pre-authorized, no need to ask. Merge
    sequentially; rebase follow-ups on fresh `main`.
+   - Branch prefix convention (also drives automatic PR labeling via
+     `add-labels.yml`): `feat/` features, `fix/` bug fixes, `refactor/`
+     refactors, `chore/` chores, `docs/` documentation, `version/` release
+     version bumps. Those same labels categorize PRs into the auto-generated
+     beta release PR (`pr-release-beta.yml`, `git-pr-release` from `main`
+     into `beta`), so picking the right prefix keeps the release notes
+     accurate.
 4. **Quality gate before any PR:** `cargo fmt --check`, `cargo clippy
    --workspace -D warnings`, `cargo test --workspace` (run inside `crates/`),
    plus the runtime test driver (`node packages/lunas/test/run-all.mjs`) for
