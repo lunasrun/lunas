@@ -1,0 +1,5 @@
+html:
+    <button @click="inc()">c=${c}</button>
+script:
+    let c = 0
+    function inc(){ c++ }

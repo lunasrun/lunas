@@ -1,0 +1,5 @@
+html:
+    <button @click="bump()">props=${props}</button>
+script:
+    let props = 5
+    function bump(){ props += 10 }

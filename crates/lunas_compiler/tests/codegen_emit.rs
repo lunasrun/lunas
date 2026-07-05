@@ -1089,6 +1089,93 @@ fn arbitrary_sources_never_panic_in_compile() {
     }
 }
 
+// --- compiler-injected name hygiene ----------------------------------------
+
+#[test]
+fn user_var_named_c_mangles_context_param() {
+    // `let c` collides with the injected context param. The param is renamed to
+    // `$$c` and every context reference (box/bind/refs/anchor) follows suit,
+    // while the user's own `const c` keeps its name.
+    let js = emit(
+        "html:\n    <button @click=\"inc()\">${c}</button>\nscript:\n    let c = 0\n    function inc(){ c++ }\n",
+    );
+    assert!(
+        js.contains("($$c, props) => {"),
+        "context param mangled in setup signature: {js}"
+    );
+    assert!(
+        js.contains("const c = box($$c, 0, 0)"),
+        "user `const c` intact, boxed against $$c: {js}"
+    );
+    assert!(js.contains("refs($$c.root,"), "refs use $$c.root: {js}");
+    assert!(js.contains("bind($$c, [0]"), "bind uses $$c: {js}");
+    // The user identifier is still rewritten to `.v` in the template.
+    assert!(js.contains("= `${c.v}`;"), "user c read as c.v: {js}");
+    // No accidental bare-`c` context reference survives.
+    assert!(!js.contains("box(c,"), "no bare box(c,: {js}");
+    assert!(!js.contains("bind(c,"), "no bare bind(c,: {js}");
+}
+
+#[test]
+fn user_var_named_props_mangles_props_param() {
+    // `let props` collides with the injected props param → `$$props`.
+    let js = emit("html:\n    <p>${props}</p>\nscript:\n    let props = 5\n");
+    assert!(
+        js.contains("(c, $$props) => {"),
+        "props param mangled: {js}"
+    );
+    assert!(js.contains("let props = 5"), "user props intact: {js}");
+}
+
+#[test]
+fn prop_named_c_mangles_context_param() {
+    // An `@input c` prop also reserves `c`: the injected context becomes `$$c`
+    // and the prop is boxed via `prop($$c, "c", …, props.c, …)`.
+    let js = emit("@input c:number = 0\nhtml:\n    <p>${c}</p>\n");
+    assert!(js.contains("($$c, props) => {"), "context mangled: {js}");
+    assert!(
+        js.contains("prop($$c, \"c\", 0, props.c,"),
+        "prop boxed against $$c, seeded from props.c: {js}"
+    );
+}
+
+#[test]
+fn no_collision_keeps_bare_c_and_props() {
+    // The common case is untouched: bare `c` / `props` params and references.
+    let js = emit(
+        "html:\n    <p>${count}</p>\nscript:\n    let count = 0\n    function f(){ count++ }\n",
+    );
+    assert!(js.contains("(c, props) => {"), "bare params: {js}");
+    assert!(js.contains("box(c, 0, 0)"), "bare box(c,: {js}");
+    assert!(!js.contains("$$c"), "no mangling when free: {js}");
+}
+
+#[test]
+fn user_var_named_e0_mangles_generated_locals() {
+    // A user `let e0` collides with a generated element-ref local. Every
+    // generated local switches to the `$$` prefix; the context param `c` is
+    // untouched (no collision there).
+    let js = emit(
+        "html:\n    <button @click=\"inc()\">${e0}</button>\nscript:\n    let e0 = 0\n    function inc(){ e0++ }\n",
+    );
+    assert!(js.contains("(c, props) => {"), "context param bare: {js}");
+    // The user `e0` is reactive (mutated), so it is boxed under its own name
+    // against the bare context `c`.
+    assert!(
+        js.contains("const e0 = box(c, 0, 0)"),
+        "user e0 boxed: {js}"
+    );
+    assert!(
+        js.contains("const [$$e0] = refs(c.root,"),
+        "generated ref uses $$e0 prefix: {js}"
+    );
+    // No bare generated `e0`/`t0` that would clash with the user's `e0`.
+    assert!(
+        !js.contains("const [e0]"),
+        "no bare generated e0 local: {js}"
+    );
+}
+
 #[test]
 fn deeply_nested_interpolation_and_attrs_never_panic() {
     // Build increasingly nested element structures with a dynamic at each level.

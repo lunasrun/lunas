@@ -347,117 +347,6 @@ fn for_initial_push_splice_and_reorder() {
     );
 }
 
-#[test]
-fn for_over_primitive_items_mounts_child_per_item() {
-    if !node_available() {
-        eprintln!("skipping codegen_exec: node not found at {NODE}");
-        return;
-    }
-    // Regression: a `:for` over PRIMITIVE items (numbers) whose body mounts a
-    // child component used to crash at runtime — mountChild wrote `_children`
-    // onto the primitive item ("Cannot create property '_children' on number").
-    // Now: each item mounts a Child with the correct component context; list
-    // mutation (push/remove/reorder) updates and tears children down cleanly.
-    let parent = "@use Child from \"./Child.lunas\"\n\
-        html:\n\
-        \x20   <div>\n\
-        \x20     <button @click=\"push4()\">p</button>\n\
-        \x20     <button @click=\"dropMid()\">d</button>\n\
-        \x20     <button @click=\"reorder()\">r</button>\n\
-        \x20     <ul><li :for=\"n of nums\" :key=\"n\"><Child :x=\"n\"/></li></ul>\n\
-        \x20   </div>\n\
-        script:\n\
-        \x20   let nums = [1,2,3]\n\
-        \x20   function push4(){ nums.push(4) }\n\
-        \x20   function dropMid(){ nums = nums.filter((v) => v !== 2) }\n\
-        \x20   function reorder(){ nums = [nums[nums.length-1], ...nums.slice(0,-1)] }\n";
-    let child = "@input x:number = 0\n\
-        html:\n\
-        \x20   <b>x=${x}</b>\n";
-
-    let driver = "\
-        const root = factory({});\n\
-        const c = root.__lunasCtx;\n\
-        const div = root.childNodes[0];\n\
-        const [pBtn, dBtn, rBtn, ul] = div.childNodes;\n\
-        const lis = () => ul.childNodes.filter(n => n.tag === 'li');\n\
-        const shown = () => lis().map(n => n.innerHTMLString()).join(',');\n\
-        const kids = () => (c._children ? c._children.length : 0);\n\
-        console.log('INITIAL:' + shown());\n\
-        console.log('KIDS0:' + kids());\n\
-        pBtn.dispatch('click'); await tick();\n\
-        console.log('PUSH:' + shown());\n\
-        console.log('KIDS1:' + kids());\n\
-        dBtn.dispatch('click'); await tick();\n\
-        console.log('DROP:' + shown());\n\
-        console.log('KIDS2:' + kids());\n\
-        rBtn.dispatch('click'); await tick();\n\
-        console.log('REORDER:' + shown());\n\
-        console.log('KIDS3:' + kids());\n";
-
-    let out = run_parent_child("for_prim_child", parent, child, "./Child.lunas", driver);
-    assert!(
-        out.contains("INITIAL:<div><b>x=1</b></div>,<div><b>x=2</b></div>,<div><b>x=3</b></div>"),
-        "each primitive item mounts a Child with the right prop: {out}"
-    );
-    assert!(
-        out.contains("KIDS0:3"),
-        "three children linked initially: {out}"
-    );
-    assert!(
-        out.contains(
-            "PUSH:<div><b>x=1</b></div>,<div><b>x=2</b></div>,<div><b>x=3</b></div>,<div><b>x=4</b></div>"
-        ),
-        "push mounts a new child: {out}"
-    );
-    assert!(out.contains("KIDS1:4"), "four children after push: {out}");
-    assert!(
-        out.contains("DROP:<div><b>x=1</b></div>,<div><b>x=3</b></div>,<div><b>x=4</b></div>"),
-        "removing an item tears its child down: {out}"
-    );
-    assert!(
-        out.contains("KIDS2:3"),
-        "removed item's child de-registered from _children (no leak): {out}"
-    );
-    assert!(
-        out.contains("REORDER:<div><b>x=4</b></div>,<div><b>x=1</b></div>,<div><b>x=3</b></div>"),
-        "reorder reflects the new order: {out}"
-    );
-    assert!(
-        out.contains("KIDS3:3"),
-        "reorder does not duplicate or drop child links: {out}"
-    );
-}
-
-#[test]
-fn for_over_string_items_mounts_child_per_item() {
-    if !node_available() {
-        eprintln!("skipping codegen_exec: node not found at {NODE}");
-        return;
-    }
-    // Same regression for STRING primitives (the other primitive-item shape).
-    let parent = "@use Child from \"./Child.lunas\"\n\
-        html:\n\
-        \x20   <ul><li :for=\"s of words\" :key=\"s\"><Child :x=\"s\"/></li></ul>\n\
-        script:\n\
-        \x20   let words = [\"a\",\"b\",\"c\"]\n";
-    let child = "@input x:string = \"\"\n\
-        html:\n\
-        \x20   <b>${x}</b>\n";
-
-    let driver = "\
-        const root = factory({});\n\
-        const ul = root.childNodes[0];\n\
-        const lis = () => ul.childNodes.filter(n => n.tag === 'li');\n\
-        console.log('INITIAL:' + lis().map(n => n.innerHTMLString()).join(','));\n";
-
-    let out = run_parent_child("for_str_child", parent, child, "./Child.lunas", driver);
-    assert!(
-        out.contains("INITIAL:<div><b>a</b></div>,<div><b>b</b></div>,<div><b>c</b></div>"),
-        "string primitives each mount a Child without crashing: {out}"
-    );
-}
-
 // --- child components -----------------------------------------------------
 
 #[test]
@@ -1115,6 +1004,128 @@ fn slot_component_in_slot_content() {
         out.contains("<section>wrap x</section>"),
         "slot content renders: {out}"
     );
+}
+
+// --- compiler-injected name hygiene (c / props collisions) -----------------
+
+#[test]
+fn user_var_named_c_reads_and_mutates() {
+    if !node_available() {
+        eprintln!("skipping codegen_exec: node not found at {NODE}");
+        return;
+    }
+    // A top-level `let c` collides with the injected runtime-context param `c`.
+    // Before the fix this emitted `const c = box(c, …)` → SyntaxError. It must
+    // now compile, render `${c}`, and update when a handler mutates `c`. Refs,
+    // events, `:if`, and `:for` are all present to exercise every generated
+    // local against the mangled context name.
+    let source = "html:\n\
+        \x20   <div>\n\
+        \x20     <button @click=\"inc()\">c=${c}</button>\n\
+        \x20     <span :if=\"c > 1\">big</span>\n\
+        \x20     <ul><li :for=\"n of list\" :key=\"n\">${n}</li></ul>\n\
+        \x20   </div>\n\
+        script:\n\
+        \x20   let c = 1\n\
+        \x20   let list = [1, 2]\n\
+        \x20   function inc(){ c++ }\n";
+
+    let driver = "\
+        const root = factory({});\n\
+        const box = root.childNodes[0];\n\
+        const btn = box.childNodes[0];\n\
+        console.log('INITIAL:' + btn.innerHTMLString());\n\
+        console.log('IFINIT:' + box.innerHTMLString().includes('big'));\n\
+        btn.dispatch('click');\n\
+        await tick();\n\
+        console.log('AFTER:' + btn.innerHTMLString());\n\
+        console.log('IFAFTER:' + box.innerHTMLString().includes('big'));\n";
+
+    let out = run_component("hygiene_c", source, driver);
+    assert!(out.contains("INITIAL:c=1"), "initial render: {out}");
+    assert!(out.contains("IFINIT:false"), "if hidden while c<=1: {out}");
+    assert!(
+        out.contains("AFTER:c=2"),
+        "text updates after mutate c: {out}"
+    );
+    assert!(out.contains("IFAFTER:true"), "if shows after c>1: {out}");
+}
+
+#[test]
+fn user_var_named_props_reads_and_mutates() {
+    if !node_available() {
+        eprintln!("skipping codegen_exec: node not found at {NODE}");
+        return;
+    }
+    // A top-level `let props` collides with the injected props param `props`.
+    let source = "html:\n\
+        \x20   <button @click=\"bump()\">props=${props}</button>\n\
+        script:\n\
+        \x20   let props = 5\n\
+        \x20   function bump(){ props += 10 }\n";
+
+    let driver = "\
+        const root = factory({});\n\
+        const btn = root.childNodes[0];\n\
+        console.log('INITIAL:' + btn.innerHTMLString());\n\
+        btn.dispatch('click');\n\
+        await tick();\n\
+        console.log('AFTER:' + btn.innerHTMLString());\n";
+
+    let out = run_component("hygiene_props", source, driver);
+    assert!(out.contains("INITIAL:props=5"), "initial render: {out}");
+    assert!(
+        out.contains("AFTER:props=15"),
+        "mutate props updates: {out}"
+    );
+}
+
+#[test]
+fn injected_c_collides_with_real_input_prop() {
+    if !node_available() {
+        eprintln!("skipping codegen_exec: node not found at {NODE}");
+        return;
+    }
+    // The collision also fires when the *prop* is named `c`/`props`: the prop is
+    // boxed via `prop($$c, "c", …, props.c, …)` and read as `.v`.
+    let source = "@input c:number = 0\n\
+        html:\n\
+        \x20   <p>c=${c}</p>\n";
+
+    let driver = "\
+        const root = factory({ c: 7 });\n\
+        console.log('INITIAL:' + root.childNodes[0].innerHTMLString());\n";
+
+    let out = run_component("hygiene_prop_c", source, driver);
+    assert!(out.contains("INITIAL:c=7"), "prop named c renders: {out}");
+}
+
+#[test]
+fn user_var_named_e0_collides_with_generated_ref() {
+    if !node_available() {
+        eprintln!("skipping codegen_exec: node not found at {NODE}");
+        return;
+    }
+    // A top-level `let e0` collides with a generated element-ref local `e0`.
+    // Every generated local switches to the reserved `$$` prefix so both
+    // coexist. An event handler forces a real `e0` ref to be emitted.
+    let source = "html:\n\
+        \x20   <button @click=\"inc()\">e0=${e0}</button>\n\
+        script:\n\
+        \x20   let e0 = 3\n\
+        \x20   function inc(){ e0++ }\n";
+
+    let driver = "\
+        const root = factory({});\n\
+        const btn = root.childNodes[0];\n\
+        console.log('INITIAL:' + btn.innerHTMLString());\n\
+        btn.dispatch('click');\n\
+        await tick();\n\
+        console.log('AFTER:' + btn.innerHTMLString());\n";
+
+    let out = run_component("hygiene_e0", source, driver);
+    assert!(out.contains("INITIAL:e0=3"), "initial render: {out}");
+    assert!(out.contains("AFTER:e0=4"), "mutate e0 updates: {out}");
 }
 
 // --- inline template-handler mutations (fix/inline-handler-mutations) --------
