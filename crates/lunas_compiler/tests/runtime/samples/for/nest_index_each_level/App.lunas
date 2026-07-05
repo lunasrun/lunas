@@ -1,0 +1,4 @@
+html:
+    <div :for="[r, row] of grid.entries()" :key="r" class="row"><span :for="[c, v] of row.entries()" :key="c" class="cell">${r}${c}:${v}</span></div>
+script:
+    let grid = [["a","b"],["c","d"]]

@@ -1,0 +1,4 @@
+html:
+    <ul><li :for="n of nums">${n}</li></ul>
+script:
+    let nums = [5, 5, 5]

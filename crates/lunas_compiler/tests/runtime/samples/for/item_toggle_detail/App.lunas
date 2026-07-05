@@ -1,0 +1,5 @@
+html:
+    <ul><li :for="item of items" :key="item.id"><button class="t" @click="tog(item.id)">${item.label}</button><span :if="item.open" class="d">detail</span></li></ul>
+script:
+    let items = [{id:1,label:"a",open:false},{id:2,label:"b",open:false}]
+    function tog(id){ items = items.map(it => it.id === id ? {...it, open: !it.open} : it) }

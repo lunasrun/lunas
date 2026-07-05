@@ -1,0 +1,8 @@
+html:
+    <div>
+        <button class="go" @click="go()">go</button>
+        <ul><li :for="g of groups" :key="g.id"><b class="gid">${g.id}</b><span :for="c of g.cells" :key="c" class="c">${c}</span></li></ul>
+    </div>
+script:
+    let groups = [{id:1,cells:[1,2]},{id:2,cells:[3,4]}]
+    function go(){ groups = [groups[1], groups[0]] }

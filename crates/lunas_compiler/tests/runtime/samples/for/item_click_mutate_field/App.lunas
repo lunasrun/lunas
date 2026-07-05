@@ -1,0 +1,5 @@
+html:
+    <ul><li :for="item of items" :key="item.id"><span>${item.n}</span><button class="inc" @click="inc(item.id)">+</button></li></ul>
+script:
+    let items = [{id:1,n:0},{id:2,n:0}]
+    function inc(id){ items = items.map(it => it.id === id ? {...it, n: it.n + 1} : it) }

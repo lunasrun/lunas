@@ -1,0 +1,4 @@
+html:
+    <table><tr :for="[r, row] of grid.entries()" :key="r"><td :for="[c, val] of row.entries()" :key="c">${r},${c}=${val}</td></tr></table>
+script:
+    let grid = [[1,2],[3,4]]

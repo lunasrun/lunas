@@ -1,0 +1,4 @@
+html:
+    <ul><li :for="n of nums" :key="n"><span :if="n < 0">neg</span><span :elseif="n === 0">zero</span><span :else>pos</span></li></ul>
+script:
+    let nums = [-1, 0, 5]

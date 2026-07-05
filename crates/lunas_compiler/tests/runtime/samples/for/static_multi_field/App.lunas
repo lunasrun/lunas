@@ -1,0 +1,4 @@
+html:
+    <ul><li :for="p of pts" :key="p.id">(${p.x},${p.y})</li></ul>
+script:
+    let pts = [{id:1,x:0,y:1},{id:2,x:2,y:3}]

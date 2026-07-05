@@ -1,0 +1,8 @@
+html:
+    <div>
+        <button class="go" @click="go()">go</button>
+        <ul><li :for="item of items" :key="item.id">${item.n}</li></ul>
+    </div>
+script:
+    let items = [{id:1,n:10},{id:2,n:20}]
+    function go(){ items[0].n = 99 }

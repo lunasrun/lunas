@@ -1,0 +1,1 @@
+{ "description": "no :key, duplicate primitives -> index-fallback identity" }

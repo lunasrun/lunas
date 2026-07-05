@@ -1,0 +1,1 @@
+{ "description": "duplicate primitive keys -> index fallback; order still exact" }

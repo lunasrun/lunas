@@ -1,0 +1,4 @@
+html:
+    <ul><li :for="[k, v] of pairs" :key="k">${k}=${v}</li></ul>
+script:
+    let pairs = Object.entries({a:1, b:2, c:3})

@@ -1,0 +1,4 @@
+html:
+    <ul><li :for="s of items" :key="s">${s}</li></ul>
+script:
+    let items = ["a & b", "c < d", "e > f"]
