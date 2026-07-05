@@ -81,3 +81,12 @@ export {
 export type { Store, StoreField, Unsubscribe } from "./store.js";
 
 export { createStore, useStore, derivedStore } from "./store.js";
+
+export type {
+  AsyncModule,
+  AsyncLoader,
+  AsyncComponentOptions,
+  SuspenseHandle,
+} from "./async.js";
+
+export { asyncComponent, mountAsyncChild, suspenseBlock } from "./async.js";

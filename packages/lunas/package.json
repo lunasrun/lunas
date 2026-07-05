@@ -70,6 +70,10 @@
       "types": "./types/router.d.ts",
       "import": "./src/router.mjs"
     },
+    "./async": {
+      "types": "./types/async.d.ts",
+      "import": "./src/async.mjs"
+    },
     "./package.json": "./package.json"
   },
   "scripts": {

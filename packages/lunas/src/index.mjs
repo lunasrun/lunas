@@ -53,3 +53,5 @@ export {
   routerOutlet,
   routerLink,
 } from "./router.mjs";
+
+export { asyncComponent, mountAsyncChild, suspenseBlock } from "./async.mjs";
