@@ -3,7 +3,10 @@
 //! excluding names bound by params, locals, block scopes, catch clauses, named
 //! fn/class expressions, and honoring shadowing at every nesting level.
 
-use lunas_script::{free_identifiers, free_identifiers_with_spans};
+use lunas_script::{
+    free_identifiers, free_identifiers_with_spans, free_identifiers_with_spans_program,
+    module_binding_references,
+};
 
 fn free(code: &str) -> Vec<String> {
     free_identifiers(code).expect("parse ok")
@@ -96,66 +99,112 @@ fn free_class_decl_in_block_bound() {
 
 // --- for headers ---
 //
-// KNOWN LIMITATION: `ScopedFreeCollector` does not open a scope for a `for` /
-// `for-of` / `for-in` header, so the loop binding leaks and is reported as a
-// free read. These tests pin that current contract; if for-header scoping is
-// added, update them (the loop variable should then disappear from the set).
+// `ScopedFreeCollector` opens a scope for a `for` / `for-of` / `for-in` header
+// that covers the header AND body: the loop binding is not a free read. Only a
+// `VarDecl` init/head binds — a bare-expression C-style init or a bare-pattern
+// for-of/for-in head (`for (x of xs)`) assigns an existing binding and stays
+// free.
 
 #[test]
-fn free_for_of_binding_leaks_current_behavior() {
-    // `x` (loop binding) leaks in source order alongside the genuine frees.
+fn free_for_of_binding_scoped() {
+    // `x` (loop binding) is scoped; only the genuine frees remain, in order.
     assert_eq!(
         free("(function(){ for (const x of items) { total += x } return total })"),
-        ["x", "items", "total", "x", "total"]
+        ["items", "total", "total"]
     );
 }
 
 #[test]
-fn free_for_in_binding_leaks_current_behavior() {
+fn free_for_in_key_scoped() {
     assert_eq!(
         free("(function(){ for (const k in obj) { use(k) } })"),
-        ["k", "obj", "use", "k"]
+        ["obj", "use"]
     );
 }
 
 #[test]
-fn free_c_style_for_header_binding_leaks_current_behavior() {
-    // `i` from the header is not scoped and leaks at every occurrence.
+fn free_c_style_for_header_binding_scoped() {
+    // `i` from the header is scoped everywhere in the loop; `limit` and `sum`
+    // are the only frees.
     assert_eq!(
         free("(function(){ for (let i = 0; i < limit; i++) { sum += i } })"),
+        ["limit", "sum"]
+    );
+}
+
+#[test]
+fn free_c_style_for_expr_init_not_bound() {
+    // A bare-expression init assigns an existing binding — `i` stays free.
+    assert_eq!(
+        free("(function(){ for (i = 0; i < limit; i++) { sum += i } })"),
         ["i", "i", "limit", "i", "sum", "i"]
+    );
+}
+
+#[test]
+fn free_for_of_destructured_binding_scoped() {
+    // Destructured loop bindings (`{ id }`) are scoped; only `rows` is free.
+    assert_eq!(
+        free("(function(){ for (const { id } of rows) { use(id) } })"),
+        ["rows", "use"]
+    );
+}
+
+#[test]
+fn free_for_of_array_destructure_binding_scoped() {
+    assert_eq!(
+        free("(function(){ for (const [a, b] of pairs) { use(a, b) } })"),
+        ["pairs", "use"]
+    );
+}
+
+#[test]
+fn free_nested_loops_shadow() {
+    // Both loop variables are scoped; only `outer`, `inner`, `sum` are free.
+    assert_eq!(
+        free("(function(){ for (const i of outer) { for (const j of inner) { sum += i + j } } })"),
+        ["outer", "inner", "sum"]
+    );
+}
+
+#[test]
+fn free_loop_var_shadows_outer_name_read_outside_still_free() {
+    // The loop var `x` shadows the outer `x` only inside the loop; the read of
+    // `x` after the loop is a genuine free reference and must be reported.
+    assert_eq!(
+        free("(function(){ for (const x of xs) { use(x) } return x })"),
+        ["xs", "use", "x"]
     );
 }
 
 // --- catch bindings ---
 //
-// KNOWN LIMITATION: `ScopedFreeCollector` has no `visit_catch_clause`, so a
-// catch parameter is NOT bound and leaks as a free read (unlike
-// `module_binding_references`, which does scope catch params). Pin the current
-// behavior.
+// `ScopedFreeCollector::visit_catch_clause` scopes the catch parameter
+// (including destructuring) to the catch body, matching
+// `module_binding_references`.
 
 #[test]
-fn free_catch_param_leaks_current_behavior() {
+fn free_catch_param_scoped() {
     assert_eq!(
         free("(function(){ try { risky() } catch (e) { report(e) } })"),
-        ["risky", "e", "report", "e"]
+        ["risky", "report"]
     );
 }
 
 #[test]
-fn free_catch_outer_same_name_all_leak() {
-    // Every `e` occurrence is reported (catch param not scoped).
+fn free_catch_outer_same_name_only_outer_free() {
+    // The `e` inside catch is bound; the `return e` outside the catch is free.
     assert_eq!(
         free("(function(){ try { f() } catch (e) { e } return e })"),
-        ["f", "e", "e", "e"]
+        ["f", "e"]
     );
 }
 
 #[test]
-fn free_catch_destructured_param_leaks_current_behavior() {
+fn free_catch_destructured_param_scoped() {
     assert_eq!(
         free("(function(){ try { f() } catch ({ message }) { log(message) } })"),
-        ["f", "message", "log", "message"]
+        ["f", "log"]
     );
 }
 
@@ -321,4 +370,57 @@ fn free_deep_closure_resolves_outermost() {
 fn free_sibling_scopes_do_not_leak() {
     // `x` bound in the first arrow must not bind the second arrow's read.
     assert_eq!(free("(x => x) + (() => x)"), ["x"]);
+}
+
+// --- agreement with module_binding_references on for/catch forms ---
+//
+// `free_identifiers` and `module_binding_references` must scope `for` headers
+// and `catch` params identically. For a program where every read targets a
+// top-level binding, the set of names `free_identifiers_with_spans_program`
+// reports must equal the set `module_binding_references` reports.
+
+fn free_program_names(code: &str) -> Vec<String> {
+    free_identifiers_with_spans_program(code)
+        .expect("parse ok")
+        .into_iter()
+        .map(|(name, _)| name)
+        .collect()
+}
+
+fn mref_names(code: &str) -> Vec<String> {
+    module_binding_references(code)
+        .expect("parse ok")
+        .into_iter()
+        .map(|r| r.name)
+        .collect()
+}
+
+#[test]
+fn free_agrees_with_mrefs_on_for_of() {
+    // The loop binding `x` is scoped in BOTH analyses, so neither reports it.
+    // (`module_binding_references` also skips declaration sites and filters to
+    // top-level targets, so its list differs; the point is they agree that the
+    // loop variable is bound, not free.)
+    let code = "let items = []\nlet total = 0\nfor (const x of items) { total += x }";
+    let frees = free_program_names(code);
+    let mrefs = mref_names(code);
+    assert!(!frees.contains(&"x".to_string()), "loop var must be scoped");
+    assert!(!mrefs.contains(&"x".to_string()), "loop var must be scoped");
+    // `items` and `total` are top-level bindings referenced by both.
+    assert!(mrefs.contains(&"items".to_string()));
+    assert!(mrefs.contains(&"total".to_string()));
+}
+
+#[test]
+fn free_agrees_with_mrefs_on_catch() {
+    let code = "let report = f\nfunction run(){ try { risky() } catch (e) { report(e) } }";
+    // `e` scoped in both; only top-level `report` referenced (risky undeclared).
+    assert_eq!(mref_names(code), ["report"]);
+    // free_identifiers additionally reports `risky` (a free read, not top-level).
+    let frees = free_program_names(code);
+    assert!(frees.contains(&"report".to_string()));
+    assert!(
+        !frees.contains(&"e".to_string()),
+        "catch param must be scoped"
+    );
 }
