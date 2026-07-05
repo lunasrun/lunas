@@ -1,0 +1,7 @@
+html:
+    <input :id="elId" :name="n" :type="t" :placeholder="ph">
+script:
+    let elId = "q"
+    let n = "search"
+    let t = "search"
+    let ph = "Search…"

@@ -1,0 +1,5 @@
+html:
+    <a href="/search?q=${term}&page=${page}">search</a>
+script:
+    let term = "lunas"
+    let page = 2

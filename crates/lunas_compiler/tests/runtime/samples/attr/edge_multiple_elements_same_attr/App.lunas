@@ -1,0 +1,2 @@
+html:
+    <ul><li :data-idx="0">a</li><li :data-idx="1">b</li><li :data-idx="2">c</li></ul>

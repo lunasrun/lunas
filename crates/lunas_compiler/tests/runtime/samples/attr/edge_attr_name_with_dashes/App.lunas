@@ -1,0 +1,4 @@
+html:
+    <div :data-my-custom-thing="val">x</div>
+script:
+    let val = "yep"

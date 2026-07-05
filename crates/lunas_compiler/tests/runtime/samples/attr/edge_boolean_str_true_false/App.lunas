@@ -1,0 +1,4 @@
+html:
+    <div :data-flag="flagStr">x</div>
+script:
+    let flagStr = "true"

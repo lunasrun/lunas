@@ -1,0 +1,4 @@
+html:
+    <a href="/x/${seg}">link</a>
+script:
+    let seg = undefined

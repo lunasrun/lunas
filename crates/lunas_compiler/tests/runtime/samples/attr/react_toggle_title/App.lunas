@@ -1,0 +1,5 @@
+html:
+    <span :title="hint" @click="next()">x</span>
+script:
+    let hint = "first"
+    function next(){ hint = "second" }

@@ -1,0 +1,5 @@
+html:
+    <div><a :href="url">link</a><input :value="val"></div>
+script:
+    let url = "/go"
+    let val = "hello"

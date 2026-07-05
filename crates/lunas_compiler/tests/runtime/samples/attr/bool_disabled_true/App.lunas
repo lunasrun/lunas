@@ -1,0 +1,4 @@
+html:
+    <button :disabled="isDisabled">go</button>
+script:
+    let isDisabled = true

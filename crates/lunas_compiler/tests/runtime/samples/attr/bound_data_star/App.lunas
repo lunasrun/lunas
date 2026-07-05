@@ -1,0 +1,5 @@
+html:
+    <div :data-id="itemId" :data-role="itemRole">row</div>
+script:
+    let itemId = "42"
+    let itemRole = "listitem"

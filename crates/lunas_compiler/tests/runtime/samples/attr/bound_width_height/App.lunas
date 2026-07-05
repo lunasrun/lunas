@@ -1,0 +1,5 @@
+html:
+    <img src="/a.png" :width="w" :height="h">
+script:
+    let w = 100
+    let h = 50

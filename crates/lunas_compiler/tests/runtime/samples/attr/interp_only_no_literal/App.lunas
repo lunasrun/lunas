@@ -1,0 +1,4 @@
+html:
+    <div class="${cls}">x</div>
+script:
+    let cls = "solo"

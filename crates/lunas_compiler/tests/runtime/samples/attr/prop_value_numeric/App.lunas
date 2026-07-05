@@ -1,0 +1,4 @@
+html:
+    <input :value="count">
+script:
+    let count = 42

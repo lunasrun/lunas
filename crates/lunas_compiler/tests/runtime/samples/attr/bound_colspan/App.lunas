@@ -1,0 +1,4 @@
+html:
+    <table><tr><td :colspan="span">wide</td></tr></table>
+script:
+    let span = 3

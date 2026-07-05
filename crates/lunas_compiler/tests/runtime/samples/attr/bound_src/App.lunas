@@ -1,0 +1,4 @@
+html:
+    <img :src="imgSrc">
+script:
+    let imgSrc = "/static/logo.png"

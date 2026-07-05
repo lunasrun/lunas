@@ -1,0 +1,4 @@
+html:
+    <input :required="isRequired">
+script:
+    let isRequired = false

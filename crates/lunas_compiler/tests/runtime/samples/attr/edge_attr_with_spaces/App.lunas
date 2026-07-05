@@ -1,0 +1,4 @@
+html:
+    <div :title="msg">x</div>
+script:
+    let msg = "  padded value  "

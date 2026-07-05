@@ -1,0 +1,4 @@
+html:
+    <a :href="url">link</a>
+script:
+    let url = "https://example.com/a"

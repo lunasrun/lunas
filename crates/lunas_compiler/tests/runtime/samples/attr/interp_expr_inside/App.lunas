@@ -1,0 +1,5 @@
+html:
+    <div title="total: ${a + b}">x</div>
+script:
+    let a = 2
+    let b = 3

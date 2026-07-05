@@ -1,0 +1,5 @@
+html:
+    <button :disabled="busy" @click="toggle()">save</button>
+script:
+    let busy = false
+    function toggle(){ busy = !busy }

@@ -1,0 +1,4 @@
+html:
+    <button :disabled="flag">go</button>
+script:
+    let flag = 1

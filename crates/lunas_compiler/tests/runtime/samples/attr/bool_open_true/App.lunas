@@ -1,0 +1,4 @@
+html:
+    <details :open="isOpen"><summary>s</summary>body</details>
+script:
+    let isOpen = true

@@ -1,0 +1,4 @@
+html:
+    <img src="/a.png" :srcset="set">
+script:
+    let set = "/a-1x.png 1x, /a-2x.png 2x"

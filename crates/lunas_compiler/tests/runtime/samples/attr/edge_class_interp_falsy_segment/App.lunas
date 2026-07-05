@@ -1,0 +1,4 @@
+html:
+    <div class="box ${maybe}">x</div>
+script:
+    let maybe = ""

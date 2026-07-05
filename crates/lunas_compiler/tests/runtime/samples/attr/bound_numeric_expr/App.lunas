@@ -1,0 +1,4 @@
+html:
+    <div :tabindex="base + 1">x</div>
+script:
+    let base = 4

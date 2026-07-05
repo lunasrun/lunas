@@ -1,0 +1,4 @@
+html:
+    <p :lang="code">bonjour</p>
+script:
+    let code = "fr"

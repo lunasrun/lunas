@@ -1,0 +1,5 @@
+html:
+    <div style="color: ${clr}; font-size: ${sz}px">x</div>
+script:
+    let clr = "blue"
+    let sz = 14

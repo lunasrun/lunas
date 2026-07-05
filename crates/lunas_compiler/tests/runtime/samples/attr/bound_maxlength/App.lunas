@@ -1,0 +1,4 @@
+html:
+    <input :maxlength="max">
+script:
+    let max = 10

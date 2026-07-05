@@ -1,0 +1,5 @@
+html:
+    <a href="/base" :title="hint" target="_blank" :data-id="id">link</a>
+script:
+    let hint = "opens new tab"
+    let id = 5

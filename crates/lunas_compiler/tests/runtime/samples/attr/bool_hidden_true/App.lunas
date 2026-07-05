@@ -1,0 +1,4 @@
+html:
+    <span :hidden="isHidden">secret</span>
+script:
+    let isHidden = true

@@ -1,0 +1,4 @@
+html:
+    <div class="tag ${flavor}">x</div>
+script:
+    let flavor = "sweet"
