@@ -21,6 +21,7 @@ import {
   runScope,
 } from "./core.mjs";
 import { createForState, seedForState, reconcile, extractKeys } from "./for_diff.mjs";
+import { isLive, runMount, runDestroy } from "./lifecycle.mjs";
 
 const toNodes = (h) => (Array.isArray(h) ? h : [h]);
 const firstNode = (h) => (Array.isArray(h) ? h[0] : h);
@@ -274,10 +275,24 @@ export function forBlock(c, anchor, deps, items, opts) {
 // CHILD dirty, a child event marks only the child.
 //
 // Returns a handle: { root, ctx, setProp(name, value), unmount() }.
+//
+// Lifecycle & DI wiring (additive): the child context is linked to the parent
+// `c` via `childCtx.parent` (provide.mjs walks this chain) and registered under
+// `c._children` so a parent teardown/mount recurses into it (lifecycle.mjs).
+// When the child's insertion point is already live, the child's queued onMount
+// callbacks fire immediately; otherwise they stay pending until an ancestor
+// `attach()` drains them. `unmount()` fires the child's onDestroy exactly once.
 export function mountChild(c, anchor, childFactory, props) {
   const root = childFactory(props);
   anchor.parentNode.insertBefore(root, anchor);
   const childCtx = root && root.__lunasCtx;
+  if (childCtx) {
+    childCtx.parent = c;
+    (c._children || (c._children = [])).push(childCtx);
+    // If the child landed in a live tree, fire its mount hooks now; otherwise a
+    // later attach() on an ancestor drains them.
+    if (isLive(root)) runMount(childCtx);
+  }
   return {
     root,
     ctx: childCtx,
@@ -287,6 +302,14 @@ export function mountChild(c, anchor, childFactory, props) {
       if (b) b.v = value;
     },
     unmount() {
+      if (childCtx) {
+        runDestroy(childCtx);
+        const kids = c._children;
+        if (kids) {
+          const k = kids.indexOf(childCtx);
+          if (k >= 0) kids.splice(k, 1);
+        }
+      }
       root.remove();
     },
   };
