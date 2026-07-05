@@ -1,0 +1,3 @@
+@use Notes from "./Notes.lunas"
+html:
+    <div><Notes/></div>

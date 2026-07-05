@@ -1,0 +1,3 @@
+@use MultiWithIs from "./MultiWithIs.lunas"
+html:
+    <div><MultiWithIs/></div>

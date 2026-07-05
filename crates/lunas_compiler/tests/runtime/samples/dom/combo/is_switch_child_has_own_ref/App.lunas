@@ -1,0 +1,10 @@
+@use Foo from "./Foo.lunas"
+@use Bar from "./Bar.lunas"
+html:
+    <div>
+        <component :is="view"/>
+        <button class="swap" @click="swap()">swap</button>
+    </div>
+script:
+    let view = Foo
+    function swap() { view = Bar }

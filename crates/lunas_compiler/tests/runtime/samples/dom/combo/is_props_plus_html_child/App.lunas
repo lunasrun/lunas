@@ -1,0 +1,14 @@
+@use RichCard from "./RichCard.lunas"
+html:
+    <div>
+        <component :is="view" :title="heading" :body="markup"/>
+        <button @click="update()">update</button>
+    </div>
+script:
+    let view = RichCard
+    let heading = "Title"
+    let markup = "<b>bold body</b>"
+    function update() {
+        heading = "Updated"
+        markup = "<i>italic body</i>"
+    }

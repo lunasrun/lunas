@@ -1,0 +1,13 @@
+@use Foo from "./Foo.lunas"
+@use Bar from "./Bar.lunas"
+html:
+    <div>
+        <component :is="view"/>
+        <button @click="swap()">swap</button>
+        <teleport to="#portal">
+            <p class="ported-with-is-target">portal content</p>
+        </teleport>
+    </div>
+script:
+    let view = Foo
+    function swap() { view = Bar }

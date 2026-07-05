@@ -1,0 +1,9 @@
+@use Foo from "./Foo.lunas"
+@use Bar from "./Bar.lunas"
+html:
+    <h2>fragment heading</h2>
+    <component :is="view"/>
+    <button @click="swap()">swap</button>
+script:
+    let view = Foo
+    function swap() { view = Bar }

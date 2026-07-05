@@ -1,0 +1,12 @@
+html:
+    <div>
+        <button @click="reorder()">reorder</button>
+        <teleport to="#portal">
+            <ul class="ported-teleport-list">
+                <li class="row" :for="item of items" :key="item.id">${item.label}</li>
+            </ul>
+        </teleport>
+    </div>
+script:
+    let items = [{id:1,label:"a"},{id:2,label:"b"},{id:3,label:"c"}]
+    function reorder() { items = items.slice().reverse() }
