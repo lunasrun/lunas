@@ -1,0 +1,8 @@
+html:
+    <div>
+        <button @click="toggle()">toggle</button>
+        <span :if="on" class="tag">TAG</span>
+    </div>
+script:
+    let on = false
+    function toggle(){ on = !on }

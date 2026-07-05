@@ -1,0 +1,7 @@
+html:
+    <div>
+        <p :if="lang == 'en'">Hello</p>
+        <p :else>Bonjour</p>
+    </div>
+script:
+    let lang = "fr"

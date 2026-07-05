@@ -1,0 +1,8 @@
+html:
+    <div>
+        <p :if="show" class="msg" :class="{ warn: isWarn }">Alert</p>
+        <p :else>Quiet</p>
+    </div>
+script:
+    let show = true
+    let isWarn = true

@@ -1,0 +1,7 @@
+html:
+    <div>
+        <p :if="a">A</p>          <p :elseif="b">B</p>          <p :else>C</p>
+    </div>
+script:
+    let a = false
+    let b = true

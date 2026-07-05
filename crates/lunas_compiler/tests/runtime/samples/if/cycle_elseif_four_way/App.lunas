@@ -1,0 +1,15 @@
+html:
+    <div>
+        <button @click="next()">next</button>
+        <p :if="mode == 'a'">Mode A</p>
+        <p :elseif="mode == 'b'">Mode B</p>
+        <p :elseif="mode == 'c'">Mode C</p>
+        <p :else>Mode D</p>
+    </div>
+script:
+    let mode = "a"
+    let order = ["a", "b", "c", "d"]
+    function next(){
+        let i = order.indexOf(mode)
+        mode = order[(i + 1) % 4]
+    }

@@ -1,0 +1,6 @@
+html:
+    <ul>
+        <li :for="n of nums" :key="n"><span :if="n > 2">${n}</span></li>
+    </ul>
+script:
+    let nums = [1, 2, 3, 4]

@@ -1,0 +1,8 @@
+html:
+    <div>
+        <p :if="a && b">Both</p>
+        <p :else>Not both</p>
+    </div>
+script:
+    let a = true
+    let b = false

@@ -1,0 +1,4 @@
+html:
+    <div><p :if="show">Message</p></div>
+script:
+    let show = false

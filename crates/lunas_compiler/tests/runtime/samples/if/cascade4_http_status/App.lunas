@@ -1,0 +1,9 @@
+html:
+    <div>
+        <p :if="code == 200">OK</p>
+        <p :elseif="code == 404">Not Found</p>
+        <p :elseif="code == 500">Server Error</p>
+        <p :else>Unknown</p>
+    </div>
+script:
+    let code = 500

@@ -1,0 +1,5 @@
+html:
+    <div><span :if="!loading && ready">content</span></div>
+script:
+    let loading = false
+    let ready = true

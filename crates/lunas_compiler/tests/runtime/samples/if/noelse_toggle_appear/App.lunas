@@ -1,0 +1,8 @@
+html:
+    <div>
+        <button @click="reveal()">show</button>
+        <p :if="show">Surprise</p>
+    </div>
+script:
+    let show = false
+    function reveal(){ show = true }

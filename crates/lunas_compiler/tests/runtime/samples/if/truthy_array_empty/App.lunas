@@ -1,0 +1,4 @@
+html:
+    <div><span :if="items">shown</span></div>
+script:
+    let items = []

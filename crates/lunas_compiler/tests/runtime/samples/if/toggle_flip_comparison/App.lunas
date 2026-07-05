@@ -1,0 +1,9 @@
+html:
+    <div>
+        <button @click="add()">add</button>
+        <p :if="count > 3">Big</p>
+        <p :else>Small</p>
+    </div>
+script:
+    let count = 0
+    function add(){ count = count + 2 }

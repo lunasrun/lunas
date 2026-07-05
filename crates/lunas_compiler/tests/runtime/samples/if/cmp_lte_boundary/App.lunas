@@ -1,0 +1,4 @@
+html:
+    <div><span :if="n <= 10">in range</span></div>
+script:
+    let n = 10

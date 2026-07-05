@@ -1,0 +1,8 @@
+html:
+    <div>
+        <p :if="role == 'owner'">Owner</p>
+        <p :elseif="role == 'editor'">Editor</p>
+        <p :else>Viewer</p>
+    </div>
+script:
+    let role = "editor"

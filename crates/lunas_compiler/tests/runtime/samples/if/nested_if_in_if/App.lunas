@@ -1,0 +1,8 @@
+html:
+    <div :if="outer">
+        <p :if="inner">Both true</p>
+        <p :else>Outer only</p>
+    </div>
+script:
+    let outer = true
+    let inner = false

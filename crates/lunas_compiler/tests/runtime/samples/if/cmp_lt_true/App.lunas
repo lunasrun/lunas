@@ -1,0 +1,4 @@
+html:
+    <div><span :if="age < 18">minor</span></div>
+script:
+    let age = 10

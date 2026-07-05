@@ -1,0 +1,4 @@
+html:
+    <div><span :if="n == 5">five</span></div>
+script:
+    let n = 4

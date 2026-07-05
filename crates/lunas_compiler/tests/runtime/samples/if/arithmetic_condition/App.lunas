@@ -1,0 +1,4 @@
+html:
+    <div><span :if="total % 2 == 0">even</span></div>
+script:
+    let total = 8

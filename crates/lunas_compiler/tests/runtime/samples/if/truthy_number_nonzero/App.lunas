@@ -1,0 +1,4 @@
+html:
+    <div><span :if="count">shown</span></div>
+script:
+    let count = 5

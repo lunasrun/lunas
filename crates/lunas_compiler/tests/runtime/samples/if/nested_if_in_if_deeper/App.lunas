@@ -1,0 +1,12 @@
+html:
+    <div :if="a">
+        <div :if="b">
+            <p :if="cond3">ABC</p>
+            <p :else>AB only</p>
+        </div>
+        <p :else>A only</p>
+    </div>
+script:
+    let a = true
+    let b = true
+    let cond3 = true

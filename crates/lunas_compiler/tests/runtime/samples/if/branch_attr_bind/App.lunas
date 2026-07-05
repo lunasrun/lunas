@@ -1,0 +1,8 @@
+html:
+    <div>
+        <a :if="show" :href="url">link</a>
+        <span :else>no link</span>
+    </div>
+script:
+    let show = true
+    let url = "/home"

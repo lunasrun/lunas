@@ -1,0 +1,7 @@
+html:
+    <div>
+        <p :if="score >= 60">Pass</p>
+        <p :else>Fail</p>
+    </div>
+script:
+    let score = 45

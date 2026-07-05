@@ -1,0 +1,7 @@
+html:
+    <div>
+        <p :if="items.length > 0">Has items</p>
+        <p :else>Empty</p>
+    </div>
+script:
+    let items = []

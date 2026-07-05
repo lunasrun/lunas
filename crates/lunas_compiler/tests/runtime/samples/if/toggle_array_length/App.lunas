@@ -1,0 +1,11 @@
+html:
+    <div>
+        <button @click="add()">add</button>
+        <button @click="clear()">clear</button>
+        <p :if="items.length == 0">No items</p>
+        <p :else>${items.length} items</p>
+    </div>
+script:
+    let items = []
+    function add(){ items.push(items.length) }
+    function clear(){ items = [] }

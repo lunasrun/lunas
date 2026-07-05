@@ -1,0 +1,8 @@
+html:
+    <div>
+        <button @click="toggle()">toggle</button>
+        <input :if="on" placeholder="scratch">
+    </div>
+script:
+    let on = true
+    function toggle(){ on = !on }

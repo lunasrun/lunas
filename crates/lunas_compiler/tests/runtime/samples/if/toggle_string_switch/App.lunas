@@ -1,0 +1,13 @@
+html:
+    <div>
+        <button @click="setLang('en')">en</button>
+        <button @click="setLang('fr')">fr</button>
+        <button @click="setLang('jp')">jp</button>
+        <p :if="lang == 'en'">Hello</p>
+        <p :elseif="lang == 'fr'">Bonjour</p>
+        <p :elseif="lang == 'jp'">Konnichiwa</p>
+        <p :else>???</p>
+    </div>
+script:
+    let lang = "en"
+    function setLang(l){ lang = l }

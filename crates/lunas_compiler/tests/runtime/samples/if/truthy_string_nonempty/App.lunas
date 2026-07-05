@@ -1,0 +1,4 @@
+html:
+    <div><span :if="label">shown</span></div>
+script:
+    let label = "hi"

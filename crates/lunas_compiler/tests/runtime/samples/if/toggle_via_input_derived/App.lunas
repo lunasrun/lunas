@@ -1,0 +1,8 @@
+html:
+    <div>
+        <input ::value="query">
+        <p :if="query.length > 0">Searching: ${query}</p>
+        <p :else>Type to search</p>
+    </div>
+script:
+    let query = ""

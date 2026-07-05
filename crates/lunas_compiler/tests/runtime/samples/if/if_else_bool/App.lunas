@@ -1,0 +1,7 @@
+html:
+    <div>
+        <p :if="on">ON</p>
+        <p :else>OFF</p>
+    </div>
+script:
+    let on = true

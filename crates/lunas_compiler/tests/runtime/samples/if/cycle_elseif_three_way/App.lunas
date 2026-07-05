@@ -1,0 +1,10 @@
+html:
+    <div>
+        <button @click="next()">next</button>
+        <p :if="step == 1">Step One</p>
+        <p :elseif="step == 2">Step Two</p>
+        <p :else>Step Three</p>
+    </div>
+script:
+    let step = 1
+    function next(){ step = step == 3 ? 1 : step + 1 }

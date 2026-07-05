@@ -1,0 +1,8 @@
+html:
+    <div>
+        <p :if="priority == 1">Urgent</p>
+        <p :elseif="priority == 2">Normal</p>
+        <p :else>Low</p>
+    </div>
+script:
+    let priority = 1
