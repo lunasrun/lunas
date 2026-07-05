@@ -1,0 +1,11 @@
+html:
+    <div>
+        <select @change="onChange()">
+            <option value="a">a</option>
+            <option value="b">b</option>
+        </select>
+        <span>${clicks}</span>
+    </div>
+script:
+    let clicks = 0
+    function onChange(){ clicks = clicks + 1 }

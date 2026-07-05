@@ -1,0 +1,8 @@
+html:
+    <div>
+        <button @click="setBob()">set</button>
+        <input ::value="name">
+    </div>
+script:
+    let name = "alice"
+    function setBob(){ name = "bob" }

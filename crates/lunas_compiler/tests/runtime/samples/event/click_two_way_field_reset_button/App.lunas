@@ -1,0 +1,8 @@
+html:
+    <div>
+        <input ::value="text">
+        <button @click="clear()">clear</button>
+    </div>
+script:
+    let text = "hello"
+    function clear(){ text = "" }

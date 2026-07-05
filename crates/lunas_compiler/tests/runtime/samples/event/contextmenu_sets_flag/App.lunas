@@ -1,0 +1,5 @@
+html:
+    <div class="box" @contextmenu="open()">${opened}</div>
+script:
+    let opened = false
+    function open(){ opened = true }

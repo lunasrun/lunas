@@ -1,0 +1,4 @@
+html:
+    <div><input ::value="msg"><p>echo: ${msg}</p></div>
+script:
+    let msg = ""

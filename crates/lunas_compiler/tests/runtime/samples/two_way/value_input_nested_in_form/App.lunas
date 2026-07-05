@@ -1,0 +1,7 @@
+html:
+    <form>
+        <input ::value="name">
+        <p>Hello, ${name}</p>
+    </form>
+script:
+    let name = "Ada"

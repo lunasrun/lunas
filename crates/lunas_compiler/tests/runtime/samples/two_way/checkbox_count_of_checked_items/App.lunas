@@ -1,0 +1,11 @@
+html:
+    <div>
+        <input class="a" type="checkbox" ::checked="a">
+        <input class="b" type="checkbox" ::checked="b">
+        <input class="cc" type="checkbox" ::checked="cc">
+        <span>${(a?1:0) + (b?1:0) + (cc?1:0)}</span>
+    </div>
+script:
+    let a = false
+    let b = false
+    let cc = false

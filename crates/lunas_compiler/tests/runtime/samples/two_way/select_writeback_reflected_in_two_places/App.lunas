@@ -1,0 +1,11 @@
+html:
+    <div>
+        <select ::value="mode">
+            <option value="light">light</option>
+            <option value="dark">dark</option>
+        </select>
+        <p class="a">${mode}</p>
+        <p class="b">mode is ${mode}</p>
+    </div>
+script:
+    let mode = "light"

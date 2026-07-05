@@ -1,0 +1,5 @@
+html:
+    <button @click="noop()">n=${n}</button>
+script:
+    let n = 0
+    function noop(){ n = n + 1; return; }

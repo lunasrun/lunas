@@ -1,0 +1,4 @@
+html:
+    <div><input ::value="a"><span>${a + "!"}</span></div>
+script:
+    let a = "1"

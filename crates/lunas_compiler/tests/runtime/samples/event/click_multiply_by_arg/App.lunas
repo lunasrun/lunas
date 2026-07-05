@@ -1,0 +1,5 @@
+html:
+    <button @click="mul(3)">n=${n}</button>
+script:
+    let n = 2
+    function mul(f){ n = n * f }

@@ -1,0 +1,6 @@
+html:
+    <button :disabled="isDisabled" @click="inc()">n=${n}</button>
+script:
+    let isDisabled = false
+    let n = 0
+    function inc(){ n = n + 1 }

@@ -1,0 +1,5 @@
+html:
+    <div class="box" @auxclick="markMiddle()">${middle}</div>
+script:
+    let middle = false
+    function markMiddle(){ middle = true }

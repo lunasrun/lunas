@@ -1,0 +1,8 @@
+html:
+    <button @click="inc()">n=${n}</button>
+script:
+    let n = 0
+    function inc(step){
+        let s = step || 1
+        n = n + s
+    }

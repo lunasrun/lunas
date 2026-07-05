@@ -1,0 +1,5 @@
+html:
+    <label @click="mark()">${clicked}</label>
+script:
+    let clicked = false
+    function mark(){ clicked = true }

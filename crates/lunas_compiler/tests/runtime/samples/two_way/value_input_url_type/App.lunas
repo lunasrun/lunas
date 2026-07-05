@@ -1,0 +1,4 @@
+html:
+    <div><input type="url" ::value="link"><span>${link}</span></div>
+script:
+    let link = ""

@@ -1,0 +1,5 @@
+html:
+    <button @click="inc()">show=${a > 2 && 5 > a}</button>
+script:
+    let a = 0
+    function inc(){ a = a + 1 }

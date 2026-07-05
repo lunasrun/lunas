@@ -1,0 +1,7 @@
+html:
+    <div>
+        <input type="checkbox" ::checked="show">
+        <p :if="show">visible content</p>
+    </div>
+script:
+    let show = false

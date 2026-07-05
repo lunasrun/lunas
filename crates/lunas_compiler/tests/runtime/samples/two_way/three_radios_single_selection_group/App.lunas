@@ -1,0 +1,11 @@
+html:
+    <div>
+        <input type="radio" value="1" ::checked="r1">
+        <input type="radio" value="2" ::checked="r2">
+        <input type="radio" value="3" ::checked="r3">
+        <p>${r1} ${r2} ${r3}</p>
+    </div>
+script:
+    let r1 = false
+    let r2 = false
+    let r3 = false

@@ -1,0 +1,7 @@
+html:
+    <div>
+        <input ::value="text">
+        <input :value="text" disabled>
+    </div>
+script:
+    let text = "orig"

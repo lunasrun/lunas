@@ -1,0 +1,9 @@
+html:
+    <div>
+        <input type="checkbox" ::checked="on">
+        <button @click="turnOff()">off</button>
+        <span>${on}</span>
+    </div>
+script:
+    let on = false
+    function turnOff(){ on = false }

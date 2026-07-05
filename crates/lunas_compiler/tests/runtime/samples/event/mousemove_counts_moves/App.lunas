@@ -1,0 +1,5 @@
+html:
+    <div class="area" @mousemove="bump()">${moves}</div>
+script:
+    let moves = 0
+    function bump(){ moves = moves + 1 }

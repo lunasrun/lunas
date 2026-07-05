@@ -1,0 +1,11 @@
+@input initial:string = "b"
+html:
+    <div>
+        <select ::value="picked">
+            <option value="a">a</option>
+            <option value="b">b</option>
+        </select>
+        <span>${picked}</span>
+    </div>
+script:
+    let picked = initial

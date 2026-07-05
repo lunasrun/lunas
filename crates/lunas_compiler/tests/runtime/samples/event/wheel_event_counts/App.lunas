@@ -1,0 +1,5 @@
+html:
+    <div class="box" @wheel="bump()">${scrolls}</div>
+script:
+    let scrolls = 0
+    function bump(){ scrolls = scrolls + 1 }

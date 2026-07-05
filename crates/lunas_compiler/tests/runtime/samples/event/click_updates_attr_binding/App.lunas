@@ -1,0 +1,5 @@
+html:
+    <div class="box" :title="label" @click="setClicked()">x</div>
+script:
+    let label = "idle"
+    function setClicked(){ label = "clicked" }

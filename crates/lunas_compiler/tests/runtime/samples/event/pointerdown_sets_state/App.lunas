@@ -1,0 +1,5 @@
+html:
+    <div class="box" @pointerdown="press()">${down}</div>
+script:
+    let down = false
+    function press(){ down = true }

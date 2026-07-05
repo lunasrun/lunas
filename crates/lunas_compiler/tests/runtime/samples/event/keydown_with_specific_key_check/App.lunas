@@ -1,0 +1,8 @@
+html:
+    <div>
+        <input @keydown="mark()">
+        <span>${last}</span>
+    </div>
+script:
+    let last = "none"
+    function mark(){ last = "x" }

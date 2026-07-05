@@ -1,0 +1,9 @@
+html:
+    <div>
+        <input ::value="text" @keydown="bump()">
+        <span>s=${strokes} t=${text}</span>
+    </div>
+script:
+    let text = ""
+    let strokes = 0
+    function bump(){ strokes = strokes + 1 }

@@ -1,0 +1,7 @@
+html:
+    <form @submit="onSubmit()">
+        <span>${submitted}</span>
+    </form>
+script:
+    let submitted = false
+    function onSubmit(){ submitted = true }

@@ -1,0 +1,8 @@
+html:
+    <div>
+        <button @click="add()">add</button>
+        <span>${items.length > 2 ? "full" : "ok"}</span>
+    </div>
+script:
+    let items = []
+    function add(){ items.push(1) }

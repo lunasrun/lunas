@@ -1,0 +1,10 @@
+html:
+    <div>
+        <button class="a" @click="incA()">a=${a}</button>
+        <button class="b" @click="incB()">b=${b}</button>
+    </div>
+script:
+    let a = 0
+    let b = 0
+    function incA(){ a = a + 1 }
+    function incB(){ b = b + 1 }

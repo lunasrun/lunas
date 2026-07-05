@@ -1,0 +1,8 @@
+html:
+    <div>
+        <button @click="add()">add</button>
+        <span>${log.length}</span>
+    </div>
+script:
+    let log = []
+    function add(){ log.push("x") }

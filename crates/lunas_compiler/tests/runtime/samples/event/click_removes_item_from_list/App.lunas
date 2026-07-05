@@ -1,0 +1,8 @@
+html:
+    <div>
+        <button @click="removeFirst()">remove</button>
+        <ul><li :for="x of items" :key="x">${x}</li></ul>
+    </div>
+script:
+    let items = [1, 2, 3]
+    function removeFirst(){ items.splice(0, 1) }
