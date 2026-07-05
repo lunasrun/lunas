@@ -164,6 +164,12 @@ jobs:
       - name: Install Chrome
         uses: browser-actions/setup-chrome@v1
         id: setup-chrome
+        with:
+          # Pin to Google Chrome stable rather than the action's default
+          # bleeding-edge Chromium: newer Chromium builds do not emit
+          # `--dump-dom` output under `--headless=new` + `--virtual-time-budget`,
+          # which the smoke harness relies on.
+          chrome-version: stable
 
       # The browser smoke suite compiles fixtures, serves them with a tiny node
       # server, and asserts the post-interaction DOM in real Chrome. `node` on
