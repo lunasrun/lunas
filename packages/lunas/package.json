@@ -74,6 +74,26 @@
       "types": "./types/async.d.ts",
       "import": "./src/async.mjs"
     },
+    "./lifecycle": {
+      "types": "./types/lifecycle.d.ts",
+      "import": "./src/lifecycle.mjs"
+    },
+    "./emits": {
+      "types": "./types/emits.d.ts",
+      "import": "./src/emits.mjs"
+    },
+    "./provide": {
+      "types": "./types/provide.d.ts",
+      "import": "./src/provide.mjs"
+    },
+    "./transition": {
+      "types": "./types/transition.d.ts",
+      "import": "./src/transition.mjs"
+    },
+    "./keepalive": {
+      "types": "./types/keepalive.d.ts",
+      "import": "./src/keepalive.mjs"
+    },
     "./package.json": "./package.json"
   },
   "scripts": {

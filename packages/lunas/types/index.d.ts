@@ -90,3 +90,32 @@ export type {
 } from "./async.js";
 
 export { asyncComponent, mountAsyncChild, suspenseBlock } from "./async.js";
+
+export {
+  onMount,
+  onDestroy,
+  onUpdate,
+  onActivated,
+  onDeactivated,
+  attach,
+  isLive,
+} from "./lifecycle.js";
+
+export { emit, registerEmits, eventPropName } from "./emits.js";
+
+export type { InjectionKey } from "./provide.js";
+export { provide, inject, hasInjection } from "./provide.js";
+
+export type {
+  TransitionOptions,
+  TransitionPhase,
+  TransitionController,
+} from "./transition.js";
+export { withTransition, runPhase } from "./transition.js";
+
+export type {
+  KeepAliveOptions,
+  KeepAliveController,
+  KeptChild,
+} from "./keepalive.js";
+export { keepAlive } from "./keepalive.js";

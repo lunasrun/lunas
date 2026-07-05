@@ -91,12 +91,12 @@ tree:
       children:
         - { id: c-props, title: "Props (@input)", status: done }
         - { id: c-slots, title: "Slots (default / named / scoped)", status: todo }
-        - { id: c-emits, title: "Events / emits (child → parent)", status: todo }
-        - { id: c-lifecycle, title: "Lifecycle hooks (mount/update/destroy)", status: todo }
-        - { id: c-provide, title: "Provide / inject (DI)", status: todo }
+        - { id: c-emits, title: "Events / emits (child → parent)", status: done }
+        - { id: c-lifecycle, title: "Lifecycle hooks (mount/update/destroy)", status: done }
+        - { id: c-provide, title: "Provide / inject (DI)", status: done }
         - { id: c-async, title: "Async / lazy components", status: done }
-        - { id: c-transition, title: "Transitions & animations", status: todo }
-        - { id: c-keepalive, title: "Keep-alive (component caching)", status: todo }
+        - { id: c-transition, title: "Transitions & animations", status: done }
+        - { id: c-keepalive, title: "Keep-alive (component caching)", status: done }
     - id: app
       title: Application layer
       status: todo
