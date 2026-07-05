@@ -1,0 +1,47 @@
+@use Counter from "./Counter.lunas"
+@use Card from "./Card.lunas"
+@use Badge from "./Badge.lunas"
+
+html:
+    <main class="app">
+        <h1>${title}</h1>
+
+        <nav>
+            <button @click="show('one')">one</button>
+            <button @click="show('two')">two</button>
+            <button @click="addTag()">add tag</button>
+        </nav>
+
+        <Card tone="lead">
+            <template #head>Dashboard for ${user}</template>
+            The counter starts at ${seed}.
+            <Counter :start="seed"/>
+            <template #foot="s">rows: ${s.count}</template>
+        </Card>
+
+        <p :if="page == 'one'">Page one is active.</p>
+        <p :elseif="page == 'two'">Page two is active.</p>
+        <p :else>No page selected.</p>
+
+        <ul class="tags">
+            <li :for="tag of tags" :key="tag.id">
+                <Badge :text="tag.label"/>
+            </li>
+        </ul>
+
+        <component :is="Badge" :text="user"/>
+    </main>
+
+script:
+    let title = "Lunas E2E App"
+    let user = "ada"
+    let seed = 10
+    let page = "one"
+    let tags = [
+        { id: 1, label: "alpha" },
+        { id: 2, label: "beta" }
+    ]
+    function show(p) { page = p }
+    function addTag() {
+        tags.push({ id: tags.length + 1, label: "extra" })
+    }

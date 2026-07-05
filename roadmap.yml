@@ -15,7 +15,7 @@ statuses: [done, in_progress, todo, deferred]
 tree:
   id: lunas
   title: Lunas — web front-end framework
-  status: in_progress
+  status: done
   children:
     - id: foundation
       title: Compiler foundation
@@ -36,7 +36,7 @@ tree:
         - { id: reactivity-design, title: "Adjacency dispatch; no BigInt; Proxy floor", status: done }
     - id: codegen
       title: Code generator (ResolvedComponent → JS)
-      status: in_progress
+      status: done
       children:
         - { id: cg-scaffold, title: "Codegen module + JS emitter utils", status: done }
         - { id: cg-static-html, title: "Static skeleton emission (escaped, minified)", status: done }
@@ -50,7 +50,7 @@ tree:
         - { id: cg-for, title: "List rendering (keyed :for)", status: done }
         - { id: cg-components, title: "Child component mounting", status: done }
         - { id: cg-inputs, title: "@input props handling", status: done }
-        - { id: cg-e2e, title: "End-to-end snapshot + browser smoke tests", status: todo }
+        - { id: cg-e2e, title: "End-to-end snapshot + browser smoke tests", status: done }
     - id: runtime
       title: Runtime (ES2015 + Proxy floor)
       status: done
@@ -99,7 +99,7 @@ tree:
         - { id: c-keepalive, title: "Keep-alive (component caching)", status: done }
     - id: app
       title: Application layer
-      status: todo
+      status: done
       children:
         - { id: a-router, title: "Router runtime (matching, history, outlet, guards)", status: done }
         - { id: a-ssr, title: "SSR + client hydration", status: deferred }

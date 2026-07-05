@@ -1,0 +1,10 @@
+html:
+    <form>
+        <input ::value="name">
+        <input type="checkbox" ::checked="agree">
+        <p>name=${name} agree=${agree}</p>
+    </form>
+
+script:
+    let name = "ada"
+    let agree = false

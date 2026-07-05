@@ -1,0 +1,12 @@
+html:
+    <div class="box" :class="{ active: on, big: huge }" :style="{ color: hue, fontWeight: weight }" @click="go()"></div>
+
+script:
+    let on = false
+    let huge = true
+    let hue = "red"
+    let weight = "bold"
+    function go() {
+        on = !on
+        hue = "blue"
+    }

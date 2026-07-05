@@ -1,0 +1,12 @@
+html:
+    <h1 @click="rename()">${title}</h1>
+    <p :if="show">visible ${title}</p>
+    <footer>end</footer>
+
+script:
+    let title = "T"
+    let show = true
+    function rename() {
+        title = "T2"
+        show = !show
+    }
