@@ -73,22 +73,21 @@ test("normClass: nullish/false/empty-string entries in arrays are dropped", () =
   );
 });
 
-// KNOWN DIVERGENCE (deferred; see PR note): a falsy *number* (0 / NaN) inside a
-// class array is NOT dropped — normClass(0) stringifies to "0", so it leaks in
-// as a "0" class token, unlike Vue which drops falsy array entries. The array
-// branch of normClass only skips entries whose normalized result is "", and
-// normClass(0) === "0". Fix is a one-line `if (!v) continue;` in the array loop
-// of src/dom.mjs, but that edit is out of scope for this test-only PR.
-test.skip(
-  "normClass: falsy numbers (0/NaN) in arrays should be dropped (Vue-parity)",
-  "normClass(0) leaks a '0' class token; src/dom.mjs array loop needs `if (!v) continue;`"
-);
-
-test("normClass: current behavior — a falsy number in an array leaks as a token", () => {
-  // Documents the ACTUAL behavior today so the divergence is pinned and any
-  // future fix will flip this test (a signal to update it alongside the fix).
-  assert.strictEqual(normClass(["a", 0, "b"]), "a 0 b");
-  assert.strictEqual(normClass(["a", NaN, "b"]), "a NaN b");
+// FIXED (was a KNOWN DIVERGENCE): a falsy *number* (0 / NaN) inside a class
+// array is now dropped, matching Vue's :class array semantics. Previously
+// normClass(0) stringified to "0" and leaked in as a bogus "0" class token
+// because the array branch only skipped entries whose normalized result was
+// "" (empty string), and normClass(0) === "0" (non-empty). The fix adds an
+// `if (!v) continue;` guard in the array loop of src/dom.mjs so ALL falsy
+// values (0, NaN, "", null, undefined, false) are dropped as bare array
+// items — this does NOT affect :style object numeric VALUES (`{width: 0}`
+// stays legitimate; only the :class ARRAY-ITEM path changed).
+test("normClass: falsy numbers (0/NaN) in arrays are dropped (Vue-parity)", () => {
+  assert.strictEqual(normClass(["a", 0, "b"]), "a b");
+  assert.strictEqual(normClass(["a", NaN, "b"]), "a b");
+  assert.strictEqual(normClass([0, "a"]), "a");
+  assert.strictEqual(normClass([0, NaN, "", null, undefined, false]), "");
+  assert.strictEqual(normClass(["x", 0, "y", NaN, "z"]), "x y z");
 });
 
 test("normClass: null / undefined / false => empty string", () => {
