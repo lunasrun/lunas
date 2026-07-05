@@ -1,0 +1,4 @@
+html:
+    <p>${n > 10 ? "big" : n > 0 ? "small" : "zero"}</p>
+script:
+    let n = 5

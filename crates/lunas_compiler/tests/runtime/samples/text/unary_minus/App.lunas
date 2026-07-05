@@ -1,0 +1,4 @@
+html:
+    <p>${-n}</p>
+script:
+    let n = 5

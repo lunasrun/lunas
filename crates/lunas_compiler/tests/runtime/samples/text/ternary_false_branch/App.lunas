@@ -1,0 +1,4 @@
+html:
+    <p>${flag ? "yes" : "no"}</p>
+script:
+    let flag = false

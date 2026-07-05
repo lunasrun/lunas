@@ -1,0 +1,2 @@
+html:
+    <p>${Math.round(3.6)}</p>

@@ -1,0 +1,4 @@
+html:
+    <p>Hello ${name}さん</p>
+script:
+    let name = "田中"

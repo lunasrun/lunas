@@ -1,0 +1,4 @@
+html:
+    <p>${items.filter(x => x > 1).length}</p>
+script:
+    let items = [1, 2, 3]

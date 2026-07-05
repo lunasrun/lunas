@@ -1,0 +1,5 @@
+html:
+    <button @click="add()">${text}</button>
+script:
+    let text = "a"
+    function add(){ text = text + "a" }

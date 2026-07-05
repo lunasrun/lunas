@@ -1,0 +1,4 @@
+html:
+    <p>${longText}</p>
+script:
+    let longText = "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz0123456789"

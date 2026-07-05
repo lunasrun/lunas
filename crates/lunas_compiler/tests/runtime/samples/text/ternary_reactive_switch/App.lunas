@@ -1,0 +1,5 @@
+html:
+    <div><button @click="toggle()">t</button><p>${flag ? "ON" : "OFF"}</p></div>
+script:
+    let flag = false
+    function toggle(){ flag = !flag }

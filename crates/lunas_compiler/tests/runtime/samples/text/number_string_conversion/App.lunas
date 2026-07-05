@@ -1,0 +1,4 @@
+html:
+    <p>${Number(s) + 1}</p>
+script:
+    let s = "9"

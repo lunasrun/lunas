@@ -1,0 +1,4 @@
+html:
+    <p>${name.toUpperCase()}</p>
+script:
+    let name = "world"

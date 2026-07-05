@@ -1,0 +1,4 @@
+html:
+    <p>${user.name}</p>
+script:
+    let user = { name: "Ann" }

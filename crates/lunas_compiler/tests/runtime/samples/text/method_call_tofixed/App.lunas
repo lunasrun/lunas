@@ -1,0 +1,4 @@
+html:
+    <p>${pi.toFixed(2)}</p>
+script:
+    let pi = 3.14159

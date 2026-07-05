@@ -1,0 +1,6 @@
+html:
+    <div><button @click="inc()">inc</button><p>${first} ${last}</p></div>
+script:
+    let first = "v1"
+    let last = "static"
+    function inc(){ first = "v2" }

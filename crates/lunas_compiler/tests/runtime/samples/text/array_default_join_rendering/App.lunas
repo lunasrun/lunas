@@ -1,0 +1,4 @@
+html:
+    <p>${arr}</p>
+script:
+    let arr = [1, 2, 3]
