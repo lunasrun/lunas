@@ -22,14 +22,15 @@ fn plain_text_bind() {
     assert_eq!(
         js,
         "\
-import { component, anchorAppend, bind, box } from \"lunas\";
+import { component, anchorAppend, bind, box, refs } from \"lunas\";
 
 const HTML = \"<p></p>\";
 
 export default component(\"div\", {}, HTML, (c, props) => {
   const count = box(c, 0, 0)
   function inc(){ count.v++ }
-  const t0 = anchorAppend(c.root.childNodes[0]);
+  const [g0] = refs(c.root, [[0]]);
+  const t0 = anchorAppend(g0);
   bind(c, [0], () => { t0.data = `${count.v}`; });
 });
 "
@@ -136,7 +137,7 @@ fn props_seeded_from_input() {
         js.contains("const count = box(c, 0, start.v)"),
         "script read of the prop rewritten through the box: {js}"
     );
-    assert!(js.contains(", prop }"), "prop helper imported: {js}");
+    assert!(js.contains(", prop,"), "prop helper imported: {js}");
 }
 
 #[test]
@@ -150,7 +151,7 @@ fn deep_mutation_uses_deepbox() {
         "deep mutation -> deepBox: {js}"
     );
     assert!(
-        js.contains("import { component, anchorAppend, bind, deepBox }"),
+        js.contains("import { component, anchorAppend, bind, deepBox, refs }"),
         "{js}"
     );
     // The template read is rewritten through the box.
@@ -203,9 +204,15 @@ fn plain_if_emits_ifblock() {
     );
     // The branch skeleton is hoisted and built by its own fromHTML when shown.
     assert!(js.contains("const HTML_1 = \"<span>y</span>\";"), "{js}");
+    // The anchor target (the host <div>) is snapshotted against the pristine
+    // tree up front, so the anchor is stable under sibling insertions.
     assert!(
-        js.contains("const a0 = anchorAppend(c.root.childNodes[0]);"),
-        "{js}"
+        js.contains("const [g0] = refs(c.root, [[0]]);"),
+        "anchor target pre-captured: {js}"
+    );
+    assert!(
+        js.contains("const a0 = anchorAppend(g0);"),
+        "anchor created from the captured target: {js}"
     );
     assert!(
         js.contains("ifBlock(c, a0, [0], () => (show.v), () => {"),
@@ -372,8 +379,9 @@ fn simple_child_mounts_at_anchor() {
         "child module imported from @use, path as written: {js}"
     );
     assert!(
-        js.contains("const a0 = anchorAppend(c.root.childNodes[0]);"),
-        "anchor created inside the host element: {js}"
+        js.contains("const [g0] = refs(c.root, [[0]]);")
+            && js.contains("const a0 = anchorAppend(g0);"),
+        "anchor created inside the host element (target pre-captured): {js}"
     );
     assert!(
         js.contains("const ch0 = mountChild(c, a0, Child, {});"),
