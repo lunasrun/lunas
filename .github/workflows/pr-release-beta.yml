@@ -8,18 +8,15 @@ jobs:
       pull-requests: write
     runs-on: ubuntu-latest
     steps:
+      # The script is API-only (uses the compare + commits/{sha}/pulls REST
+      # endpoints), so a shallow checkout is enough — we don't walk git history.
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          fetch-depth: 0
-      - uses: ruby/setup-ruby@v1
-        with:
-          ruby-version: "3.3"
-      - run: gem install --no-document git-pr-release
-      - run: git-pr-release
+          node-version: 22
+      - name: Generate / update release PR
+        run: node .github/scripts/release-pr.mjs
         env:
-          GIT_PR_RELEASE_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GIT_PR_RELEASE_BRANCH_PRODUCTION: beta
-          GIT_PR_RELEASE_BRANCH_STAGING: main
-          GIT_PR_RELEASE_LABELS: beta
-          GIT_PR_RELEASE_TEMPLATE: .github/pr-release-templates/release-template.erb
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # GITHUB_REPOSITORY is provided automatically by GitHub Actions.
           TZ: Asia/Tokyo

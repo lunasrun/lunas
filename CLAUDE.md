@@ -35,9 +35,12 @@ Claude drives development from the roadmap autonomously:
      `add-labels.yml`): `feat/` features, `fix/` bug fixes, `refactor/`
      refactors, `chore/` chores, `docs/` documentation, `version/` release
      version bumps. Those same labels categorize PRs into the auto-generated
-     beta release PR (`pr-release-beta.yml`, `git-pr-release` from `main`
-     into `beta`), so picking the right prefix keeps the release notes
-     accurate.
+     beta release PR (`pr-release-beta.yml`, which runs
+     `.github/scripts/release-pr.mjs` to build a release PR from `main` into
+     `beta`), so picking the right prefix keeps the release notes accurate.
+     The script is squash-merge aware: it detects released PRs from the
+     `beta...main` compare (squash commit `(#N)` subjects, with a
+     `commits/{sha}/pulls` API fallback), not merge commits.
 4. **Quality gate before any PR:** `cargo fmt --check`, `cargo clippy
    --workspace -D warnings`, `cargo test --workspace` (run inside `crates/`),
    plus the runtime test driver (`node packages/lunas/test/run-all.mjs`) for
