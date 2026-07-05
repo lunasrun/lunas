@@ -442,12 +442,66 @@ impl Visit for ScopedFreeCollector {
         self.scopes.pop();
     }
 
+    fn visit_for_stmt(&mut self, n: &swc_ecma_ast::ForStmt) {
+        // A C-style `for (let i = 0; …; …)` header declares `i` for the whole
+        // loop (init/test/update/body). Only a `VarDecl` init binds — a bare
+        // expression init (`for (i = 0; …)`) assigns an existing binding and
+        // must stay a free read.
+        let mut scope = std::collections::HashSet::new();
+        if let Some(swc_ecma_ast::VarDeclOrExpr::VarDecl(var)) = &n.init {
+            for d in &var.decls {
+                collect_pat_names(&d.name, &mut scope);
+            }
+        }
+        self.scopes.push(scope);
+        n.visit_children_with(self);
+        self.scopes.pop();
+    }
+
+    fn visit_for_in_stmt(&mut self, n: &swc_ecma_ast::ForInStmt) {
+        self.scopes.push(for_head_scope(&n.left));
+        n.visit_children_with(self);
+        self.scopes.pop();
+    }
+
+    fn visit_for_of_stmt(&mut self, n: &swc_ecma_ast::ForOfStmt) {
+        self.scopes.push(for_head_scope(&n.left));
+        n.visit_children_with(self);
+        self.scopes.pop();
+    }
+
+    fn visit_catch_clause(&mut self, n: &swc_ecma_ast::CatchClause) {
+        // `try {} catch (e) {}` — the catch parameter (including destructuring)
+        // is scoped to the catch body. Mirrors `ModuleRefCollector`.
+        let mut scope = std::collections::HashSet::new();
+        if let Some(p) = &n.param {
+            collect_pat_names(p, &mut scope);
+        }
+        self.scopes.push(scope);
+        n.body.visit_with(self);
+        self.scopes.pop();
+    }
+
     fn visit_ident(&mut self, n: &Ident) {
         if !self.is_bound(&n.sym) {
             self.free
                 .push((n.sym.to_string(), n.span.lo.0, n.span.hi.0));
         }
     }
+}
+
+/// The names introduced by a `for-of` / `for-in` head. A `VarDecl` head
+/// (`for (const x of …)`) declares its pattern; a bare pattern head
+/// (`for (x of …)`) is an assignment to an existing binding and introduces
+/// nothing.
+fn for_head_scope(head: &swc_ecma_ast::ForHead) -> std::collections::HashSet<String> {
+    let mut scope = std::collections::HashSet::new();
+    if let swc_ecma_ast::ForHead::VarDecl(var) = head {
+        for d in &var.decls {
+            collect_pat_names(&d.name, &mut scope);
+        }
+    }
+    scope
 }
 
 fn collect_pat_names(pat: &Pat, out: &mut std::collections::HashSet<String>) {
