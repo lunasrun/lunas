@@ -210,7 +210,7 @@ fn analyze_source(source: &str) -> AnalyzeResult {
                     .chars()
                     .take_while(|c| c.is_alphanumeric() || *c == '_' || *c == '.')
                     .collect();
-                if raw_name.chars().next().map_or(false, |c| c.is_uppercase()) {
+                if raw_name.chars().next().is_some_and(|c| c.is_uppercase()) {
                     let start = element.open_tag_range.start().raw() + 1; // past `<`
                     let end = start + raw_name.len() as u32;
                     references.push(JsSymbol {
