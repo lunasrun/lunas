@@ -124,17 +124,6 @@ fn ident_span(source: &str, range: lunas_span::TextRange, name: &str) -> (u32, u
     }
 }
 
-/// Whether `s` is a single JS identifier (so a `:for` loop variable can be
-/// emitted as a binding; destructuring patterns are skipped for now).
-fn is_simple_ident(s: &str) -> bool {
-    let mut chars = s.chars();
-    match chars.next() {
-        Some(c) if c.is_alphabetic() || c == '_' || c == '$' => {}
-        _ => return false,
-    }
-    chars.all(|c| c.is_alphanumeric() || c == '_' || c == '$')
-}
-
 /// Pure analysis over a `.lunas` source, split out so it is unit-testable on the
 /// host target without the wasm-bindgen `JsValue` bridge.
 ///
@@ -215,17 +204,25 @@ fn analyze_source(source: &str) -> AnalyzeResult {
                 if let Some(parsed) = parse_for(&for_block.header.text) {
                     let header_text = &for_block.header.text;
                     let base = for_block.header.range.start().raw();
-                    // Loop variable declaration (simple identifier bindings only;
-                    // destructuring patterns like `[i, v]` are left for later).
-                    if is_simple_ident(&parsed.binding) {
-                        if let Some(pos) = header_text.find(&parsed.binding) {
-                            let start = base + pos as u32;
-                            bindings.push(JsSymbol {
-                                name: parsed.binding.clone(),
-                                start,
-                                end: start + parsed.binding.len() as u32,
-                                kind: "variable",
-                            });
+                    // Loop variable declaration(s). Reuse the declaration-pattern
+                    // collector so destructuring (`[i, v]`, `{ a }`) yields each
+                    // bound name: wrap the binding as a `let`, then shift the
+                    // resulting spans back to the pattern's position in the header.
+                    if let Some(pat_pos) = header_text.find(&parsed.binding) {
+                        let pat_base = base + pat_pos as u32;
+                        let wrapped = format!("let {} = 0;", parsed.binding);
+                        if let Ok(decls) = declared_bindings_with_spans(&wrapped) {
+                            let prefix = "let ".len() as u32;
+                            for (name, local) in decls {
+                                let start = pat_base + local.start().raw().saturating_sub(prefix);
+                                let len = local.end().raw() - local.start().raw();
+                                bindings.push(JsSymbol {
+                                    name,
+                                    start,
+                                    end: start + len,
+                                    kind: "variable",
+                                });
+                            }
                         }
                     }
                     // Iterable references (its free identifiers), shifted to the
@@ -419,6 +416,22 @@ script:
             result.references.iter().any(|r| r.name == "item"),
             "loop-body reference to the loop variable",
         );
+    }
+
+    #[test]
+    fn analyze_reports_destructured_for_loop_variables() {
+        let src = "html:\n    <li :for=\"[i, v] of pairs\">${ i }${ v }</li>\n";
+        let result = analyze_source(src);
+
+        // Both destructured names become bindings, each pinned to its own token.
+        for name in ["i", "v"] {
+            let decl = result
+                .bindings
+                .iter()
+                .find(|b| b.name == name)
+                .unwrap_or_else(|| panic!("binding for `{name}`"));
+            assert_eq!(&src[decl.start as usize..decl.end as usize], name);
+        }
     }
 
     #[test]
