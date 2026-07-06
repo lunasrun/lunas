@@ -196,6 +196,31 @@ fn analyze_source(source: &str) -> AnalyzeResult {
                     kind: "component",
                 });
             }
+            // A capitalized tag that isn't registered via `@use` parses as a
+            // plain element (only `@use`-known tags become `Component`s). By the
+            // component-naming convention it's a component use, so surface it as
+            // a component reference too — it resolves to no `@use` binding, which
+            // lets a language server flag it as an unknown component. The HTML
+            // parser lowercases element names, so read the raw name (and its
+            // original case) from the source tag.
+            TemplateNode::Element(element) => {
+                let raw = element.open_tag_range.slice(source).unwrap_or("");
+                let raw_name: String = raw
+                    .trim_start_matches('<')
+                    .chars()
+                    .take_while(|c| c.is_alphanumeric() || *c == '_' || *c == '.')
+                    .collect();
+                if raw_name.chars().next().map_or(false, |c| c.is_uppercase()) {
+                    let start = element.open_tag_range.start().raw() + 1; // past `<`
+                    let end = start + raw_name.len() as u32;
+                    references.push(JsSymbol {
+                        name: raw_name,
+                        start,
+                        end,
+                        kind: "component",
+                    });
+                }
+            }
             // `:for="item of items"` — the loop variable is a declaration
             // (referenced from the loop body, which the expression walk already
             // covers), and the iterable is a reference to an outer binding. The
@@ -387,6 +412,31 @@ script:
             .find(|r| r.name == "Foo")
             .expect("component-tag reference");
         assert_eq!(&src[tag.start as usize..tag.end as usize], "Foo");
+    }
+
+    #[test]
+    fn analyze_reports_unregistered_capitalized_tag_as_component_ref() {
+        // `<Bar/>` with no `@use Bar` — a component reference with no matching
+        // binding, so a language server can flag it as an unknown component.
+        let src = "html:\n    <Bar/>\n";
+        let result = analyze_source(src);
+
+        let tag = result
+            .references
+            .iter()
+            .find(|r| r.name == "Bar")
+            .expect("capitalized tag as component reference");
+        assert_eq!(tag.kind, "component");
+        assert_eq!(&src[tag.start as usize..tag.end as usize], "Bar");
+        // ...and it resolves to no binding.
+        assert!(!result.bindings.iter().any(|b| b.name == "Bar"));
+    }
+
+    #[test]
+    fn analyze_leaves_lowercase_elements_alone() {
+        // Ordinary elements are not component references.
+        let result = analyze_source("html:\n    <div><p>hi</p></div>\n");
+        assert!(result.references.iter().all(|r| r.kind != "component"));
     }
 
     #[test]
