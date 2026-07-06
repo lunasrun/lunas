@@ -80,13 +80,17 @@ pub fn compile(source: &str) -> Result<JsValue, JsValue> {
     serde_wasm_bindgen::to_value(&result).map_err(|e| JsValue::from_str(&e.to_string()))
 }
 
-/// One named symbol occurrence flattened for JavaScript: a `name` plus its
-/// file-absolute UTF-8 byte range.
+/// One named symbol occurrence flattened for JavaScript: a `name`, its
+/// file-absolute UTF-8 byte range, and a `kind` categorizing it for semantic
+/// highlighting — `"variable"` (script bindings, `:for` variables, plain
+/// identifier uses), `"prop"` (`@input`), or `"component"` (`@use` and
+/// `<Component/>` usages).
 #[derive(Serialize)]
 struct JsSymbol {
     name: String,
     start: u32,
     end: u32,
+    kind: &'static str,
 }
 
 /// The result of an [`analyze`] call: the navigation data a language server
@@ -150,6 +154,7 @@ fn analyze_source(source: &str) -> AnalyzeResult {
                     name,
                     start: r.start().raw(),
                     end: r.end().raw(),
+                    kind: "variable",
                 });
             }
         }
@@ -159,13 +164,18 @@ fn analyze_source(source: &str) -> AnalyzeResult {
     // declarations too (referenced from the template), so navigation can resolve
     // them. Their stored `range` is the directive body; pin the name within it.
     for directive in &file.directives {
-        let (name, range) = match directive {
-            Directive::Input(prop) => (prop.name.clone(), prop.range),
-            Directive::UseComponent(uc) => (uc.component_name.clone(), uc.range),
+        let (name, range, kind) = match directive {
+            Directive::Input(prop) => (prop.name.clone(), prop.range, "prop"),
+            Directive::UseComponent(uc) => (uc.component_name.clone(), uc.range, "component"),
             _ => continue,
         };
         let (start, end) = ident_span(source, range, &name);
-        bindings.push(JsSymbol { name, start, end });
+        bindings.push(JsSymbol {
+            name,
+            start,
+            end,
+            kind,
+        });
     }
 
     let mut references = Vec::new();
@@ -179,6 +189,7 @@ fn analyze_source(source: &str) -> AnalyzeResult {
                         name,
                         start: r.start().raw(),
                         end: r.end().raw(),
+                        kind: "variable",
                     });
                 }
             }
@@ -193,6 +204,7 @@ fn analyze_source(source: &str) -> AnalyzeResult {
                     name: component.name.clone(),
                     start,
                     end,
+                    kind: "component",
                 });
             }
             // `:for="item of items"` — the loop variable is a declaration
@@ -212,6 +224,7 @@ fn analyze_source(source: &str) -> AnalyzeResult {
                                 name: parsed.binding.clone(),
                                 start,
                                 end: start + parsed.binding.len() as u32,
+                                kind: "variable",
                             });
                         }
                     }
@@ -226,6 +239,7 @@ fn analyze_source(source: &str) -> AnalyzeResult {
                                     name,
                                     start: r.start().raw(),
                                     end: r.end().raw(),
+                                    kind: "variable",
                                 });
                             }
                         }
@@ -348,6 +362,7 @@ script:
             .find(|b| b.name == "name")
             .expect("@input binding");
         assert_eq!(&src[decl.start as usize..decl.end as usize], "name");
+        assert_eq!(decl.kind, "prop");
 
         // And it's referenced in the template.
         let r = result.references.iter().find(|r| r.name == "name");
@@ -365,6 +380,7 @@ script:
             .find(|b| b.name == "Foo")
             .expect("@use binding");
         assert_eq!(&src[decl.start as usize..decl.end as usize], "Foo");
+        assert_eq!(decl.kind, "component");
 
         // The `<Foo/>` usage is a reference to the `@use` binding, pinned to the
         // tag name.
