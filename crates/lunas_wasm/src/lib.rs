@@ -25,7 +25,7 @@
 //! matching the compiler's spans).
 
 use lunas_parser::{parse, Directive, TemplateNode};
-use lunas_script::{declared_bindings_with_spans, free_identifiers_with_spans};
+use lunas_script::{declared_bindings_with_spans, free_identifiers_with_spans, parse_for};
 use lunas_span::{Diagnostic, Severity};
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
@@ -107,12 +107,6 @@ struct AnalyzeResult {
     references: Vec<JsSymbol>,
 }
 
-/// Pure analysis over a `.lunas` source, split out so it is unit-testable on the
-/// host target without the wasm-bindgen `JsValue` bridge.
-///
-/// Never panics: parse problems yield an empty file, and per-block script parse
-/// errors are skipped rather than propagated (mirrors the never-panic contract
-/// of the public compiler entry points).
 /// Byte span of the first occurrence of `name` within `range`, as `(start, end)`
 /// file-absolute UTF-8 offsets. Used to pin a directive/component *name* inside
 /// a larger span (e.g. the `name` in an `@input name: T` body, whose stored
@@ -126,6 +120,23 @@ fn ident_span(source: &str, range: lunas_span::TextRange, name: &str) -> (u32, u
     }
 }
 
+/// Whether `s` is a single JS identifier (so a `:for` loop variable can be
+/// emitted as a binding; destructuring patterns are skipped for now).
+fn is_simple_ident(s: &str) -> bool {
+    let mut chars = s.chars();
+    match chars.next() {
+        Some(c) if c.is_alphabetic() || c == '_' || c == '$' => {}
+        _ => return false,
+    }
+    chars.all(|c| c.is_alphanumeric() || c == '_' || c == '$')
+}
+
+/// Pure analysis over a `.lunas` source, split out so it is unit-testable on the
+/// host target without the wasm-bindgen `JsValue` bridge.
+///
+/// Never panics: parse problems yield an empty file, and per-block script parse
+/// errors are skipped rather than propagated (mirrors the never-panic contract
+/// of the public compiler entry points).
 fn analyze_source(source: &str) -> AnalyzeResult {
     let (file, _diags) = parse(source);
 
@@ -173,10 +184,10 @@ fn analyze_source(source: &str) -> AnalyzeResult {
             }
         });
 
-        // Component usages (`<Foo/>`) are references to their `@use Foo` binding.
-        // The tag name sits at the start of the open-tag span (just past `<`).
-        html.template.visit(&mut |node| {
-            if let TemplateNode::Component(component) = node {
+        html.template.visit(&mut |node| match node {
+            // Component usages (`<Foo/>`) are references to their `@use Foo`
+            // binding. The tag name sits at the start of the open-tag span.
+            TemplateNode::Component(component) => {
                 let (start, end) = ident_span(source, component.open_tag_range, &component.name);
                 references.push(JsSymbol {
                     name: component.name.clone(),
@@ -184,6 +195,44 @@ fn analyze_source(source: &str) -> AnalyzeResult {
                     end,
                 });
             }
+            // `:for="item of items"` — the loop variable is a declaration
+            // (referenced from the loop body, which the expression walk already
+            // covers), and the iterable is a reference to an outer binding. The
+            // header isn't a plain expression, so split it with `parse_for`.
+            TemplateNode::For(for_block) => {
+                if let Some(parsed) = parse_for(&for_block.header.text) {
+                    let header_text = &for_block.header.text;
+                    let base = for_block.header.range.start().raw();
+                    // Loop variable declaration (simple identifier bindings only;
+                    // destructuring patterns like `[i, v]` are left for later).
+                    if is_simple_ident(&parsed.binding) {
+                        if let Some(pos) = header_text.find(&parsed.binding) {
+                            let start = base + pos as u32;
+                            bindings.push(JsSymbol {
+                                name: parsed.binding.clone(),
+                                start,
+                                end: start + parsed.binding.len() as u32,
+                            });
+                        }
+                    }
+                    // Iterable references (its free identifiers), shifted to the
+                    // iterable's position within the header.
+                    if let Some(pos) = header_text.rfind(&parsed.iterable) {
+                        let iter_base: lunas_span::TextSize = (base + pos as u32).into();
+                        if let Ok(refs) = free_identifiers_with_spans(&parsed.iterable) {
+                            for (name, local) in refs {
+                                let r = local.shifted(iter_base);
+                                references.push(JsSymbol {
+                                    name,
+                                    start: r.start().raw(),
+                                    end: r.end().raw(),
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {}
         });
     }
 
@@ -328,6 +377,35 @@ script:
     }
 
     #[test]
+    fn analyze_reports_for_loop_variable_and_iterable() {
+        let src =
+            "html:\n    <li :for=\"item of items\">${ item }</li>\nscript:\n    let items = []\n";
+        let result = analyze_source(src);
+
+        // The loop variable is a declaration, pinned to `item` in the header.
+        let decl = result
+            .bindings
+            .iter()
+            .find(|b| b.name == "item")
+            .expect("loop variable binding");
+        assert_eq!(&src[decl.start as usize..decl.end as usize], "item");
+
+        // The iterable is a reference (to the `items` script binding).
+        let iter = result
+            .references
+            .iter()
+            .find(|r| r.name == "items")
+            .expect("iterable reference");
+        assert_eq!(&src[iter.start as usize..iter.end as usize], "items");
+
+        // The `${ item }` body use is a reference to the loop variable.
+        assert!(
+            result.references.iter().any(|r| r.name == "item"),
+            "loop-body reference to the loop variable",
+        );
+    }
+
+    #[test]
     fn analyze_never_panics_on_garbage() {
         // Malformed / empty inputs must analyze cleanly with no panic.
         for src in [
@@ -336,6 +414,7 @@ script:
             "script:\n    let = =",
             "html:\n    ${",
             "@input\n@use\nhtml:\n    <Bad",
+            "html:\n    <li :for=\"= = =\">x</li>",
         ] {
             let _ = analyze_source(src);
         }
