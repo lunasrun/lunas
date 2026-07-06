@@ -24,7 +24,7 @@
 //! line/column with its own line index (the offsets are UTF-8 byte offsets,
 //! matching the compiler's spans).
 
-use lunas_parser::parse;
+use lunas_parser::{parse, Directive, TemplateNode};
 use lunas_script::{declared_bindings_with_spans, free_identifiers_with_spans};
 use lunas_span::{Diagnostic, Severity};
 use serde::Serialize;
@@ -113,6 +113,19 @@ struct AnalyzeResult {
 /// Never panics: parse problems yield an empty file, and per-block script parse
 /// errors are skipped rather than propagated (mirrors the never-panic contract
 /// of the public compiler entry points).
+/// Byte span of the first occurrence of `name` within `range`, as `(start, end)`
+/// file-absolute UTF-8 offsets. Used to pin a directive/component *name* inside
+/// a larger span (e.g. the `name` in an `@input name: T` body, whose stored
+/// range covers the whole body). Falls back to the full range if not found.
+fn ident_span(source: &str, range: lunas_span::TextRange, name: &str) -> (u32, u32) {
+    let base = range.start().raw();
+    let text = range.slice(source).unwrap_or("");
+    match text.find(name) {
+        Some(pos) => (base + pos as u32, base + pos as u32 + name.len() as u32),
+        None => (range.start().raw(), range.end().raw()),
+    }
+}
+
 fn analyze_source(source: &str) -> AnalyzeResult {
     let (file, _diags) = parse(source);
 
@@ -131,6 +144,19 @@ fn analyze_source(source: &str) -> AnalyzeResult {
         }
     }
 
+    // Top-level directive declarations: `@input` props and `@use` components are
+    // declarations too (referenced from the template), so navigation can resolve
+    // them. Their stored `range` is the directive body; pin the name within it.
+    for directive in &file.directives {
+        let (name, range) = match directive {
+            Directive::Input(prop) => (prop.name.clone(), prop.range),
+            Directive::UseComponent(uc) => (uc.component_name.clone(), uc.range),
+            _ => continue,
+        };
+        let (start, end) = ident_span(source, range, &name);
+        bindings.push(JsSymbol { name, start, end });
+    }
+
     let mut references = Vec::new();
     if let Some(html) = &file.html {
         html.template.for_each_expression(|text, expr_range| {
@@ -144,6 +170,19 @@ fn analyze_source(source: &str) -> AnalyzeResult {
                         end: r.end().raw(),
                     });
                 }
+            }
+        });
+
+        // Component usages (`<Foo/>`) are references to their `@use Foo` binding.
+        // The tag name sits at the start of the open-tag span (just past `<`).
+        html.template.visit(&mut |node| {
+            if let TemplateNode::Component(component) = node {
+                let (start, end) = ident_span(source, component.open_tag_range, &component.name);
+                references.push(JsSymbol {
+                    name: component.name.clone(),
+                    start,
+                    end,
+                });
             }
         });
     }
@@ -249,6 +288,46 @@ script:
     }
 
     #[test]
+    fn analyze_reports_input_prop_declarations() {
+        let src = "@input name: string\nhtml:\n    <p>${ name }</p>\n";
+        let result = analyze_source(src);
+
+        // `@input name` is a declaration, pinned to the `name` token.
+        let decl = result
+            .bindings
+            .iter()
+            .find(|b| b.name == "name")
+            .expect("@input binding");
+        assert_eq!(&src[decl.start as usize..decl.end as usize], "name");
+
+        // And it's referenced in the template.
+        let r = result.references.iter().find(|r| r.name == "name");
+        assert!(r.is_some(), "template reference to the prop");
+    }
+
+    #[test]
+    fn analyze_reports_use_component_decl_and_tag_reference() {
+        let src = "@use Foo from \"./Foo.lunas\"\nhtml:\n    <Foo/>\n";
+        let result = analyze_source(src);
+
+        let decl = result
+            .bindings
+            .iter()
+            .find(|b| b.name == "Foo")
+            .expect("@use binding");
+        assert_eq!(&src[decl.start as usize..decl.end as usize], "Foo");
+
+        // The `<Foo/>` usage is a reference to the `@use` binding, pinned to the
+        // tag name.
+        let tag = result
+            .references
+            .iter()
+            .find(|r| r.name == "Foo")
+            .expect("component-tag reference");
+        assert_eq!(&src[tag.start as usize..tag.end as usize], "Foo");
+    }
+
+    #[test]
     fn analyze_never_panics_on_garbage() {
         // Malformed / empty inputs must analyze cleanly with no panic.
         for src in [
@@ -256,6 +335,7 @@ script:
             "not a lunas file",
             "script:\n    let = =",
             "html:\n    ${",
+            "@input\n@use\nhtml:\n    <Bad",
         ] {
             let _ = analyze_source(src);
         }
