@@ -1,0 +1,5 @@
+html:
+    <select><option :for="o of opts" :key="o.id" class="opt">${o.label}</option></select>
+script:
+    let opts = [{id:1,label:"one"},{id:2,label:"two"}]
+    function add(){ opts = [...opts, {id:3,label:"three"}] }

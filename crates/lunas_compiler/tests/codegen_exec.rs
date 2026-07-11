@@ -1361,3 +1361,58 @@ fn inline_and_function_call_handlers_mix() {
         "function-call handler still works: {out}"
     );
 }
+
+#[test]
+fn keyed_for_inside_table_tbody_renders_and_reacts() {
+    if !node_available() {
+        eprintln!("skipping codegen_exec: node not found at {NODE}");
+        return;
+    }
+    // A keyed `:for` whose item skeleton is a `<tr>` (table context). Parsing
+    // `<tr>` as the innerHTML of a `<div>` DROPS it in a real browser, which was
+    // the table-context crash (`childNodes[0]` undefined). The runtime now parses
+    // fragment skeletons through a `<template>` so the row survives. This test
+    // mounts the table, asserts the initial rows, then removes one via its own
+    // button (structural change through the keyed reconciler).
+    let source = "html:\n\
+        \x20   <table><tbody><tr :for=\"row of rows\" :key=\"row.id\"><td class=\"cell\">${row.label}</td><td><button class=\"del\" @click=\"del(row.id)\">x</button></td></tr></tbody></table>\n\
+        script:\n\
+        \x20   let rows = [{id:1,label:\"a\"},{id:2,label:\"b\"},{id:3,label:\"c\"}]\n\
+        \x20   function del(id){ rows = rows.filter(r => r.id !== id) }\n";
+
+    // Walk the whole tree collecting `td.cell` text, in document order.
+    let driver = "\
+        const root = factory({});\n\
+        const cells = () => {\n\
+          const out = [];\n\
+          const walk = (n) => {\n\
+            for (const c of n.childNodes) {\n\
+              if (c.tag === 'td' && (c.getAttribute('class') || '') === 'cell') out.push(c.innerHTMLString());\n\
+              walk(c);\n\
+            }\n\
+          };\n\
+          walk(root);\n\
+          return out.join(',');\n\
+        };\n\
+        const dels = () => {\n\
+          const out = [];\n\
+          const walk = (n) => {\n\
+            for (const c of n.childNodes) {\n\
+              if (c.tag === 'button' && (c.getAttribute('class') || '') === 'del') out.push(c);\n\
+              walk(c);\n\
+            }\n\
+          };\n\
+          walk(root);\n\
+          return out;\n\
+        };\n\
+        console.log('INITIAL:' + cells());\n\
+        dels()[1].dispatch('click'); await tick();\n\
+        console.log('MID:' + cells());\n\
+        dels()[0].dispatch('click'); await tick();\n\
+        console.log('AFTER:' + cells());\n";
+
+    let out = run_component("table_for", source, driver);
+    assert!(out.contains("INITIAL:a,b,c"), "initial table render: {out}");
+    assert!(out.contains("MID:a,c"), "remove middle row: {out}");
+    assert!(out.contains("AFTER:c"), "remove first row: {out}");
+}

@@ -1,0 +1,5 @@
+html:
+    <table><tbody><tr :for="row of rows" :key="row.id"><td class="cell">${row.label}</td><td><button class="up" @click="bump(row.id)">+</button></td></tr></tbody></table>
+script:
+    let rows = [{id:1,label:"a"},{id:2,label:"b"}]
+    function bump(id){ rows = rows.map(r => r.id === id ? {...r, label: r.label + "!"} : r) }

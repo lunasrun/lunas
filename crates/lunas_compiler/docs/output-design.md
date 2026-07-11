@@ -491,9 +491,24 @@ template are imported; a colliding tag name (e.g. a component literally named
 6. Return `root`; the caller attaches it to the live DOM **once**.
 
 **Multi-root component**: skip the wrapper element — parse the interior into a
-throwaway `<div>` (or the mount host), take its child nodes as the roots, and
-track the set (or a start/end anchor pair) so the block can be removed/moved as
-a unit (§8).
+throwaway container (a `<template>`; see the table-context note below), take its
+child nodes as the roots, and track the set (or a start/end anchor pair) so the
+block can be removed/moved as a unit (§8).
+
+**Fragment parsing goes through a `<template>` (table-context safety).** Every
+detached fragment parse the runtime does — a `:for` item / bulk-item skeleton, an
+`:if`/`ifChain` branch (`fromHTML`), and a multi-root `fragment(...)` — parses the
+HTML as the content of a `<template>` element (`t.innerHTML = html; …t.content`),
+not the `innerHTML` of a `<div>`. A `<template>`'s content fragment is a valid
+insertion context for **any** element, whereas a `<div>` is not a valid table or
+select insertion context: assigning `"<tr>…</tr>"` (or `<td>`/`<tbody>`/`<option>`
+/`<col>`/…) as a `<div>`'s `innerHTML` makes the HTML parser **DROP** the
+table/select tags, leaving an empty container whose `childNodes[0]` is `undefined`
+— which crashed a keyed `:for`/`:if`/fragment whose item is a `<tr>` (etc.). The
+shared `parseFragment(html, doc)` helper (dom.mjs) implements this, falling back to
+a `<div>` only when `<template>`/`.content` is unavailable. The component **root**
+build is unaffected (its static skeleton is the `innerHTML` of the `div` wrapper /
+the component's own root tag, both valid contexts for table markup).
 
 ---
 

@@ -22,6 +22,7 @@ import {
   addDisposer,
 } from "./core.mjs";
 import { createForState, seedForState, reconcile, extractKeys } from "./for_diff.mjs";
+import { parseFragment } from "./dom.mjs";
 import { isLive, runMount, runDestroy, onDestroy } from "./lifecycle.mjs";
 
 const toNodes = (h) => (Array.isArray(h) ? h : [h]);
@@ -184,8 +185,10 @@ export function forBlock(c, anchor, deps, items, opts) {
 
   // Build one item in compiled mode: parse its own skeleton copy, wire it.
   const buildOne = (d, i) => {
-    const scr = anchor.ownerDocument.createElement("div");
-    scr.innerHTML = opts.html;
+    // Parse through parseFragment (a <template>) so a table-context item
+    // skeleton (`<tr>`, `<td>`, …) survives — a plain <div> parse would drop it
+    // and `childNodes[0]` would be undefined (the table-context crash).
+    const scr = parseFragment(opts.html, anchor.ownerDocument);
     const root = scr.childNodes[0];
     const p = opts.wire(root, d, i);
     if (p) patches.set(root, p);
@@ -256,10 +259,11 @@ export function forBlock(c, anchor, deps, items, opts) {
     const arr = readItems();
     const n = arr.length;
     if (n > 0) {
-      const scr = anchor.ownerDocument.createElement("div");
       let html = "";
       for (let i = 0; i < n; i++) html += opts.html;
-      scr.innerHTML = html;
+      // Parse through parseFragment (a <template>) so table-context item
+      // skeletons (`<tr>`, …) survive the bulk parse instead of being dropped.
+      const scr = parseFragment(html, anchor.ownerDocument);
       // Snapshot roots before moving anything (childNodes is live).
       const nodes = new Array(n);
       for (let i = 0; i < n; i++) nodes[i] = scr.childNodes[i];

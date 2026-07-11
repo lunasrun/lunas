@@ -133,9 +133,15 @@ class FakeNode {
     this._props.disabled = v;
   }
   set innerHTML(html) {
-    this.childNodes.length = 0;
-    for (const n of parseHTML(html, this.ownerDocument)) {
-      this.appendChild(n);
+    // A <template> parses into its `.content` DocumentFragment, mirroring the
+    // real DOM: `template.innerHTML = …` populates `template.content`, and the
+    // <template> element itself has no direct children. This is what lets the
+    // runtime's parseFragment survive table-context skeletons (<tr>, <td>, …)
+    // which a plain element parse would drop.
+    const target = this.tag === "template" && this.content ? this.content : this;
+    target.childNodes.length = 0;
+    for (const n of parseHTML(html, target.ownerDocument, target.tag)) {
+      target.appendChild(n);
     }
   }
   get innerHTML() {
@@ -175,11 +181,46 @@ const VOID = new Set([
   "param", "source", "track", "wbr",
 ]);
 
-// Tiny recursive-descent parser for the skeleton subset.
-function parseHTML(html, doc) {
+// Table-context elements: the HTML parser only produces these inside a valid
+// table insertion context. A real browser DROPS a `<tr>`/`<td>`/`<tbody>`/…
+// parsed as the innerHTML of a non-table container (e.g. a `<div>`), which is
+// the table-context bug the runtime's <template> fix addresses. The shim models
+// that drop so a `<div>`-context parse of table content matches the browser and
+// the buggy path fails loudly (the fix routes through a <template>, whose
+// content fragment is a valid insertion context and keeps these elements).
+//
+// Maps a table-only tag to the set of parent tags it may legally appear under.
+// A `<template>` content fragment (and the top-level `null` document context)
+// is treated as permissive — the browser's template content is a valid parse
+// context for any table-context element.
+const TABLE_CONTEXT = {
+  tr: new Set(["tbody", "thead", "tfoot", "table"]),
+  td: new Set(["tr"]),
+  th: new Set(["tr"]),
+  tbody: new Set(["table"]),
+  thead: new Set(["table"]),
+  tfoot: new Set(["table"]),
+  caption: new Set(["table"]),
+  colgroup: new Set(["table"]),
+  col: new Set(["colgroup", "table"]),
+};
+
+// Tiny recursive-descent parser for the skeleton subset. `containerTag` is the
+// tag of the element whose innerHTML is being set (undefined/`"template"`/`null`
+// = permissive context where any element survives, matching a <template>'s
+// content fragment and document-level parsing in this shim).
+function parseHTML(html, doc, containerTag) {
   let i = 0;
   const roots = [];
   const stack = [];
+  const permissive =
+    containerTag === undefined ||
+    containerTag === null ||
+    containerTag === "template";
+  // The current parse context tag: the innermost open element, or (at the top
+  // level) `null` when permissive (<template>/document) else the container tag.
+  const contextTag = () =>
+    stack.length ? stack[stack.length - 1].tag : permissive ? null : containerTag;
   const push = (node) => {
     if (stack.length) stack[stack.length - 1].appendChild(node);
     else roots.push(node);
@@ -195,6 +236,15 @@ function parseHTML(html, doc) {
         const end = html.indexOf(">", i);
         const raw = html.slice(i + 1, end);
         const { tag, attrs } = parseTag(raw);
+        // Drop a table-context element whose parent context can't legally hold
+        // it (browser parity). `null` context (permissive top level) allows it.
+        const allowed = TABLE_CONTEXT[tag];
+        const ctx = contextTag();
+        if (allowed && ctx !== null && !allowed.has(ctx)) {
+          // Skip this element AND its subtree: advance past the whole element.
+          i = skipElement(html, i, tag);
+          continue;
+        }
         const el = doc.createElement(tag);
         for (const [k, v] of attrs) el.setAttribute(k, v);
         push(el);
@@ -210,6 +260,32 @@ function parseHTML(html, doc) {
     }
   }
   return roots;
+}
+
+// skipElement(html, start, tag) — advance the parse index past a whole element
+// (its open tag, subtree, and matching close tag) starting at `start` (the `<`
+// of the open tag). Used to drop a mis-nested table-context element and its
+// content, approximating the browser dropping table tags parsed out of context.
+// Void elements have no close tag. Handles simple nesting of the same tag.
+function skipElement(html, start, tag) {
+  const openEnd = html.indexOf(">", start);
+  let i = openEnd + 1;
+  if (VOID.has(tag)) return i;
+  let depth = 1;
+  const openRe = new RegExp("<" + tag + "(?:[\\s/>])", "i");
+  const closeStr = "</" + tag;
+  while (i < html.length && depth > 0) {
+    const nextClose = html.toLowerCase().indexOf(closeStr, i);
+    if (nextClose === -1) return html.length;
+    // Count same-tag opens between i and nextClose to balance nesting.
+    const between = html.slice(i, nextClose);
+    let m;
+    const re = new RegExp("<" + tag + "(?:[\\s/>])", "gi");
+    while ((m = re.exec(between))) depth++;
+    depth--; // consume this close
+    i = html.indexOf(">", nextClose) + 1;
+  }
+  return i;
 }
 
 function parseTag(raw) {
@@ -256,7 +332,22 @@ export function installDom() {
     createElement(tag) {
       const n = new FakeNode(doc, "element", "");
       n.tag = tag;
+      // A <template> owns a `.content` DocumentFragment (kind "fragment"),
+      // mirroring the real DOM. Its innerHTML setter populates `.content`, and
+      // that fragment is a permissive parse context (table-context elements
+      // survive) — see FakeNode.innerHTML and parseHTML. The fragment carries a
+      // `null` tag so it reads as the permissive top-level parse context.
+      if (tag === "template") {
+        const frag = new FakeNode(doc, "fragment", "");
+        frag.tag = null;
+        n.content = frag;
+      }
       return n;
+    },
+    createDocumentFragment() {
+      const frag = new FakeNode(doc, "fragment", "");
+      frag.tag = null;
+      return frag;
     },
     // A document-level root so teleport targets attached here are reachable via
     // document.querySelector. Tests append their portal container to `body`.
