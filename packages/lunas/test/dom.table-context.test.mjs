@@ -94,4 +94,39 @@ await test("parseFragment: non-table skeleton still parses normally", () => {
   assert.strictEqual(scr.childNodes[0].childNodes[0].tag, "span");
 });
 
+// --- cache reentrancy: a nested parse must not clobber an in-flight one ------
+// parseFragment reuses a single cached <template> per document. A nested parse
+// (e.g. wiring an item builds a child fragment) happens while the caller still
+// holds the outer parse's nodes. Draining each parse into its own fragment
+// before returning makes this safe: the outer nodes are already detached from
+// the cache when the nested parse runs.
+
+await test("parseFragment: nested parse does not corrupt the outer result", () => {
+  const outer = parseFragment("<div class=\"outer\"><span>o</span></div>", document);
+  // Simulate the caller reading a root and then triggering a nested parse
+  // (as forBlock.buildOne does when wiring an item that itself parses HTML).
+  const outerRoot = outer.childNodes[0];
+  const inner = parseFragment("<p class=\"inner\">i</p>", document);
+  const innerRoot = inner.childNodes[0];
+  // Both results must be intact and distinct.
+  assert.strictEqual(outerRoot.tag, "div");
+  assert.strictEqual(outerRoot.getAttribute("class"), "outer");
+  assert.strictEqual(outerRoot.childNodes[0].tag, "span");
+  assert.strictEqual(innerRoot.tag, "p");
+  assert.strictEqual(innerRoot.getAttribute("class"), "inner");
+  // Each result is a single-root fragment (no cross-contamination).
+  assert.strictEqual(outer.childNodes.length, 1);
+  assert.strictEqual(inner.childNodes.length, 1);
+});
+
+await test("parseFragment: repeated calls each return only their own nodes", () => {
+  const a = parseFragment("<tr><td>a</td></tr>", document);
+  const b = parseFragment("<tr><td>b</td></tr>", document);
+  // The cache is drained between calls, so `b` never inherits `a`'s row.
+  assert.strictEqual(a.childNodes.length, 1);
+  assert.strictEqual(b.childNodes.length, 1);
+  assert.strictEqual(a.childNodes[0].childNodes[0].childNodes[0].data, "a");
+  assert.strictEqual(b.childNodes[0].childNodes[0].childNodes[0].data, "b");
+});
+
 console.log("dom.table-context.test.mjs: all " + passed + " tests passed");
