@@ -1954,6 +1954,26 @@ impl<'a> Emitter<'a> {
             frag.shadowed,
         );
 
+        // Fine-grained item-field updates: when the iterable is exactly a single
+        // deepBox variable read (`item of rows`), pass the box so `forBlock` can
+        // observe element-field mutations (`rows[i].label = x`) and patch just the
+        // touched item instead of running a full reconcile. Only a bare, unshadowed
+        // reactive var qualifies; anything derived (`rows.filter(...)`, a computed)
+        // keeps the coarse reconcile-on-change path.
+        let fine_box: Option<String> = {
+            let it = parsed.iterable.trim();
+            if is_plain_identifier(it) && !frag.shadowed.iter().any(|n| n == it) {
+                self.component
+                    .reactive_vars
+                    .iter()
+                    .find(|v| v.name == it)
+                    .filter(|_| is_deeply_mutated(&self.deep_hint, it))
+                    .map(|_| it.to_string())
+            } else {
+                None
+            }
+        };
+
         // `:for` over a component tag: mount-mode forBlock (one child per item).
         if let Some(comp) = for_component {
             self.emit_for_component(
@@ -2001,6 +2021,12 @@ impl<'a> Emitter<'a> {
         b.push_str("html: ");
         b.push_str(&html_name);
         b.push_str(",\n");
+        if let Some(box_name) = &fine_box {
+            push_indent(b, frag.indent + 1);
+            b.push_str("box: ");
+            b.push_str(box_name);
+            b.push_str(",\n");
+        }
         push_indent(b, frag.indent + 1);
         b.push_str("wire: (");
         b.push_str(&root);
@@ -2771,6 +2797,19 @@ fn binding_names(pattern: &str) -> Vec<String> {
     // Object patterns parse as blocks when bare; parenthesize.
     let as_expr = format!("({p})");
     lunas_script::free_identifiers(&as_expr).unwrap_or_default()
+}
+
+/// Whether `s` is a single plain JS identifier (`[A-Za-z_$][A-Za-z0-9_$]*`) with
+/// no member access, call, or other expression syntax. Used to detect a `:for`
+/// iterable that is exactly one variable read, eligible for the fine-grained
+/// element-field update fast path.
+fn is_plain_identifier(s: &str) -> bool {
+    let mut chars = s.chars();
+    match chars.next() {
+        Some(c) if c.is_ascii_alphabetic() || c == '_' || c == '$' => {}
+        _ => return false,
+    }
+    chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$')
 }
 
 /// Whether a user name would collide with the single-letter positional generated
