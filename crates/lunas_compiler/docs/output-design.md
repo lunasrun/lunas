@@ -337,13 +337,21 @@ export function attach(root, host) { /* append a detached component root to a li
 
 // --- emits: child → parent events (c-emits) ---------------------------------
 // A `@name` listener on a component tag compiles to an `on<Name>` prop on the
-// mountChild props object (see §6). The child calls emit(c, "name", payload),
-// which looks up on<Name> in the props it was constructed with and calls it.
+// mountChild props object (the PARENT half, see §6). The CHILD raises events by
+// calling a bare `emit("name", payload)` in its script; the codegen detects that
+// free `emit` reference and injects, at the top of the child's setup:
+//   registerEmits(c, props);
+//   const emit = (name, payload) => $emit(c, name, payload);   // $emit = aliased runtime emit
+// so the child's `emit("name", payload)` routes through registerEmits'd props to
+// the parent's on<Name> handler. (The runtime emit is imported under an alias
+// because the bare `emit` name is reserved for that injected closure; a child
+// that declares its OWN top-level `emit` opts out — no plumbing is injected.)
 // emit does NOT mark the parent dirty — the handler decides (a box setter in the
 // handler marks the parent as usual). Names camel-case: `save-all` → `onSaveAll`.
 export function registerEmits(c, props, declared) { /* at the top of a child setup: stash props so
                                                        emit can find on<Name> handlers; optional
-                                                       declared[] enables warn-only validation */ }
+                                                       declared[] enables warn-only validation
+                                                       (no `.lunas` syntax for declared[] yet) */ }
 export function emit(c, name, payload) { /* invoke the parent's on<Name> handler if present; returns
                                             whether one ran; no-op (false) when no listener/parent */ }
 export function eventPropName(name) { /* "save" → "onSave"; the codegen's @name→onName mapping */ }
@@ -393,7 +401,8 @@ No signal-tracking stack, no VDOM, no per-node effect objects.
 | `:if` / `:elseif` / `:else` | one `ifBlock` chain per cascade, anchored; branch built by its own `innerHTML` when shown. A branch body that is a **component tag** (`<Child :if=…/>`) mounts the child via `mountChild` inside the branch `make` (teardown rides the branch scope); a bare multi-child `<template :if>` unwraps into a multi-root branch (no literal `<template>`) |
 | `:for="n of items"` | `forBlock`; **initial render = one `innerHTML` of the concatenated items**, updates = keyed diff. A **component** body (`<Child :for=…/>`) uses forBlock *mount mode*: one `mountChild` per item (props from the item) instead of a static item skeleton; the item `make` returns `{ node, patch }` and the child teardown rides the item scope |
 | `<Child :p="e"/>` | `mountChild(c, anchor, Child, { p: () => e, static: "x" })` at an anchor; reactive props are getters, static props are values (see below) |
-| `<Child @save="h($event)"/>` | an `onSave: ($event) => h($event)` entry on the mountChild props object; the child raises it with `emit(c, "save", payload)` (§5, c-emits). `@save-all` → `onSaveAll` (camel-cased). Handler runs in the parent; it does not auto-mark the parent dirty |
+| `<Child @save="h($event)"/>` (parent) | an `onSave: ($event) => h($event)` entry on the mountChild props object; the child raises it with `emit("save", payload)` (§5, c-emits). `@save-all` → `onSaveAll` (camel-cased). Handler runs in the parent; it does not auto-mark the parent dirty |
+| `emit("save", payload)` in a child `script` | the compiler detects the free `emit` call and injects, at the top of the child's `setup`, `registerEmits(c, props)` + `const emit = (name, payload) => $emit(c, name, payload)` (runtime `emit` imported as the `$emit` alias). The child's `emit("save", …)` then routes to the parent's `onSave` prop. A child that declares its own top-level `emit` opts out (no injection) |
 | `@input name:type = v` | `const name = prop(c, "name", i, props.name, v)` at the top of `setup` — every prop is a reactive box (see below) |
 | `:class="e"` | `setClass(el, "<static class>", e)` — `e` is `string \| { cls: bool } \| array` (nested), normalized and merged with the static `class` attr (`normClass`) |
 | `:style="e"` | `setStyle(el, "<static style>", e)` — `e` is `string \| { camelCaseProp: v }` (arrays merge), camelCase → kebab, merged with the static `style` attr (`normStyle`) |

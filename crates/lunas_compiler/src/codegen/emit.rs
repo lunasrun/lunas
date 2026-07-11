@@ -67,6 +67,8 @@ const ALL_HELPERS: &[&str] = &[
     "slotContent",
     "setClass",
     "setStyle",
+    "registerEmits",
+    "emit",
     // `component` is intentionally excluded: it is only referenced at module
     // scope (the default export), where user bindings — emitted inside the
     // setup closure — cannot shadow it.
@@ -255,6 +257,14 @@ struct Emitter<'a> {
     /// assignment per two-way member/index lvalue (`::value="o.k"` deep-writes
     /// `o`, so `o` needs a `deepBox` even if the script never mutates it).
     deep_hint: String,
+    /// Whether the child script raises events via a free `emit(...)` call
+    /// (output-design.md §5, c-emits). When set, `setup_body` injects a
+    /// `registerEmits(c, props)` call plus a `const emit = (name, payload) =>`
+    /// closure that binds `c`, so the child's `emit("save", payload)` routes to
+    /// the parent's `onSave` handler prop. The runtime `emit` helper is imported
+    /// under an alias (`$emit`) because the bare `emit` name is reserved for that
+    /// closure.
+    emits_used: bool,
     /// The name of the injected runtime-context setup parameter. Defaults to
     /// `c`; mangled to a reserved form when a user binding would shadow it (a
     /// component that declares `let c` in script, which otherwise emits
@@ -328,6 +338,22 @@ impl<'a> Emitter<'a> {
         }
         for p in &component.props {
             reserved.insert(p.name.clone());
+        }
+        // Child-side emits (c-emits): the script raises events by calling a bare
+        // `emit(name, payload)` — a FREE identifier (not a user-declared binding
+        // and not a prop). When present, the setup body injects a local `const
+        // emit` closure that binds `c`; reserve the `emit` name here so the
+        // runtime `emit` helper is imported under an alias (`$emit`) and the bare
+        // name is free for that closure. A user who declares their own `emit`
+        // (a top-level function/const — already in `reserved`) opts out: their
+        // name wins and no plumbing is injected.
+        let emits_used = !reserved.contains("emit")
+            && !script_text.trim().is_empty()
+            && lunas_script::free_identifiers_with_spans_program(script_text)
+                .map(|ids| ids.iter().any(|(name, _)| name == "emit"))
+                .unwrap_or(false);
+        if emits_used {
+            reserved.insert("emit".to_string());
         }
         let mut aliases = std::collections::BTreeMap::new();
         for &h in ALL_HELPERS {
@@ -420,6 +446,7 @@ impl<'a> Emitter<'a> {
             hoisted: Vec::new(),
             child_imports,
             deep_hint,
+            emits_used,
             ctx,
             props_param,
             local_prefix,
@@ -533,6 +560,7 @@ impl<'a> Emitter<'a> {
     fn setup_body(&mut self, skeleton: &Skeleton, diags: &mut Vec<Diagnostic>) -> String {
         let mut b = String::new();
 
+        self.emit_emits(&mut b);
         self.emit_props(&mut b);
         self.emit_boxes(&mut b);
         let root_base = format!("{}.root", self.ctx());
@@ -546,6 +574,46 @@ impl<'a> Emitter<'a> {
         self.emit_fragment(&mut b, skeleton, &frag, diags);
 
         b
+    }
+
+    // --- emits (child → parent events) ------------------------------------
+
+    /// Injects the child-side emit plumbing (output-design.md §5, c-emits) when
+    /// the script raises events via a bare `emit(name, payload)` call:
+    ///
+    /// ```js
+    /// registerEmits(c, props);
+    /// const emit = (name, payload) => $emit(c, name, payload);
+    /// ```
+    ///
+    /// `registerEmits` stashes the props so the runtime `emit` can look up the
+    /// parent's `on<Name>` handler; the injected `emit` closure binds `c` so the
+    /// child's `emit("save", payload)` needs only the name + payload. The runtime
+    /// helper is referenced under its alias (`$emit`) because the bare `emit`
+    /// name is reserved for this closure (see `new`). Emitted before props/boxes
+    /// so the `const emit` is initialized before any script body runs.
+    fn emit_emits(&mut self, b: &mut String) {
+        if !self.emits_used {
+            return;
+        }
+        self.use_helper("registerEmits");
+        self.use_helper("emit");
+        let register = self.helper("registerEmits").to_string();
+        let emit_rt = self.helper("emit").to_string();
+        let ctx = self.ctx().to_string();
+        let props = self.props().to_string();
+        b.push_str("  ");
+        b.push_str(&register);
+        b.push('(');
+        b.push_str(&ctx);
+        b.push_str(", ");
+        b.push_str(&props);
+        b.push_str(");\n");
+        b.push_str("  const emit = (name, payload) => ");
+        b.push_str(&emit_rt);
+        b.push('(');
+        b.push_str(&ctx);
+        b.push_str(", name, payload);\n");
     }
 
     // --- props ------------------------------------------------------------

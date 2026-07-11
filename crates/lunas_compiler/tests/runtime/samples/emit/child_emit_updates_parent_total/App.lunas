@@ -1,0 +1,6 @@
+@use Child from "./Child.lunas"
+html:
+    <div><Child @changed="onChanged($event)"/><p>total: ${total}</p></div>
+script:
+    let total = 0
+    function onChanged(n){ total = total + n }

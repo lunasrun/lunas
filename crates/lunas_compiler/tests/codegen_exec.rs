@@ -409,6 +409,96 @@ fn child_renders_and_receives_reactive_props() {
 }
 
 #[test]
+fn child_emit_drives_parent_state() {
+    if !node_available() {
+        eprintln!("skipping codegen_exec: node not found at {NODE}");
+        return;
+    }
+    // Child raises `emit("changed", 1)` from a click. The parent listens with
+    // `@changed="onChanged($event)"`, whose handler mutates parent state — that
+    // write (a parent box setter) is what re-renders the parent text. This is
+    // the full child → parent event round-trip (output-design.md §5, c-emits).
+    let parent = "@use Child from \"./Child.lunas\"\n\
+        html:\n\
+        \x20   <div><Child @changed=\"onChanged($event)\"/><p>total: ${total}</p></div>\n\
+        script:\n\
+        \x20   let total = 0\n\
+        \x20   function onChanged(n){ total = total + n }\n";
+    let child = "html:\n\
+        \x20   <button @click=\"bump()\">c</button>\n\
+        script:\n\
+        \x20   function bump(){ emit(\"changed\", 1) }\n";
+
+    // Layout: outer div (root) > inner div > [childRoot(button), anchor, p].
+    let driver = "\
+        const root = factory({});\n\
+        const div = root.childNodes[0];\n\
+        const cBtn = div.childNodes[0].childNodes[0];\n\
+        const p = div.childNodes[2];\n\
+        console.log('INITIAL:' + p.innerHTMLString());\n\
+        cBtn.dispatch('click'); await tick();\n\
+        console.log('AFTER_EMIT:' + p.innerHTMLString());\n\
+        cBtn.dispatch('click'); await tick();\n\
+        console.log('AFTER_EMIT2:' + p.innerHTMLString());\n";
+
+    let out = run_parent_child("child_emit", parent, child, "./Child.lunas", driver);
+    assert!(
+        out.contains("INITIAL:total: 0"),
+        "parent renders initial state: {out}"
+    );
+    assert!(
+        out.contains("AFTER_EMIT:total: 1"),
+        "child emit runs the parent handler, which mutates parent state: {out}"
+    );
+    assert!(
+        out.contains("AFTER_EMIT2:total: 2"),
+        "the emit channel stays live across repeated events: {out}"
+    );
+}
+
+#[test]
+fn child_emit_payload_and_no_listener_are_safe() {
+    if !node_available() {
+        eprintln!("skipping codegen_exec: node not found at {NODE}");
+        return;
+    }
+    // Two facets in one round-trip: (1) an object payload is delivered intact to
+    // the parent handler as `$event`; (2) a second event the parent does NOT
+    // listen for is a no-op (emit returns false, nothing throws).
+    let parent = "@use Child from \"./Child.lunas\"\n\
+        html:\n\
+        \x20   <div><Child @save=\"onSave($event)\"/><p>${label}:${count}</p></div>\n\
+        script:\n\
+        \x20   let label = \"none\"\n\
+        \x20   let count = 0\n\
+        \x20   function onSave(e){ label = e.name; count = e.n }\n";
+    let child = "html:\n\
+        \x20   <button @click=\"go()\">c</button>\n\
+        script:\n\
+        \x20   function go(){ emit(\"save\", { name: \"a\", n: 7 }); emit(\"unheard\", 1) }\n";
+
+    // Layout: outer div (root) > inner div > [childRoot(button), anchor, p].
+    let driver = "\
+        const root = factory({});\n\
+        const div = root.childNodes[0];\n\
+        const cBtn = div.childNodes[0].childNodes[0];\n\
+        const p = div.childNodes[2];\n\
+        console.log('INITIAL:' + p.innerHTMLString());\n\
+        cBtn.dispatch('click'); await tick();\n\
+        console.log('AFTER:' + p.innerHTMLString());\n";
+
+    let out = run_parent_child("child_emit_payload", parent, child, "./Child.lunas", driver);
+    assert!(
+        out.contains("INITIAL:none:0"),
+        "initial parent render: {out}"
+    );
+    assert!(
+        out.contains("AFTER:a:7"),
+        "object payload delivered as $event and an unlistened event is a no-op: {out}"
+    );
+}
+
+#[test]
 fn child_uses_default_when_prop_omitted() {
     if !node_available() {
         eprintln!("skipping codegen_exec: node not found at {NODE}");
