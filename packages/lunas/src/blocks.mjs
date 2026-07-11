@@ -286,13 +286,28 @@ export function forBlock(c, anchor, deps, items, opts) {
     for (let i = 0; i < n; i++) nodes[i] = scr.childNodes[i];
     const kx = extractKeys(arr, opts.keyOf || ((d) => d), opts.onWarn);
     const p = anchor.parentNode;
+    // Inline inScopeAt's scope bracketing so the hot per-item loop doesn't
+    // allocate a fresh `() => opts.wire(...)` closure per row (N closures for an
+    // N-item create). Save/restore the open scope once around the whole loop and
+    // call opts.wire directly; each item still gets its own scope homed at `home`
+    // (identical teardown semantics to inScopeAt).
+    const wire = opts.wire;
+    const prevScope = c.scope;
     for (let i = 0; i < n; i++) {
       const root = nodes[i];
-      const r = inScopeAt(c, home, () => opts.wire(root, arr[i], i));
-      if (r.result) patches.set(root, r.result);
-      scopes.set(root, r.scope);
+      c.scope = home;
+      const scope = beginScope(c);
+      let patch;
+      try {
+        patch = wire(root, arr[i], i);
+      } finally {
+        endScope(c);
+      }
+      if (patch) patches.set(root, patch);
+      scopes.set(root, scope);
       p.insertBefore(root, anchor);
     }
+    c.scope = prevScope;
     seedForState(state, kx.keys, nodes, arr);
   };
 
