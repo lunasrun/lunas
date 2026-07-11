@@ -426,6 +426,21 @@ struct SmokeEnv {
 }
 
 fn preflight() -> Option<SmokeEnv> {
+    // Opt-in gate. The browser smoke layer is environment-sensitive: it drives a
+    // real headless Chrome via `--dump-dom`, which is unreliable on arbitrary
+    // Chrome/Chromium builds (some emit no serialized DOM). It is meant to run
+    // ONLY in the dedicated CI job that pins Chrome stable (which sets this env),
+    // NOT in a plain `cargo test --all` that would otherwise pick up whatever
+    // Chrome happens to be on PATH (e.g. the ubuntu runner's default in the
+    // `fmt · clippy · test` job) and flake. Without the env var we skip cleanly;
+    // the deterministic node integration layer already covers these scenarios.
+    if std::env::var_os("LUNAS_BROWSER_SMOKE").is_none() {
+        eprintln!(
+            "SKIP browser_smoke: set LUNAS_BROWSER_SMOKE=1 to run (only the dedicated \
+             pinned-Chrome CI job does; `cargo test --all` skips this layer)."
+        );
+        return None;
+    }
     let Some(node) = node_bin() else {
         eprintln!(
             "SKIP browser_smoke: no node found (pinned NVM path, LUNAS_NODE, or PATH `node`)."

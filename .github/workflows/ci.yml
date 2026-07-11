@@ -202,4 +202,8 @@ jobs:
         working-directory: crates
         env:
           CHROME: ${{ steps.setup-chrome.outputs.chrome-path }}
+          # Opt-in: browser_smoke skips unless this is set, so a plain
+          # `cargo test --all` (e.g. the check job, which may pick up an
+          # unpinned/flaky Chrome) never runs it — only this pinned-Chrome job does.
+          LUNAS_BROWSER_SMOKE: "1"
         run: cargo test -p lunas_compiler --test browser_smoke -- --nocapture
