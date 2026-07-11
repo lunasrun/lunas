@@ -48,8 +48,11 @@ export const on = (el, ev, fn) => el.addEventListener(ev, fn);
 // against the whole child list.
 export function fragment(attrs, HTML, setup) {
   return (props) => {
-    const host = document.createElement("div"); // throwaway wiring host
-    host.innerHTML = HTML; // ★ one native parse, detached
+    // ★ one native parse, detached. Parse through a <template> (via
+    // parseFragment) so a multi-root fragment whose top-level nodes are
+    // table-context elements (`<tr>`, `<td>`, …) survives instead of being
+    // dropped by a <div> parse context.
+    const host = parseFragment(HTML, document);
     const c = createContext(host); // `c.root` = host: positional refs navigate it
     // Wire while the nodes are still attached to the host, so refs(c.root, …)
     // captured in setup resolve against the parsed tree (like a single-root
@@ -67,19 +70,51 @@ export function fragment(attrs, HTML, setup) {
   };
 }
 
+// parseFragment(html, doc) — parse a bulk skeleton string into a detached
+// container and return that container. The caller reads the parsed roots off
+// the container's `.childNodes` (`childNodes[0]` for a single root, or
+// `Array.from(childNodes)` for a multi-root group), so the container's identity
+// never escapes.
+//
+// A `<template>` element is used rather than a throwaway `<div>`: a
+// `<template>`'s `.content` fragment accepts ANY element — including
+// table-context elements (`<tr>`, `<td>`, `<tbody>`, `<thead>`, `<col>`,
+// `<colgroup>`) and `<option>` — which the HTML parser would otherwise DROP when
+// assigned as the innerHTML of a `<div>` (a `<div>` is not a valid table/select
+// insertion context). Without this, a `:for`/`:if` item whose skeleton is a
+// `<tr>` parses to an empty `<div>` and `childNodes[0]` is `undefined`, crashing
+// on `.childNodes` reads (the table-context bug). `<template>.content` is a
+// DocumentFragment, and `.childNodes` on it is the same list the caller expects.
+//
+// Falls back to a `<div>` when `<template>` / `.content` is unavailable (e.g. a
+// minimal test DOM without template support) so parsing of non-table skeletons
+// keeps working everywhere.
+export function parseFragment(html, doc) {
+  if (typeof doc.createElement === "function") {
+    const t = doc.createElement("template");
+    // `.content` exists only on a real (or shim-supported) <template>.
+    if (t && t.content) {
+      t.innerHTML = html;
+      return t.content;
+    }
+  }
+  const el = doc.createElement("div");
+  el.innerHTML = html;
+  return el;
+}
+
 // fromHTML(html, near) — parse a static block skeleton (an :if branch, a :for
-// item, …) into a detached scratch element via one bulk innerHTML, exactly like
-// the component root build (§8: branches are built by their own innerHTML when
-// shown). `near` is any node used to reach the owner document, so blocks built
-// inside a detached component still resolve a document (and tests can pass a
-// fake-DOM node).
+// item, …) into a detached container via one bulk parse, exactly like the
+// component root build (§8: branches are built by their own parse when shown).
+// `near` is any node used to reach the owner document, so blocks built inside a
+// detached component still resolve a document (and tests can pass a fake-DOM
+// node). Table-context skeletons (`<tr>`, `<td>`, …) survive because the parse
+// goes through a `<template>` — see parseFragment.
 export function fromHTML(html, near) {
   const doc =
     (near && near.ownerDocument) ||
     (typeof document !== "undefined" ? document : null);
-  const el = doc.createElement("div");
-  el.innerHTML = html;
-  return el;
+  return parseFragment(html, doc);
 }
 
 // --- anchors -----------------------------------------------------------------
