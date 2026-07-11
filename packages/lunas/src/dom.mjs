@@ -73,29 +73,72 @@ export function fragment(attrs, HTML, setup) {
 // parseFragment(html, doc) — parse a bulk skeleton string into a detached
 // container and return that container. The caller reads the parsed roots off
 // the container's `.childNodes` (`childNodes[0]` for a single root, or
-// `Array.from(childNodes)` for a multi-root group), so the container's identity
-// never escapes.
+// `Array.from(childNodes)` for a multi-root group) and MOVES them out (inserts
+// them into the live DOM or a fragment group), so the container's identity
+// never escapes and the returned container is single-use.
 //
-// A `<template>` element is used rather than a throwaway `<div>`: a
+// A `<template>` is used to parse rather than a throwaway `<div>`: a
 // `<template>`'s `.content` fragment accepts ANY element — including
 // table-context elements (`<tr>`, `<td>`, `<tbody>`, `<thead>`, `<col>`,
 // `<colgroup>`) and `<option>` — which the HTML parser would otherwise DROP when
 // assigned as the innerHTML of a `<div>` (a `<div>` is not a valid table/select
 // insertion context). Without this, a `:for`/`:if` item whose skeleton is a
 // `<tr>` parses to an empty `<div>` and `childNodes[0]` is `undefined`, crashing
-// on `.childNodes` reads (the table-context bug). `<template>.content` is a
-// DocumentFragment, and `.childNodes` on it is the same list the caller expects.
+// on `.childNodes` reads (the table-context bug). This ALWAYS uses `<template>`
+// semantics — there is no HTML-shape heuristic — so table/select content is
+// never at risk of being dropped.
+//
+// Performance: rather than allocating a fresh `<template>` element per call
+// (`document.createElement("template")` also allocates a separate `.content`
+// DocumentFragment each time — the per-item cost that regressed the structural
+// `:for` `append` path, which parses one skeleton per new row), a SINGLE
+// `<template>` element is cached per document and reused. Each call sets its
+// `.innerHTML` (which parses + clears any prior content in one go), then moves
+// the freshly parsed nodes into a returned DocumentFragment. Draining the
+// cached template's content BEFORE returning keeps the cache empty between
+// calls, so it is safe under reentrancy (a nested parse during the caller's
+// wiring never clobbers content the caller still holds) and never leaks nodes
+// across calls.
 //
 // Falls back to a `<div>` when `<template>` / `.content` is unavailable (e.g. a
-// minimal test DOM without template support) so parsing of non-table skeletons
-// keeps working everywhere.
+// minimal test DOM without template support) so parsing keeps working
+// everywhere; that fallback allocates per call but is only hit in shim
+// environments, never in a real browser.
+const templateCache =
+  typeof WeakMap === "function" ? new WeakMap() : null;
+
+function cachedTemplate(doc) {
+  if (!templateCache) return doc.createElement("template");
+  let t = templateCache.get(doc);
+  if (t === undefined) {
+    t = doc.createElement("template");
+    // Cache only if it is a usable <template> (has .content); otherwise leave
+    // the slot so we retry (a broken shim shouldn't be cached as `false`).
+    if (t && t.content) templateCache.set(doc, t);
+  }
+  return t;
+}
+
 export function parseFragment(html, doc) {
   if (typeof doc.createElement === "function") {
-    const t = doc.createElement("template");
+    const t = cachedTemplate(doc);
     // `.content` exists only on a real (or shim-supported) <template>.
     if (t && t.content) {
       t.innerHTML = html;
-      return t.content;
+      const content = t.content;
+      // Move the parsed nodes out of the shared cached content into a fresh,
+      // single-use fragment so the cache is drained immediately. `appendChild`
+      // during the drain relocates each node (removing it from `content`), so
+      // iterate off firstChild until content is empty.
+      if (typeof doc.createDocumentFragment === "function") {
+        const out = doc.createDocumentFragment();
+        let n;
+        while ((n = content.firstChild)) out.appendChild(n);
+        return out;
+      }
+      // No createDocumentFragment (older shim): return the content directly.
+      // Callers still move nodes out; the next parse's `.innerHTML =` clears it.
+      return content;
     }
   }
   const el = doc.createElement("div");
