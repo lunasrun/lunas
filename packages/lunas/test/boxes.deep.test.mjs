@@ -6,7 +6,7 @@
 
 import assert from "node:assert";
 import { createContext, bind } from "../src/core.mjs";
-import { box, deepBox, shared } from "../src/boxes.mjs";
+import { box, deepBox, shared, RAW } from "../src/boxes.mjs";
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
@@ -321,6 +321,64 @@ await test("deepBox: Map accessors/methods work through the collection-aware han
   assert.strictEqual(d.v.get("a"), 1, ".get returns the entry");
   assert.strictEqual(d.v.has("a"), true, ".has works");
   assert.strictEqual(d.v.has("z"), false);
+});
+
+// ---------------------------------------------------------------------------
+// wrap idempotence: reading elements out through the proxy and storing them
+// back (the keyed `:for` swap: r = arr.slice(); reorder; arr = r) must NOT
+// stack a new proxy layer per update. Without idempotence this compounded into
+// super-linear read cost. Guard: RAW always unwraps one layer to the SAME raw
+// object no matter how many read/store cycles happened, and element proxy
+// identity stays stable across cycles.
+// ---------------------------------------------------------------------------
+await test("deepBox: proxy wrap is idempotent across read-and-store cycles (no proxy stacking)", async () => {
+  const c = createContext(null);
+  const raw0 = { id: 1 };
+  const d = deepBox(c, 0, [raw0, { id: 2 }, { id: 3 }]);
+  d.observeElems(); // fine mode — the path that used to stack proxies
+
+  // First read: element proxy over the raw object. RAW unwraps to the raw
+  // object (a plain object, which has no RAW of its own).
+  const e1 = d.v[0];
+  assert.strictEqual(e1[RAW], raw0, "element proxy unwraps to its raw object");
+  assert.strictEqual(e1[RAW][RAW], undefined, "the unwrapped raw object is not itself a proxy");
+
+  // Simulate several swap cycles: slice (holds element proxies), reorder,
+  // reassign the whole value back through .v.
+  for (let cycle = 0; cycle < 5; cycle++) {
+    const r = d.v.slice();
+    const t = r[0];
+    r[0] = r[2];
+    r[2] = t;
+    d.v = r; // store an array whose elements are proxies
+  }
+
+  // After 5 cycles the element for raw0 must still unwrap to raw0 in ONE step —
+  // no accumulated proxy layers.
+  const eAfter = d.v.slice().find((e) => e[RAW] === raw0);
+  assert.ok(eAfter, "raw0's element survives the reorder cycles");
+  assert.strictEqual(eAfter[RAW], raw0, "still unwraps to the same raw object in one step");
+  assert.strictEqual(eAfter[RAW][RAW], undefined, "unwrapped value is the raw object, not a stacked proxy");
+  // Element proxy identity is stable (cached), so reads are cheap and consistent.
+  assert.strictEqual(d.v.find((e) => e[RAW] === raw0), eAfter, "element proxy identity is stable");
+});
+
+// A field write through a stored element proxy still marks the box (fine mode),
+// proving idempotent unwrapping did not break write attribution.
+await test("deepBox: field write through a re-stored element proxy still triggers reactivity", async () => {
+  const c = createContext(null);
+  const d = deepBox(c, 0, [{ id: 1, label: "a" }, { id: 2, label: "b" }]);
+  d.observeElems();
+  let runs = 0;
+  bind(c, [0], () => { void d.v.length; runs++; });
+  // A read-store cycle (like a swap) then a nested field write on a stored elem.
+  const r = d.v.slice();
+  d.v = r;
+  await tick();
+  const before = runs;
+  d.v[0].label = "changed"; // nested write through the (re-stored) element proxy
+  await tick();
+  assert.ok(runs > before, "nested field write on a re-stored element still flushes dependents");
 });
 
 console.log("boxes.deep.test.mjs: all " + passed + " tests passed");

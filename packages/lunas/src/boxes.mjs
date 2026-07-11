@@ -146,8 +146,15 @@ export function makeWrap(notify, fine) {
 
   const handler = {
     get(t, k, r) {
+      // `proxy[RAW]` unwraps to the raw target in every mode. This is also what
+      // keeps `wrap` idempotent: a value that is already one of our proxies is
+      // detected via its RAW marker and returned as-is instead of being wrapped
+      // again. Without this, code that reads elements out through the proxy and
+      // stores them back (e.g. a `:for` swap doing `r = arr.slice(); arr = r`)
+      // would grow a fresh proxy layer on every update — an O(depth) read cost
+      // that compounds into super-linear churn.
+      if (k === RAW) return t;
       if (fine && fine.active) {
-        if (k === RAW) return t;
         const val = Reflect.get(t, k, r);
         if (val === null || typeof val !== "object") return val;
         if (roots.has(t)) {
@@ -197,6 +204,7 @@ export function makeWrap(notify, fine) {
   // slots accept the receiver; wrap mutators to notify after the op.
   const collectionHandler = {
     get(t, k) {
+      if (k === RAW) return t; // keep wrap idempotent for collection proxies too
       const val = Reflect.get(t, k, t);
       if (typeof val !== "function") return val;
       if (MUTATORS.has(k) && MUTATORS.get(k)(t)) {
@@ -213,6 +221,13 @@ export function makeWrap(notify, fine) {
   };
   const wrap = (val) => {
     if (val === null || typeof val !== "object") return val;
+    // Idempotence: if `val` is already one of OUR proxies, `val[RAW]` returns
+    // its raw target (the get trap intercepts RAW). Re-wrapping would stack a
+    // new proxy layer every time, so wrap the underlying raw object instead —
+    // it's already cached under that key, so this collapses back to the
+    // canonical single-layer proxy for the object.
+    const raw = val[RAW];
+    if (raw !== undefined) val = raw;
     let px = cache.get(val);
     if (!px) {
       px = new Proxy(val, isCollection(val) ? collectionHandler : handler);
