@@ -5,20 +5,11 @@
 
 import { markVar } from "./core.mjs";
 
-// Marker used to unwrap a fine-grained `:for` element proxy back to its raw
-// target. Reading `proxy[RAW]` returns the underlying object; on any non-proxy
-// (or a plain value) it is `undefined`. Lets forBlock key its raw->handle map by
-// stable raw identity even though `items()` yields element proxies.
+// Marker to unwrap a fine-grained `:for` element proxy back to its raw target:
+// reading `proxy[RAW]` returns the underlying object. Kept for callers that hold
+// an element proxy and need stable raw identity (the forBlock itself iterates
+// the box's raw array directly and does not need it on the hot path).
 export const RAW = Symbol("lunas.raw");
-
-// rawOf(x) — the raw object behind a fine-grained element proxy, or x itself.
-export function rawOf(x) {
-  if (x !== null && typeof x === "object") {
-    const r = x[RAW];
-    if (r !== undefined) return r;
-  }
-  return x;
-}
 
 // box(c, i, v) — reassign-only variable at reactive index i.
 // Lightest path: plain getter/setter, no Proxy. Same-value writes are no-ops.
@@ -67,8 +58,11 @@ export function deepBox(c, i, v) {
     set v(x) {
       if (x !== v) {
         v = x;
+        if (self._track) {
+          self._struct = true; // whole-value reassign is structural
+          wrap.markRoot(x);
+        }
         px = wrap(x);
-        if (self._track) self._struct = true; // whole-value reassign is structural
         notify();
       }
     },
@@ -79,9 +73,11 @@ export function deepBox(c, i, v) {
     observeElems() {
       if (!this._track) {
         this._track = true;
+        fineHooks.active = true;
         this._elems = new Set();
-        // Re-wrap so the root array's proxy uses the tracking handler and
-        // remembers which nested objects are direct array elements.
+        // Register the current root array so its own mutations are structural,
+        // then re-wrap so reads populate owner attribution.
+        wrap.markRoot(v);
         px = wrap(v);
       }
       return this;
@@ -90,20 +86,26 @@ export function deepBox(c, i, v) {
       this._struct = false;
       if (this._elems) this._elems.clear();
     },
+    // The underlying RAW current value (the unwrapped array). forBlock iterates
+    // this for keying/patching so the hot reconcile path never reads through the
+    // element proxies; field-write detection still runs when USER code mutates
+    // via `.v` (the proxy).
+    _raw() {
+      return v;
+    },
   };
-  const onStruct = () => {
-    if (self._track) self._struct = true;
-    notify();
+  const fineHooks = {
+    active: false,
+    onStruct() {
+      self._struct = true;
+      notify();
+    },
+    onElem(rawEl) {
+      if (self._elems) self._elems.add(rawEl);
+      notify();
+    },
   };
-  const onElem = (rawEl) => {
-    if (self._elems) self._elems.add(rawEl);
-    notify();
-  };
-  const wrap = makeWrap(notify, {
-    isRoot: () => self._track,
-    onStruct,
-    onElem,
-  });
+  const wrap = makeWrap(notify, fineHooks);
   let px = wrap(v);
   return self;
 }
@@ -128,69 +130,50 @@ export function deepBox(c, i, v) {
 // honest and simple.
 export function makeWrap(notify, fine) {
   const cache = new WeakMap(); // raw object -> proxy
-  // Fine-grained :for hooks (optional). When active (fine.isRoot() true), the
-  // ROOT array's own mutations route to fine.onStruct(); each direct element of
-  // the array, and the whole subtree beneath it, routes nested field writes to
-  // fine.onElem(rawTopLevelElement). This lets a forBlock patch only the touched
-  // items on a field-only update instead of running a full reconcile.
-  const fineActive = () => fine != null && fine.isRoot();
-
-  // Element-subtree handler: mutations attribute to `owner` (the direct array
-  // element at the root of this subtree). Reads keep the same owner so deeper
-  // objects (`arr[i].sub.field = x`) still mark `arr[i]`.
-  const elemHandler = (owner) => ({
-    get(t, k, r) {
-      if (k === RAW) return t;
-      const val = Reflect.get(t, k, r);
-      return val !== null && typeof val === "object" ? wrapElem(val, owner) : val;
-    },
-    set(t, k, x, r) {
-      const had = k in t;
-      const old = t[k];
-      const ok = Reflect.set(t, k, x, r);
-      if (ok && (!had || old !== x)) fine.onElem(owner);
-      return ok;
-    },
-    deleteProperty(t, k) {
-      const had = k in t;
-      const ok = Reflect.deleteProperty(t, k);
-      if (ok && had) fine.onElem(owner);
-      return ok;
-    },
-  });
-  const wrapElem = (val, owner) => {
-    if (val === null || typeof val !== "object") return val;
-    if (isCollection(val)) return wrap(val); // collections keep coarse semantics
-    let px = elemCache.get(val);
-    if (!px) {
-      px = new Proxy(val, elemHandler(owner));
-      elemCache.set(val, px);
-    }
-    return px;
-  };
-  const elemCache = new WeakMap(); // raw element-subtree object -> elem proxy
+  // Fine-grained :for tracking (optional, `fine` present). When active, the
+  // ROOT array proxy's own mutations route to fine.onStruct() (structural), and
+  // a nested field write attributes to the direct array element it lives under,
+  // via fine.onElem(rawElement). Owner attribution uses a single WeakMap
+  // (raw subtree object -> owning array element), populated on read, so the
+  // hot get/set traps stay MONOMORPHIC (one shared handler, no per-element
+  // handler allocation) — matching the non-fine cost as closely as possible.
+  // `fine` is a live hooks object with a mutable `active` flag (false until a
+  // forBlock calls observeElems). While inactive the traps behave exactly like
+  // the non-fine path — one boolean read of overhead — so deepBoxes not used as
+  // a fine `:for` source pay essentially nothing.
+  const owners = fine ? new WeakMap() : null; // raw obj -> raw owning element
+  const roots = fine ? new WeakSet() : null; // the diffed root array(s)
 
   const handler = {
     get(t, k, r) {
-      const val = Reflect.get(t, k, r);
-      if (val === null || typeof val !== "object") return val;
-      // Root array element read under fine-grained tracking: wrap so its nested
-      // field writes attribute to that element (owner = the raw element itself).
-      if (fineActive() && Array.isArray(t) && typeof k !== "symbol") {
-        return wrapElem(val, val);
+      if (fine && fine.active) {
+        if (k === RAW) return t;
+        const val = Reflect.get(t, k, r);
+        if (val === null || typeof val !== "object") return val;
+        if (roots.has(t)) {
+          if (typeof k !== "symbol") owners.set(val, val); // direct element owns itself
+        } else {
+          const o = owners.get(t);
+          if (o !== undefined && !owners.has(val)) owners.set(val, o);
+        }
+        return wrap(val);
       }
-      return wrap(val);
+      const val = Reflect.get(t, k, r);
+      return val !== null && typeof val === "object" ? wrap(val) : val;
     },
     set(t, k, x, r) {
       const had = k in t;
       const old = t[k];
       const ok = Reflect.set(t, k, x, r);
       if (ok && (!had || old !== x)) {
-        // A write on the root array itself (index assignment, length, push/…)
-        // is structural. Deeper objects use elemHandler, so this handler's
-        // target `t` under fine mode is only ever the root array.
-        if (fineActive() && Array.isArray(t)) fine.onStruct();
-        else notify();
+        if (fine && fine.active) {
+          if (roots.has(t)) fine.onStruct();
+          else {
+            const o = owners.get(t);
+            if (o !== undefined) fine.onElem(o);
+            else notify();
+          }
+        } else notify();
       }
       return ok;
     },
@@ -198,8 +181,14 @@ export function makeWrap(notify, fine) {
       const had = k in t;
       const ok = Reflect.deleteProperty(t, k);
       if (ok && had) {
-        if (fineActive() && Array.isArray(t)) fine.onStruct();
-        else notify();
+        if (fine && fine.active) {
+          if (roots.has(t)) fine.onStruct();
+          else {
+            const o = owners.get(t);
+            if (o !== undefined) fine.onElem(o);
+            else notify();
+          }
+        } else notify();
       }
       return ok;
     },
@@ -230,6 +219,11 @@ export function makeWrap(notify, fine) {
       cache.set(val, px);
     }
     return px;
+  };
+  // markRoot(rawArray) — register the diffed root array so its own mutations are
+  // structural. Called by the box for the current `.v` value (fine mode only).
+  wrap.markRoot = (val) => {
+    if (roots && val !== null && typeof val === "object") roots.add(val);
   };
   return wrap;
 }

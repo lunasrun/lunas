@@ -1,0 +1,16 @@
+html:
+    <div>
+        <button class="bump" @click="bump()">bump</button>
+        <button class="add" @click="add()">add</button>
+        <ul>
+            <li :for="row of rows" :key="row.id">
+                <span class="lbl">${row.info.text}</span>
+                <input class="edit" />
+            </li>
+        </ul>
+    </div>
+script:
+    let rows = [{id:1,info:{text:"a"}},{id:2,info:{text:"b"}},{id:3,info:{text:"c"}}]
+    let seq = 4
+    function bump(){ rows[1].info.text = rows[1].info.text + "!" }
+    function add(){ rows = rows.concat([{id:seq,info:{text:"z"}}]); seq = seq + 1 }

@@ -22,7 +22,6 @@ import {
   addDisposer,
 } from "./core.mjs";
 import { createForState, seedForState, reconcile, extractKeys } from "./for_diff.mjs";
-import { rawOf } from "./boxes.mjs";
 import { isLive, runMount, runDestroy, onDestroy } from "./lifecycle.mjs";
 
 const toNodes = (h) => (Array.isArray(h) ? h : [h]);
@@ -241,6 +240,10 @@ export function forBlock(c, anchor, deps, items, opts) {
     fineBox.observeElems();
     rawToHandle = new Map();
   }
+  // In fine mode the reconciler iterates the RAW array (no per-element proxy
+  // reads on the hot path); field-write detection still fires when user code
+  // mutates through `box.v`. Outside fine mode, use the compiled `items()`.
+  const readItems = fineBox ? () => fineBox._raw() : items;
 
   let seeded = false;
   if (opts.seed) {
@@ -250,7 +253,7 @@ export function forBlock(c, anchor, deps, items, opts) {
     // Bulk initial render (design doc §2a): ONE innerHTML parse of every
     // item's skeleton concatenated, then per-item wiring, then seed the
     // reconciler. No later update ever re-runs this.
-    const arr = items();
+    const arr = readItems();
     const n = arr.length;
     if (n > 0) {
       const scr = anchor.ownerDocument.createElement("div");
@@ -274,12 +277,13 @@ export function forBlock(c, anchor, deps, items, opts) {
     seeded = true;
   }
 
-  const run = () => reconcile(state, host, items(), makeItem, ropts);
+  const run = () => reconcile(state, host, readItems(), makeItem, ropts);
 
-  // Seed the raw->handle map from the initial render's state (if any).
+  // Seed the raw->handle map from the initial render's state (if any). In fine
+  // mode state.data already holds raw elements (readItems yields raw).
   if (fineBox) {
     for (let k = 0; k < state.data.length; k++) {
-      rawToHandle.set(rawOf(state.data[k]), state.nodes[k]);
+      rawToHandle.set(state.data[k], state.nodes[k]);
     }
   }
 
@@ -338,9 +342,9 @@ export function forBlock(c, anchor, deps, items, opts) {
   }
   function rebuildRawMap() {
     rawToHandle.clear();
-    const data = state.data;
+    const data = state.data; // raw elements in fine mode
     const nodes = state.nodes;
-    for (let k = 0; k < data.length; k++) rawToHandle.set(rawOf(data[k]), nodes[k]);
+    for (let k = 0; k < data.length; k++) rawToHandle.set(data[k], nodes[k]);
   }
 
   const s = bind(c, deps, () => {
