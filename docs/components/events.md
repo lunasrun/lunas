@@ -69,7 +69,7 @@ component context `c` so your script only passes the name and payload:
 ```js
 // child setup (compiler-injected preamble)
 registerEmits(c, props);
-const emit = (name, payload) => emit$rt(c, name, payload);  // emit$rt = runtime emit
+const emit = (name, payload) => $emit(c, name, payload);  // $emit = runtime emit
 // …your script, verbatim…
 function save() {
   emit("saved", { at: Date.now() });   // → runtime emit → props.onSaved({ at: … })
@@ -77,7 +77,7 @@ function save() {
 ```
 
 So in `.lunas` you write `emit("saved", payload)` — the context argument is
-supplied for you. The runtime `emit` is imported under an alias (`emit$rt`
+supplied for you. The runtime `emit` is imported under an alias (`$emit`
 above) so it never clashes with the injected `emit` closure your script calls.
 
 `eventPropName` is the exact mapping the compiler uses: `"save"` → `"onSave"`.
