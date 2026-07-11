@@ -22,8 +22,8 @@ import {
   addDisposer,
 } from "./core.mjs";
 import { createForState, seedForState, reconcile, extractKeys } from "./for_diff.mjs";
-import { parseFragment } from "./dom.mjs";
 import { isLive, runMount, runDestroy, onDestroy } from "./lifecycle.mjs";
+import { parseFragment } from "./dom.mjs";
 
 const toNodes = (h) => (Array.isArray(h) ? h : [h]);
 const firstNode = (h) => (Array.isArray(h) ? h[0] : h);
@@ -185,9 +185,6 @@ export function forBlock(c, anchor, deps, items, opts) {
 
   // Build one item in compiled mode: parse its own skeleton copy, wire it.
   const buildOne = (d, i) => {
-    // Parse through parseFragment (a <template>) so a table-context item
-    // skeleton (`<tr>`, `<td>`, …) survives — a plain <div> parse would drop it
-    // and `childNodes[0]` would be undefined (the table-context crash).
     const scr = parseFragment(opts.html, anchor.ownerDocument);
     const root = scr.childNodes[0];
     const p = opts.wire(root, d, i);
@@ -248,40 +245,78 @@ export function forBlock(c, anchor, deps, items, opts) {
   // mutates through `box.v`. Outside fine mode, use the compiled `items()`.
   const readItems = fineBox ? () => fineBox._raw() : items;
 
+  // bulkRender(arr) — mount `arr` from an EMPTY list via ONE innerHTML parse of
+  // every item's skeleton concatenated (design doc §2a), then per-item wiring,
+  // then seed the reconciler. This is only valid when the current mounted list
+  // is empty: it appends before the anchor and OVERWRITES the reconciler state,
+  // which is exactly the reconciler's own empty->N branch — minus N separate
+  // scratch-div innerHTML parses (one parse for the whole list instead of N).
+  // Used both for the initial render and as a `run()` fast path whenever the
+  // list transitions empty -> non-empty (create / clear-then-fill). Assumes
+  // `compiled` (opts.html + opts.wire); callers guard on it.
+  const bulkRender = (arr) => {
+    const n = arr.length;
+    if (n === 0) {
+      seedForState(state, [], [], arr);
+      return;
+    }
+    let html = "";
+    for (let i = 0; i < n; i++) html += opts.html;
+    const scr = parseFragment(html, anchor.ownerDocument);
+    // Snapshot roots before moving anything (childNodes is live).
+    const nodes = new Array(n);
+    for (let i = 0; i < n; i++) nodes[i] = scr.childNodes[i];
+    const kx = extractKeys(arr, opts.keyOf || ((d) => d), opts.onWarn);
+    const p = anchor.parentNode;
+    // Inline inScopeAt's scope bracketing so the hot per-item loop doesn't
+    // allocate a fresh `() => opts.wire(...)` closure per row (N closures for an
+    // N-item create). Save/restore the open scope once around the whole loop and
+    // call opts.wire directly; each item still gets its own scope homed at `home`
+    // (identical teardown semantics to inScopeAt).
+    const wire = opts.wire;
+    const prevScope = c.scope;
+    for (let i = 0; i < n; i++) {
+      const root = nodes[i];
+      c.scope = home;
+      const scope = beginScope(c);
+      let patch;
+      try {
+        patch = wire(root, arr[i], i);
+      } finally {
+        endScope(c);
+      }
+      if (patch) patches.set(root, patch);
+      scopes.set(root, scope);
+      p.insertBefore(root, anchor);
+    }
+    c.scope = prevScope;
+    seedForState(state, kx.keys, nodes, arr);
+  };
+
   let seeded = false;
   if (opts.seed) {
     seedForState(state, opts.seed.keys, opts.seed.handles, opts.seed.data);
     seeded = true;
   } else if (compiled) {
-    // Bulk initial render (design doc §2a): ONE innerHTML parse of every
-    // item's skeleton concatenated, then per-item wiring, then seed the
-    // reconciler. No later update ever re-runs this.
-    const arr = readItems();
-    const n = arr.length;
-    if (n > 0) {
-      let html = "";
-      for (let i = 0; i < n; i++) html += opts.html;
-      // Parse through parseFragment (a <template>) so table-context item
-      // skeletons (`<tr>`, …) survive the bulk parse instead of being dropped.
-      const scr = parseFragment(html, anchor.ownerDocument);
-      // Snapshot roots before moving anything (childNodes is live).
-      const nodes = new Array(n);
-      for (let i = 0; i < n; i++) nodes[i] = scr.childNodes[i];
-      const kx = extractKeys(arr, opts.keyOf || ((d) => d), opts.onWarn);
-      const p = anchor.parentNode;
-      for (let i = 0; i < n; i++) {
-        const root = nodes[i];
-        const r = inScopeAt(c, home, () => opts.wire(root, arr[i], i));
-        if (r.result) patches.set(root, r.result);
-        scopes.set(root, r.scope);
-        p.insertBefore(root, anchor);
-      }
-      seedForState(state, kx.keys, nodes, arr);
-    }
+    // Bulk initial render. No later update ever re-runs this.
+    bulkRender(readItems());
     seeded = true;
   }
 
-  const run = () => reconcile(state, host, readItems(), makeItem, ropts);
+  // On a flush, an empty->non-empty transition can skip the host-abstracted
+  // reconciler (which mounts N items via N separate scratch-div innerHTML
+  // parses in its all-new branch) and use the single-parse bulk path instead.
+  // Only valid when the current list is empty AND in compiled mode; otherwise
+  // fall back to the reconciler. Correctness: bulkRender seeds exactly the state
+  // the reconciler's empty->N branch would.
+  const run = () => {
+    const arr = readItems();
+    if (compiled && state.keys.length === 0 && arr.length > 0) {
+      bulkRender(arr);
+      return;
+    }
+    reconcile(state, host, arr, makeItem, ropts);
+  };
 
   // Seed the raw->handle map from the initial render's state (if any). In fine
   // mode state.data already holds raw elements (readItems yields raw).
