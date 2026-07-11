@@ -76,6 +76,7 @@ export default component("div", {}, HTML, (c, props) => {
   const a3 = anchorAppend(g3);
   forBlock(c, a3, [1], () => Array.from((tags.v) || []), {
     html: HTML_7,
+    box: tags,
     wire: (r6, d0) => {
       let tag = d0;
       const [g9] = refs(r6, [[]]);

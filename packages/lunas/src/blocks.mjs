@@ -225,6 +225,26 @@ export function forBlock(c, anchor, deps, items, opts) {
     onWarn: opts.onWarn,
   };
 
+  // Fine-grained item-field updates (output-design.md §8, for-diff-design.md §6):
+  // when the `:for` source is a single deepBox (opts.box), opting into element
+  // tracking lets us tell a pure field mutation (`rows[i].label = x`) apart from
+  // a structural change. On a field-only flush we patch just the touched items —
+  // no extractKeys / LIS / whole-list patch — falling back to a full reconcile
+  // whenever anything structural changed (reassign / length / reorder). This is
+  // the only behavioral change; correctness is preserved by always reconciling
+  // on structural change. Element tracking must be enabled BEFORE the initial
+  // `items()` read so `state.data` already holds trackable element proxies.
+  const fineBox = opts.box && typeof opts.box.observeElems === "function" ? opts.box : null;
+  let rawToHandle = null; // raw element -> handle, rebuilt after each reconcile
+  if (fineBox) {
+    fineBox.observeElems();
+    rawToHandle = new Map();
+  }
+  // In fine mode the reconciler iterates the RAW array (no per-element proxy
+  // reads on the hot path); field-write detection still fires when user code
+  // mutates through `box.v`. Outside fine mode, use the compiled `items()`.
+  const readItems = fineBox ? () => fineBox._raw() : items;
+
   let seeded = false;
   if (opts.seed) {
     seedForState(state, opts.seed.keys, opts.seed.handles, opts.seed.data);
@@ -233,7 +253,7 @@ export function forBlock(c, anchor, deps, items, opts) {
     // Bulk initial render (design doc §2a): ONE innerHTML parse of every
     // item's skeleton concatenated, then per-item wiring, then seed the
     // reconciler. No later update ever re-runs this.
-    const arr = items();
+    const arr = readItems();
     const n = arr.length;
     if (n > 0) {
       const scr = anchor.ownerDocument.createElement("div");
@@ -257,14 +277,84 @@ export function forBlock(c, anchor, deps, items, opts) {
     seeded = true;
   }
 
-  const run = () => reconcile(state, host, items(), makeItem, ropts);
+  const run = () => reconcile(state, host, readItems(), makeItem, ropts);
+
+  // Seed the raw->handle map from the initial render's state (if any). In fine
+  // mode state.data already holds raw elements (readItems yields raw).
+  if (fineBox) {
+    for (let k = 0; k < state.data.length; k++) {
+      rawToHandle.set(state.data[k], state.nodes[k]);
+    }
+  }
+
+  // When the initial render already ran (seeded), incremental tracking is live
+  // from the start; otherwise the first fire renders via a full reconcile.
+  let fineInited = seeded;
+  const fineRun = () => {
+    // First fire without a seeded initial render (e.g. make-mode): render via a
+    // full reconcile so the list actually mounts, then track incrementally.
+    if (!fineInited) {
+      fineInited = true;
+      fineBox._clear();
+      run();
+      rebuildRawMap();
+      return;
+    }
+    // A structural change (or a datum with no live handle) forces a full
+    // reconcile; that rebuilds rawToHandle from the fresh state below.
+    if (fineBox._struct) {
+      fineBox._clear();
+      run();
+      rebuildRawMap();
+      return;
+    }
+    // Snapshot the dirty elements before clearing (`_clear` empties the live
+    // Set, which is the same object).
+    const dirty = fineBox._elems && fineBox._elems.size ? Array.from(fineBox._elems) : null;
+    fineBox._clear();
+    if (!dirty) return;
+    let missed = false;
+    // Patch only the touched items. Index is looked up from state so patchItem
+    // gets the right position (patchItem re-runs the item scope with new data).
+    const idxOf = indexMap();
+    for (let k = 0; k < dirty.length; k++) {
+      const h = rawToHandle.get(dirty[k]);
+      const pos = h !== undefined ? idxOf.get(h) : undefined;
+      if (h === undefined || pos === undefined) {
+        missed = true;
+        continue;
+      }
+      ropts.patchItem(h, state.data[pos], pos);
+    }
+    if (missed) {
+      // A field write landed on an element we don't track (shouldn't happen for
+      // in-place edits of mounted items, but never miss an update): reconcile.
+      run();
+      rebuildRawMap();
+    }
+  };
+
+  function indexMap() {
+    const m = new Map();
+    const nodes = state.nodes;
+    for (let k = 0; k < nodes.length; k++) m.set(nodes[k], k);
+    return m;
+  }
+  function rebuildRawMap() {
+    rawToHandle.clear();
+    const data = state.data; // raw elements in fine mode
+    const nodes = state.nodes;
+    for (let k = 0; k < data.length; k++) rawToHandle.set(data[k], nodes[k]);
+  }
+
   const s = bind(c, deps, () => {
     if (seeded) {
       // the initial render already mounted the items; skip the first run
       seeded = false;
       return;
     }
-    run();
+    if (fineBox) fineRun();
+    else run();
   });
 
   return {

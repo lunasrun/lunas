@@ -19,6 +19,7 @@ export default component("div", {}, HTML, (c, props) => {
   const a0 = anchorAppend(g0);
   forBlock(c, a0, [0], () => Array.from((groups.v) || []), {
     html: HTML_1,
+    box: groups,
     wire: (r0, d0) => {
       let group = d0;
       const [g1, g2, g3] = refs(r0, [[0], [1], [1]]);
