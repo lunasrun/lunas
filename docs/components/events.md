@@ -61,18 +61,32 @@ mountChild(c, anchor, SaveButton, {
 });
 ```
 
-At the top of the child's `setup`, `registerEmits` stashes the props so `emit`
-can find handlers; then `emit(c, "saved", payload)` looks up `onSaved` and calls
-it:
+On the child side, the compiler detects the bare `emit(...)` call in your script
+and injects two lines at the top of the child's `setup`: `registerEmits` stashes
+the props so `emit` can find handlers, and a small `emit` closure binds the
+component context `c` so your script only passes the name and payload:
 
 ```js
-// child setup
-registerEmits(c, props /*, ["saved"] optional declared list */);
-// …later…
-emit(c, "saved", { at: Date.now() });   // → props.onSaved({ at: … })
+// child setup (compiler-injected preamble)
+registerEmits(c, props);
+const emit = (name, payload) => emit$rt(c, name, payload);  // emit$rt = runtime emit
+// …your script, verbatim…
+function save() {
+  emit("saved", { at: Date.now() });   // → runtime emit → props.onSaved({ at: … })
+}
 ```
 
+So in `.lunas` you write `emit("saved", payload)` — the context argument is
+supplied for you. The runtime `emit` is imported under an alias (`emit$rt`
+above) so it never clashes with the injected `emit` closure your script calls.
+
 `eventPropName` is the exact mapping the compiler uses: `"save"` → `"onSave"`.
+
+> **The `emit` name is reserved when you use it.** If your child script calls
+> `emit(...)`, the compiler owns the `emit` identifier (the injected closure).
+> If instead you declare your *own* top-level `emit` (a `function emit` or
+> `const emit`), you opt out: no plumbing is injected and your `emit` is emitted
+> verbatim. Pick one — don't both declare `emit` and expect the c-emits closure.
 
 > **Component tag vs. DOM element.** `@click` on a `<button>` is a DOM listener;
 > `@saved` on a `<SaveButton/>` is an emit handler. The compiler distinguishes
@@ -163,6 +177,11 @@ emit(c, "delete", …);   // warns: emitted undeclared event "delete"; handler s
 ```
 
 This is a lean, warn-only guard — useful in development, never fatal.
+
+> **Not yet surfaced in `.lunas`.** There is no authoring syntax for the
+> declared-events list today, so the compiler emits `registerEmits(c, props)`
+> without it. The runtime parameter exists so a future `@emits`-style
+> declaration can pass it through without a runtime change.
 
 ## Gotchas
 

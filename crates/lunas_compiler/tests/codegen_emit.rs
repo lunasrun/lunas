@@ -853,6 +853,64 @@ fn dynamic_component_event_and_ref() {
 }
 
 #[test]
+fn child_emit_call_injects_register_and_closure() {
+    // A child that raises an event with a bare `emit("saved", payload)` call
+    // gets `registerEmits(c, props)` + a `const emit` closure binding `c`, and
+    // the runtime `emit` helper is imported under the `$emit` alias so it does
+    // not clash with the injected local (output-design.md §5, c-emits).
+    let js = emit(
+        "html:\n    <button @click=\"save()\">x</button>\nscript:\n    let n = 0\n    function save(){ n++; emit(\"saved\", n) }\n",
+    );
+    assert!(
+        js.contains("emit as $emit"),
+        "runtime emit imported under alias: {js}"
+    );
+    assert!(
+        js.contains("registerEmits(c, props);"),
+        "registerEmits stashes props: {js}"
+    );
+    assert!(
+        js.contains("const emit = (name, payload) => $emit(c, name, payload);"),
+        "emit closure binds c: {js}"
+    );
+    // The payload expression is `.v`-rewritten like any reactive read.
+    assert!(
+        js.contains("emit(\"saved\", n.v)"),
+        "reactive payload read goes through the box: {js}"
+    );
+}
+
+#[test]
+fn child_without_emit_has_no_emit_plumbing() {
+    // A child that never calls `emit` must not import/inject the emit helpers.
+    let js = emit(
+        "html:\n    <button @click=\"inc()\">x</button>\nscript:\n    let n = 0\n    function inc(){ n++ }\n",
+    );
+    assert!(!js.contains("registerEmits"), "no registerEmits: {js}");
+    assert!(
+        !js.contains("emit as $emit") && !js.contains("const emit ="),
+        "no emit plumbing: {js}"
+    );
+}
+
+#[test]
+fn user_declared_emit_is_not_treated_as_c_emits() {
+    // A user who declares their own top-level `emit` opts out: no plumbing is
+    // injected and their `emit` is emitted verbatim (a plain box mutation here).
+    let js = emit(
+        "html:\n    <button @click=\"go()\">x</button>\nscript:\n    let n = 0\n    function emit(){ n++ }\n    function go(){ emit() }\n",
+    );
+    assert!(
+        !js.contains("registerEmits") && !js.contains("emit as $emit"),
+        "user-declared emit opts out of c-emits: {js}"
+    );
+    assert!(
+        js.contains("function emit(){ n.v++ }"),
+        "user emit emitted verbatim: {js}"
+    );
+}
+
+#[test]
 fn dynamic_component_without_is_is_voided() {
     let (js, diags) = compile("html:\n    <component/>\n");
     assert!(js.is_some());

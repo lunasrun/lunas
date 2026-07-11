@@ -1,0 +1,4 @@
+html:
+    <button @click="add()">+1</button>
+script:
+    function add(){ emit("changed", 1) }
