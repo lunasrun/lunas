@@ -1,0 +1,5 @@
+html:
+    <div><button class="tog" @click="toggle()">t</button><table><tbody><tr class="r1"><td>always</td></tr><tr :if="show" class="r2"><td class="opt">optional</td></tr></tbody></table></div>
+script:
+    let show = false
+    function toggle(){ show = !show }

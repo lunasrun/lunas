@@ -1,0 +1,1 @@
+{ "description": "a child emits an event whose parent handler mutates parent state; the parent DOM updates" }

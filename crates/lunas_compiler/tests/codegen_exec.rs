@@ -409,6 +409,96 @@ fn child_renders_and_receives_reactive_props() {
 }
 
 #[test]
+fn child_emit_drives_parent_state() {
+    if !node_available() {
+        eprintln!("skipping codegen_exec: node not found at {NODE}");
+        return;
+    }
+    // Child raises `emit("changed", 1)` from a click. The parent listens with
+    // `@changed="onChanged($event)"`, whose handler mutates parent state — that
+    // write (a parent box setter) is what re-renders the parent text. This is
+    // the full child → parent event round-trip (output-design.md §5, c-emits).
+    let parent = "@use Child from \"./Child.lunas\"\n\
+        html:\n\
+        \x20   <div><Child @changed=\"onChanged($event)\"/><p>total: ${total}</p></div>\n\
+        script:\n\
+        \x20   let total = 0\n\
+        \x20   function onChanged(n){ total = total + n }\n";
+    let child = "html:\n\
+        \x20   <button @click=\"bump()\">c</button>\n\
+        script:\n\
+        \x20   function bump(){ emit(\"changed\", 1) }\n";
+
+    // Layout: outer div (root) > inner div > [childRoot(button), anchor, p].
+    let driver = "\
+        const root = factory({});\n\
+        const div = root.childNodes[0];\n\
+        const cBtn = div.childNodes[0].childNodes[0];\n\
+        const p = div.childNodes[2];\n\
+        console.log('INITIAL:' + p.innerHTMLString());\n\
+        cBtn.dispatch('click'); await tick();\n\
+        console.log('AFTER_EMIT:' + p.innerHTMLString());\n\
+        cBtn.dispatch('click'); await tick();\n\
+        console.log('AFTER_EMIT2:' + p.innerHTMLString());\n";
+
+    let out = run_parent_child("child_emit", parent, child, "./Child.lunas", driver);
+    assert!(
+        out.contains("INITIAL:total: 0"),
+        "parent renders initial state: {out}"
+    );
+    assert!(
+        out.contains("AFTER_EMIT:total: 1"),
+        "child emit runs the parent handler, which mutates parent state: {out}"
+    );
+    assert!(
+        out.contains("AFTER_EMIT2:total: 2"),
+        "the emit channel stays live across repeated events: {out}"
+    );
+}
+
+#[test]
+fn child_emit_payload_and_no_listener_are_safe() {
+    if !node_available() {
+        eprintln!("skipping codegen_exec: node not found at {NODE}");
+        return;
+    }
+    // Two facets in one round-trip: (1) an object payload is delivered intact to
+    // the parent handler as `$event`; (2) a second event the parent does NOT
+    // listen for is a no-op (emit returns false, nothing throws).
+    let parent = "@use Child from \"./Child.lunas\"\n\
+        html:\n\
+        \x20   <div><Child @save=\"onSave($event)\"/><p>${label}:${count}</p></div>\n\
+        script:\n\
+        \x20   let label = \"none\"\n\
+        \x20   let count = 0\n\
+        \x20   function onSave(e){ label = e.name; count = e.n }\n";
+    let child = "html:\n\
+        \x20   <button @click=\"go()\">c</button>\n\
+        script:\n\
+        \x20   function go(){ emit(\"save\", { name: \"a\", n: 7 }); emit(\"unheard\", 1) }\n";
+
+    // Layout: outer div (root) > inner div > [childRoot(button), anchor, p].
+    let driver = "\
+        const root = factory({});\n\
+        const div = root.childNodes[0];\n\
+        const cBtn = div.childNodes[0].childNodes[0];\n\
+        const p = div.childNodes[2];\n\
+        console.log('INITIAL:' + p.innerHTMLString());\n\
+        cBtn.dispatch('click'); await tick();\n\
+        console.log('AFTER:' + p.innerHTMLString());\n";
+
+    let out = run_parent_child("child_emit_payload", parent, child, "./Child.lunas", driver);
+    assert!(
+        out.contains("INITIAL:none:0"),
+        "initial parent render: {out}"
+    );
+    assert!(
+        out.contains("AFTER:a:7"),
+        "object payload delivered as $event and an unlistened event is a no-op: {out}"
+    );
+}
+
+#[test]
 fn child_uses_default_when_prop_omitted() {
     if !node_available() {
         eprintln!("skipping codegen_exec: node not found at {NODE}");
@@ -1270,4 +1360,59 @@ fn inline_and_function_call_handlers_mix() {
         out.contains("AFTER:0"),
         "function-call handler still works: {out}"
     );
+}
+
+#[test]
+fn keyed_for_inside_table_tbody_renders_and_reacts() {
+    if !node_available() {
+        eprintln!("skipping codegen_exec: node not found at {NODE}");
+        return;
+    }
+    // A keyed `:for` whose item skeleton is a `<tr>` (table context). Parsing
+    // `<tr>` as the innerHTML of a `<div>` DROPS it in a real browser, which was
+    // the table-context crash (`childNodes[0]` undefined). The runtime now parses
+    // fragment skeletons through a `<template>` so the row survives. This test
+    // mounts the table, asserts the initial rows, then removes one via its own
+    // button (structural change through the keyed reconciler).
+    let source = "html:\n\
+        \x20   <table><tbody><tr :for=\"row of rows\" :key=\"row.id\"><td class=\"cell\">${row.label}</td><td><button class=\"del\" @click=\"del(row.id)\">x</button></td></tr></tbody></table>\n\
+        script:\n\
+        \x20   let rows = [{id:1,label:\"a\"},{id:2,label:\"b\"},{id:3,label:\"c\"}]\n\
+        \x20   function del(id){ rows = rows.filter(r => r.id !== id) }\n";
+
+    // Walk the whole tree collecting `td.cell` text, in document order.
+    let driver = "\
+        const root = factory({});\n\
+        const cells = () => {\n\
+          const out = [];\n\
+          const walk = (n) => {\n\
+            for (const c of n.childNodes) {\n\
+              if (c.tag === 'td' && (c.getAttribute('class') || '') === 'cell') out.push(c.innerHTMLString());\n\
+              walk(c);\n\
+            }\n\
+          };\n\
+          walk(root);\n\
+          return out.join(',');\n\
+        };\n\
+        const dels = () => {\n\
+          const out = [];\n\
+          const walk = (n) => {\n\
+            for (const c of n.childNodes) {\n\
+              if (c.tag === 'button' && (c.getAttribute('class') || '') === 'del') out.push(c);\n\
+              walk(c);\n\
+            }\n\
+          };\n\
+          walk(root);\n\
+          return out;\n\
+        };\n\
+        console.log('INITIAL:' + cells());\n\
+        dels()[1].dispatch('click'); await tick();\n\
+        console.log('MID:' + cells());\n\
+        dels()[0].dispatch('click'); await tick();\n\
+        console.log('AFTER:' + cells());\n";
+
+    let out = run_component("table_for", source, driver);
+    assert!(out.contains("INITIAL:a,b,c"), "initial table render: {out}");
+    assert!(out.contains("MID:a,c"), "remove middle row: {out}");
+    assert!(out.contains("AFTER:c"), "remove first row: {out}");
 }

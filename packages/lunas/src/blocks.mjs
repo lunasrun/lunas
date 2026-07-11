@@ -23,28 +23,10 @@ import {
 } from "./core.mjs";
 import { createForState, seedForState, reconcile, extractKeys } from "./for_diff.mjs";
 import { isLive, runMount, runDestroy, onDestroy } from "./lifecycle.mjs";
+import { parseFragment } from "./dom.mjs";
 
 const toNodes = (h) => (Array.isArray(h) ? h : [h]);
 const firstNode = (h) => (Array.isArray(h) ? h[0] : h);
-
-// parseFragment(html, doc) — parse a block/item skeleton into a container whose
-// `.childNodes` are the parsed top-level nodes. Uses a <template> so that table
-// section content (`<tr>`/`<td>`/`<option>`/…) survives the parse instead of
-// being dropped by the HTML tree-construction rules that a bare <div> host
-// applies. Falls back to a <div> host when <template>.content is unavailable
-// (older/fake DOMs). NOTE: a follow-up on main (#190) hoists this exact helper
-// into a shared module; keep the call sites parsing via parseFragment (not raw
-// div.innerHTML) so that rebase is a clean import swap.
-function parseFragment(html, doc) {
-  const tpl = doc.createElement("template");
-  if (tpl.content) {
-    tpl.innerHTML = html;
-    return tpl.content;
-  }
-  const el = doc.createElement("div");
-  el.innerHTML = html;
-  return el;
-}
 
 // Run `fn` inside a fresh scope parented to `home` (not to whatever scope
 // happens to be open), restoring the previous open scope afterwards.
