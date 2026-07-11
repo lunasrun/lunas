@@ -217,7 +217,9 @@ export function forBlock(c, into, deps, items, opts) { /* keyed list at a text a
                                                           builder), or mount { mount } — the
                                                           `:for`-over-a-component mode where
                                                           opts.mount(d,key,i) → { node, patch }
-                                                          mounts one child per item. keyOf optional */ }
+                                                          mounts one child per item. keyOf optional.
+                                                          opts.box (a deepBox) enables fine-grained
+                                                          item-field updates (§8) */ }
 export function mountChild(c, before, Child, props) { /* Child(props) inserted at a text anchor;
                                                           returns { root, ctx, setProp(name,value),
                                                           unmount() } — setProp drives a reactive
@@ -495,6 +497,19 @@ a unit (§8).
 - **`:for`**: initial render builds **all items as one `innerHTML` string** (the
   fast path), then wires each item. Updates use a keyed diff (insert / remove /
   move individual items); items are **not** re-`innerHTML`ed wholesale.
+- **Fine-grained item-field updates**: when the iterable is exactly one
+  `deepBox` variable (`item of rows`), the compiler additionally emits
+  `box: rows` in the `forBlock` opts. `forBlock` then opts that box into element
+  tracking (`box.observeElems()`), which lets the box distinguish a **structural**
+  change (reassign / `push` / `splice` / `length` / `rows[i] = obj`) from a pure
+  **element-field** write (`rows[i].label = x`, at any depth under an element).
+  A structural change runs the full keyed reconcile as before; a field-only
+  flush **patches just the touched items** — no `extractKeys` / LIS / whole-list
+  patch — so an item-property change is O(changes), not O(N). Both cases still
+  `markVar`, so every other dependent (computeds, `${rows.length}`, …) stays
+  correct. Derived iterables (`rows.filter(…)`, a computed) get no `box:` and
+  keep the coarse reconcile-on-change path. The reconciler iterates the box's
+  **raw** array so the hot path never reads through element proxies.
 - **Multi-root blocks** (a branch/item with several top-level nodes): track the
   node list, or delimit with a start/end anchor pair, so removal/move affects the
   whole group. Single-root blocks use the cheap one-node path (compiler picks).

@@ -259,6 +259,37 @@ index-dirty; the compiler only wires index-reactive binds when the template
 actually reads the index, so templates that ignore the index pay nothing on
 reorder.
 
+### Fine-grained item-field updates (avoiding reconcile on a property change)
+
+A property change on one item (`rows[i].label = x`, a `deepBox` nested write)
+would, naively, mark the whole `rows` box dirty and re-run the reconciler over
+all N items (extractKeys + LIS + patch every kept item) — O(N) work for an
+O(1) change. When the `:for` source is exactly one `deepBox` variable, the
+compiler emits `box: rows` and `forBlock` opts that box into **element
+tracking**:
+
+- The box distinguishes a **structural** mutation (a write on the array itself:
+  reassign / `push` / `splice` / `length` / `rows[i] = obj`) from a pure
+  **element-field** write (a nested mutation of an object that is a direct
+  element of the array, or anything under it). Attribution uses a single shared
+  Proxy handler plus a WeakMap (raw subtree object → owning array element),
+  populated as reads traverse the tree, so the hot get/set traps stay
+  monomorphic.
+- On flush `forBlock` checks the box: **structural → full reconcile** (the
+  algorithm above, unchanged); **field-only → patch only the touched items**
+  (their patch closure + `runScope`), looked up via a raw-element → handle map.
+  Any field write it can't attribute to a live handle falls back to a full
+  reconcile, so no update is ever missed.
+- Both mutation kinds still `markVar`, so every OTHER dependent of the array
+  (computeds, a `${rows.length}` bind elsewhere) stays correct — only the
+  forBlock's own reaction is specialized.
+- The reconciler iterates the box's **raw** array, so keying / patching / item
+  binds never read through element proxies on the hot path.
+
+This makes update-every-Kth and single-field edits O(changes) instead of O(N),
+while structural changes keep the provably-minimal keyed diff. Correctness is
+preserved by always reconciling whenever anything structural changed.
+
 ---
 
 ## 7. Duplicate keys — defined fallback
