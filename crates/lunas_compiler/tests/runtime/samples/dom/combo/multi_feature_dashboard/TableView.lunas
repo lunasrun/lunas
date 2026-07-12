@@ -1,0 +1,3 @@
+@input data:object = []
+html:
+    <table class="table-view"><tr :for="row of data" :key="row"><td>${row}</td></tr></table>

@@ -1,0 +1,10 @@
+html:
+    <div>
+        <textarea :ref="area"></textarea>
+        <button @click="prefill()">prefill</button>
+    </div>
+script:
+    let area
+    function prefill() {
+        area.value = "hello there"
+    }

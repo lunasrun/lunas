@@ -1,0 +1,5 @@
+html:
+    <div class="box"><button @click="toggle()">t</button><span :if="on">HERE</span></div>
+script:
+    let on = false
+    function toggle(){ on = !on }

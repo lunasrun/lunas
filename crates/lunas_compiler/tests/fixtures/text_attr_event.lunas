@@ -1,0 +1,14 @@
+html:
+    <div>
+        <h1 :title="label">${greeting}, ${name}!</h1>
+        <p class="tag ${flavor} end">count is ${count}</p>
+        <button @click="inc()">bump</button>
+    </div>
+
+script:
+    let greeting = "hello"
+    let name = "world"
+    let label = "the heading"
+    let flavor = "sweet"
+    let count = 0
+    function inc() { count = count + 1 }

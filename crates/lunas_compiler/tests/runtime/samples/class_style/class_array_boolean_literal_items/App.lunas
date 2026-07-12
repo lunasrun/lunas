@@ -1,0 +1,3 @@
+html:
+    <div :class="[true, false, 'a']"></div>
+script:

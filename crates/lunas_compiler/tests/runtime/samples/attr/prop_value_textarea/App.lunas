@@ -1,0 +1,4 @@
+html:
+    <textarea :value="content"></textarea>
+script:
+    let content = "line one"

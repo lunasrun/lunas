@@ -1,0 +1,4 @@
+html:
+    <button @click="n = n + 1">count: ${n}</button>
+script:
+    let n = 0

@@ -1,0 +1,29 @@
+html:
+    <main class="app">
+        <h1>Lunas Counter</h1>
+        <p>Count: ${count}</p>
+        <button @click="increment()">+1</button>
+        <button @click="reset()">Reset</button>
+        <p :if="count == 0">Click the button to begin.</p>
+        <p :elseif="count > 5">You are on a roll!</p>
+        <p :else>Keep going.</p>
+        <ul>
+            <li :for="n of history">Was ${n}</li>
+        </ul>
+    </main>
+
+style:
+    .app { font-family: sans-serif; max-width: 40rem; margin: 2rem auto; }
+    button { margin-right: 0.5rem; }
+
+script:
+    let count = 0
+    let history = []
+    function increment() {
+        history = [...history, count]
+        count = count + 1
+    }
+    function reset() {
+        count = 0
+        history = []
+    }

@@ -1,0 +1,6 @@
+@use Badge from "./Badge.lunas"
+html:
+    <div><Badge :text="a" :tone="'lead'"/><Badge :text="b" :tone="'warn'"/></div>
+script:
+    let a = "alpha"
+    let b = "beta"

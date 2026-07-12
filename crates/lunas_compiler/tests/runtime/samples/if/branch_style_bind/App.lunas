@@ -1,0 +1,8 @@
+html:
+    <div>
+        <p :if="show" :style="{ color: hue }">Colored</p>
+        <p :else>Plain</p>
+    </div>
+script:
+    let show = true
+    let hue = "green"

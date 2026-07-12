@@ -1,0 +1,5 @@
+@use Child from "./Child.lunas"
+html:
+    <div><Child :cfg="config"/></div>
+script:
+    let config = { theme: { name: "dark", level: 2 } }

@@ -1,0 +1,9 @@
+html:
+    <div>
+        <p :if="month <= 2 || month == 12">Winter</p>
+        <p :elseif="month <= 5">Spring</p>
+        <p :elseif="month <= 8">Summer</p>
+        <p :else>Fall</p>
+    </div>
+script:
+    let month = 9

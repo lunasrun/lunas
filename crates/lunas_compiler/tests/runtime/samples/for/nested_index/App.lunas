@@ -1,0 +1,4 @@
+html:
+    <ul><li :for="n of nums" :key="n">n=${n}</li></ul>
+script:
+    let nums = [10, 20, 30]

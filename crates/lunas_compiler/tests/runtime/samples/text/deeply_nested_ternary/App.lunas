@@ -1,0 +1,6 @@
+html:
+    <p>${a ? "A" : b ? "B" : z ? "C" : "D"}</p>
+script:
+    let a = false
+    let b = false
+    let z = true

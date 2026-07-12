@@ -1,0 +1,8 @@
+html:
+    <div>
+        <div class="row" :for="row of rows" :key="row.id">
+            <input ::value="row.text">
+        </div>
+    </div>
+script:
+    let rows = [{ id: 1, text: "a" }, { id: 2, text: "b" }]

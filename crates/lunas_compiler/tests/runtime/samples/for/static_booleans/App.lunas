@@ -1,0 +1,4 @@
+html:
+    <ul><li :for="[i, b] of flags.entries()" :key="i">${b}</li></ul>
+script:
+    let flags = [true, false, true]

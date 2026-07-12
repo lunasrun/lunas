@@ -1,0 +1,4 @@
+html:
+    <div><input type="search" ::value="q"><span>q=${q}</span></div>
+script:
+    let q = ""

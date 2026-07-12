@@ -1,0 +1,4 @@
+html:
+    <p>${x}</p>
+script:
+    let x = "x"

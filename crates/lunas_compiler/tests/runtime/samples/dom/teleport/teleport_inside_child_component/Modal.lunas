@@ -1,0 +1,8 @@
+html:
+    <button @click="inc()">child button</button>
+    <teleport to="#portal">
+        <p class="ported-inside-child">${count}</p>
+    </teleport>
+script:
+    let count = 0
+    function inc() { count++ }

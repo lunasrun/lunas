@@ -1,0 +1,3 @@
+html:
+    <div :class="{a: null, b: undefined, c: 0, d: '', e: true}"></div>
+script:

@@ -1,0 +1,4 @@
+html:
+    <div><span :if="user">shown</span></div>
+script:
+    let user = undefined

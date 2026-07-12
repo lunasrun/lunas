@@ -1,0 +1,5 @@
+html:
+    <button :aria-label="label" :aria-pressed="pressed">btn</button>
+script:
+    let label = "toggle sidebar"
+    let pressed = "false"

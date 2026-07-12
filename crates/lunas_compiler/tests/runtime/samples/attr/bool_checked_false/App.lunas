@@ -1,0 +1,4 @@
+html:
+    <input type="checkbox" :checked="isChecked">
+script:
+    let isChecked = false

@@ -1,0 +1,7 @@
+@input a:string = ""
+@input b:string = ""
+html:
+    <span>${a}${b}${loc1}${loc2}</span>
+script:
+    let loc1 = "C"
+    let loc2 = "D"

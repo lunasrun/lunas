@@ -1,0 +1,6 @@
+html:
+    <article :html="markup"></article>
+    <button @click="fill()">fill</button>
+script:
+    let markup = ""
+    function fill() { markup = "<b>now filled</b>" }

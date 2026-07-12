@@ -1,0 +1,6 @@
+html:
+    <div class="tgt" :style="{color: hue, fontSize: size}" @click="grow()"></div>
+script:
+    let hue = "red"
+    let size = "10px"
+    function grow(){ size = "20px"; hue = "green" }

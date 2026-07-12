@@ -1,0 +1,12 @@
+html:
+    <div>
+        <button @click="show('one')">one</button>
+        <button @click="show('two')">two</button>
+        <button @click="show('x')">x</button>
+        <p :if="page == 'one'">Page one</p>
+        <p :elseif="page == 'two'">Page two</p>
+        <p :else>No page</p>
+    </div>
+script:
+    let page = "one"
+    function show(p){ page = p }

@@ -1,0 +1,5 @@
+html:
+    <span class="box ${theme}" @click="darken()">x</span>
+script:
+    let theme = "light"
+    function darken(){ theme = "dark" }

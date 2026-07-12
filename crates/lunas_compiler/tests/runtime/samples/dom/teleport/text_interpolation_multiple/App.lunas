@@ -1,0 +1,11 @@
+html:
+    <div>
+        <button @click="rename()">rename</button>
+        <teleport to="#portal">
+            <p class="ported-text-multi">${greeting}, ${name}!</p>
+        </teleport>
+    </div>
+script:
+    let greeting = "hi"
+    let name = "sam"
+    function rename() { name = "alex" }

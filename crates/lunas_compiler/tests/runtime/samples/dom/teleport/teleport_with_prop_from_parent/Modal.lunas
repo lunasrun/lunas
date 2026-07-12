@@ -1,0 +1,5 @@
+@input label:string = ""
+html:
+    <teleport to="#portal">
+        <p class="ported-prop-from-parent">${label}</p>
+    </teleport>

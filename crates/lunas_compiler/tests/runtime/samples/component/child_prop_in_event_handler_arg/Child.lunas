@@ -1,0 +1,6 @@
+@input tag:string = ""
+html:
+    <button @click="reveal()">${shown ? tag : ""}</button>
+script:
+    let shown = false
+    function reveal(){ shown = true }

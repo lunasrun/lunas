@@ -1,0 +1,4 @@
+@input href:string = "#"
+@input text:string = ""
+html:
+    <a :href="href">${text}</a>

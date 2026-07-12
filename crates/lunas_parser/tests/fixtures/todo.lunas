@@ -1,0 +1,27 @@
+@input title:string = "Todos"
+@use TodoItem from "./TodoItem"
+
+html:
+    <div class="app ${theme}">
+        <h1>${title}</h1>
+        <input ::value="draft" @keydown="onKey" placeholder="What needs doing?" />
+        <button @click="add(draft)" :disabled="draft.length == 0">Add</button>
+        <ul>
+            <TodoItem :for="item of items" :data="item" @done="complete(item.id)" />
+        </ul>
+        <p :if="items.length == 0">Nothing yet.</p>
+        <p :elseif="remaining == 0">All done!</p>
+        <p :else>${remaining} left</p>
+    </div>
+
+style:
+    .app { font-family: sans-serif; }
+
+script:
+    let theme = "light"
+    let draft = ""
+    let items = []
+    const remaining = items.filter(i => !i.done).length
+    function add(text){ items = [...items, { id: Date.now(), text, done: false }]; draft = "" }
+    function complete(id){ items = items.map(i => i.id == id ? { ...i, done: true } : i) }
+    function onKey(e){ if (e.key == "Enter") add(draft) }

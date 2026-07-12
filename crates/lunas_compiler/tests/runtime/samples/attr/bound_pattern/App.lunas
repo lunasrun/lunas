@@ -1,0 +1,4 @@
+html:
+    <input :pattern="p">
+script:
+    let p = "[0-9]{3}"

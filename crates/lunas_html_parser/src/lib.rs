@@ -1,110 +1,79 @@
-//! [![github]](https://github.com/mathiversen/html-parser)
+//! A hand-written HTML parser for the Lunas compiler.
 //!
-//! [github]: https://img.shields.io/badge/github-8da0cb?style=for-the-badge&labelColor=555555&logo=github
-//!
-//! # Html parser
-//!
-//! A simple and general purpose html/xhtml parser lib/bin, using [Pest](https://pest.rs/).
-//!
-//! ## Features
-//! - Parse html & xhtml (not xml processing instructions)
-//! - Parse html-documents
-//! - Parse html-fragments
-//! - Parse empty documents
-//! - Parse with the same api for both documents and fragments
-//! - Parse custom, non-standard, elements; `<cat/>`, `<Cat/>` and `<C4-t/>`
-//! - Removes comments
-//! - Removes dangling elements
-//! - Iterate over all nodes in the dom tree
-//!
-//! ## What is it not
-//!
-//! - It's not a high-performance browser-grade parser
-//! - It's not suitable for html validation
-//! - It's not a parser that includes element selection or dom manipulation
-//!
-//! If your requirements matches any of the above, then you're most likely looking for one of the crates below:
-//!
-//! - [html5ever](https://crates.io/crates/html5ever)
-//! - [kuchiki](https://crates.io/crates/kuchiki)
-//! - [scraper](https://crates.io/crates/scraper)
-//! - or other crates using the `html5ever` parser
-//!
-//! ## Examples bin
-//!
-//! Parse html file
-//!
-//! ```shell
-//!  index.html
-//!
-//! ```
-//!
-//! Parse stdin with pretty output
-//!
-//! ```shell
-//! curl <website> |  -p
-//! ```
-//!
-//! ## Examples lib
-//!
-//! Parse html document
-//!
-//! ```rust
-//!     use ::Dom;
-//!
-//!     fn main() {
-//!         let html = r#"
-//!             <!doctype html>
-//!             <html lang="en">
-//!                 <head>
-//!                     <meta charset="utf-8">
-//!                     <title>Html parser</title>
-//!                 </head>
-//!                 <body>
-//!                     <h1 id="a" class="b c">Hello world</h1>
-//!                     </h1> <!-- comments & dangling elements are ignored -->
-//!                 </body>
-//!             </html>"#;
-//!
-//!         assert!(Dom::parse(html).is_ok());
-//!     }
-//! ```
-//!
-//! Parse html fragment
-//!
-//! ```rust
-//!     use ::Dom;
-//!
-//!     fn main() {
-//!         let html = "<div id=cat />";
-//!         assert!(Dom::parse(html).is_ok());
-//!     }
-//! ```
-//!
-//! Print to json
-//!
-//! ```rust
-//!     use ::{Dom, Result};
-//!
-//!     fn main() -> Result<()> {
-//!         let html = "<div id=cat />";
-//!         let json = Dom::parse(html)?.to_json_pretty()?;
-//!         println!("{}", json);
-//!         Ok(())
-//!     }
-//! ```
-
-#![allow(clippy::needless_doctest_main)]
+//! Two phases: a state-machine [`lexer`] turns source text into a flat token
+//! stream, and a recursive-descent tree builder in [`parser`] assembles a
+//! [`Dom`]. The parser never panics and never returns `Err` for malformed
+//! HTML — it recovers and records [`Diagnostic`]s, mirroring how browsers and
+//! production IDE parsers behave.
 
 mod dom;
-mod error;
-mod grammar;
+mod lexer;
+mod parser;
 
-use grammar::Rule;
+pub use dom::{Attribute, Comment, Dom, DomKind, Element, ElementKind, Node, Text};
 
-pub use crate::dom::element::{Element, ElementVariant};
-pub use crate::dom::node::Node;
-pub use crate::dom::Dom;
-pub use crate::dom::DomVariant;
-pub use crate::error::Error;
-pub use crate::error::Result;
+/// Internal lexer surface exposed only for the integration test suite in
+/// `tests/`. Not part of the stable public API; may change without notice.
+#[doc(hidden)]
+pub mod internals {
+    pub use crate::lexer::{tokenize, Token, TokenKind};
+}
+
+use lunas_span::Diagnostic;
+
+/// The result of parsing an HTML source string.
+#[derive(Debug, Clone)]
+pub struct ParseResult {
+    pub dom: Dom,
+    pub diagnostics: Vec<Diagnostic>,
+}
+
+/// Parses an HTML fragment or document.
+///
+/// All node ranges are relative to the start of `source`. When the HTML is
+/// embedded in a larger file, the caller rebases ranges by adding the byte
+/// offset of `source` within that file (see [`Dom::shift_ranges`]).
+///
+/// ```
+/// use lunas_html_parser::{parse_html, DomKind, Node};
+///
+/// let result = parse_html("<div class=\"x\">hi</div>");
+/// assert!(result.diagnostics.is_empty());
+/// assert_eq!(result.dom.kind, DomKind::Fragment);
+/// match &result.dom.children[0] {
+///     Node::Element(e) => {
+///         assert_eq!(e.name, "div");
+///         assert_eq!(e.attributes[0].value.as_deref(), Some("x"));
+///     }
+///     _ => panic!("expected an element"),
+/// }
+/// ```
+pub fn parse_html(source: &str) -> ParseResult {
+    parser::parse(source)
+}
+
+/// The set of void elements, which never have children or a close tag.
+pub(crate) fn is_void_element(name: &str) -> bool {
+    matches!(
+        name,
+        "area"
+            | "base"
+            | "br"
+            | "col"
+            | "embed"
+            | "hr"
+            | "img"
+            | "input"
+            | "link"
+            | "meta"
+            | "param"
+            | "source"
+            | "track"
+            | "wbr"
+    )
+}
+
+/// Elements whose content is treated as raw text (no nested markup parsing).
+pub(crate) fn is_raw_text_element(name: &str) -> bool {
+    matches!(name, "script" | "style" | "title" | "textarea")
+}

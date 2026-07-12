@@ -1,0 +1,4 @@
+html:
+    <ul><li :for="n of present" :key="n">${n}</li></ul>
+script:
+    let present = [1, 3, 5].filter(x => x != null)

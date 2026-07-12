@@ -1,0 +1,2 @@
+html:
+    <section><header>top</header><slot></slot><footer>bot</footer></section>

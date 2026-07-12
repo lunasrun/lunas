@@ -1,0 +1,3 @@
+@input name:string = ""
+html:
+    <div :title="name"><span>${name}</span><b>${name}!</b></div>

@@ -1,0 +1,4 @@
+@use Box from "./Box.lunas"
+@use Card from "./Card.lunas"
+html:
+    <div><Box><Card>inner content</Card></Box></div>

@@ -1,0 +1,5 @@
+html:
+    <div><span :if="(x + y) > 10">big sum</span></div>
+script:
+    let x = 6
+    let y = 6

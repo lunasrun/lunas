@@ -1,0 +1,1 @@
+{ "description": "scoped prop stays snapshot(50); parent state n reacts to click" }

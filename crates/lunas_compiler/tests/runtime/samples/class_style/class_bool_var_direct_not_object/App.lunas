@@ -1,0 +1,4 @@
+html:
+    <div :class="isOn"></div>
+script:
+    let isOn = true

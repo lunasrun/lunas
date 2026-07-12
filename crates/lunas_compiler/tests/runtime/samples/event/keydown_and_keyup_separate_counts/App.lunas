@@ -1,0 +1,10 @@
+html:
+    <div>
+        <input @keydown="down()" @keyup="up()">
+        <span>d=${downs} u=${ups}</span>
+    </div>
+script:
+    let downs = 0
+    let ups = 0
+    function down(){ downs = downs + 1 }
+    function up(){ ups = ups + 1 }

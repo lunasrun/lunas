@@ -1,0 +1,9 @@
+html:
+    <div>
+        <button class="plus" @click="adjust(1)">+</button>
+        <button class="minus" @click="adjust(-1)">-</button>
+        <span>${n}</span>
+    </div>
+script:
+    let n = 0
+    function adjust(delta){ n = n + delta }

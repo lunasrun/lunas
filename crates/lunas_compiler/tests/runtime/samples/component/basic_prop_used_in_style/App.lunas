@@ -1,0 +1,5 @@
+@use Child from "./Child.lunas"
+html:
+    <div><Child :hue="color"/></div>
+script:
+    let color = "red"

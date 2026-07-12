@@ -1,0 +1,5 @@
+html:
+    <div class="box" :style="{ color: color }" @click="setBlue()">x</div>
+script:
+    let color = "red"
+    function setBlue(){ color = "blue" }

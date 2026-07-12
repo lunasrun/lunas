@@ -1,0 +1,3 @@
+{
+  "description": "tests a 'less than' relation between two vars, expressed as `b > a` because a literal `<` character anywhere in html text (even inside `${...}`) is parsed as the start of an HTML tag by lunas_html_parser — `${a < b}` fails to parse ('unterminated interpolation: missing `}` for `${`'). A real `<` binary operator inside an interpolation currently cannot be expressed directly in a .lunas template."
+}

@@ -1,0 +1,3 @@
+@use Shell from "./Shell.lunas"
+html:
+    <div><Shell/></div>

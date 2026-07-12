@@ -1,3 +1,7 @@
+<%# NOTE: This template is no longer used at runtime. The git-pr-release gem %>
+<%# was replaced by .github/scripts/release-pr.mjs, which owns the release-PR %>
+<%# body format now (buildBody()). Kept here as a reference for the original %>
+<%# layout; edits to the live format must go in release-pr.mjs. %>
 🚀 Release (<%= Time.now.strftime('%Y-%m-%d') %> - <%= ENV['GIT_PR_RELEASE_BRANCH_PRODUCTION'] %>)
 ## 🛠 Fixes
 <%- pull_requests.each do |pr| -%>

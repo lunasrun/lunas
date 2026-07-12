@@ -1,0 +1,1 @@
+{ "description": "top-level `let c` collides with the injected context param `c`; must compile (no SyntaxError) and stay reactive when a handler mutates it" }

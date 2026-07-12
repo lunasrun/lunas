@@ -1,0 +1,6 @@
+@use Child from "./Child.lunas"
+html:
+    <div><button @click="up()">p</button><Child :cfg="config"/></div>
+script:
+    let config = { level: 1 }
+    function up(){ config = { level: config.level + 1 } }

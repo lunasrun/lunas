@@ -1,0 +1,10 @@
+html:
+    <div>
+        <select ::value="picked">
+            <option value="x">x</option>
+            <option value="y">y</option>
+        </select>
+        <span>${picked}</span>
+    </div>
+script:
+    let picked = "x"

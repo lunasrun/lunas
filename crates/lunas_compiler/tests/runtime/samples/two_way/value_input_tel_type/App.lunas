@@ -1,0 +1,4 @@
+html:
+    <div><input type="tel" ::value="phone"><span>${phone}</span></div>
+script:
+    let phone = ""

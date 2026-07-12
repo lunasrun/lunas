@@ -1,0 +1,4 @@
+html:
+    <ul><li :for="item of items" :key="item.id">${item.label}</li></ul>
+script:
+    let items = [{id:"01",label:"a"},{id:"02",label:"b"}]

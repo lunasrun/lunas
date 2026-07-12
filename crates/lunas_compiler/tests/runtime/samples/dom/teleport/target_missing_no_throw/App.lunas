@@ -1,0 +1,7 @@
+html:
+    <div>
+        <p>still renders fine</p>
+        <teleport to="#does-not-exist-anywhere">
+            <p class="ported-missing-target">never lands</p>
+        </teleport>
+    </div>

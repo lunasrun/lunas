@@ -1,0 +1,6 @@
+@use Multi from "./Multi.lunas"
+html:
+    <div>
+        <Multi/>
+        <Multi/>
+    </div>

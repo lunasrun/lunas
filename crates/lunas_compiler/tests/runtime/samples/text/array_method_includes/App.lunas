@@ -1,0 +1,4 @@
+html:
+    <p>${items.includes(2)}</p>
+script:
+    let items = [1, 2, 3]

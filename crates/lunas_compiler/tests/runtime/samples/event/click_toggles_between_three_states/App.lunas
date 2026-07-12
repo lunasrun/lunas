@@ -1,0 +1,9 @@
+html:
+    <button @click="next()">${state}</button>
+script:
+    let state = "a"
+    function next(){
+        if (state == "a") { state = "b" }
+        else if (state == "b") { state = "c" }
+        else { state = "a" }
+    }

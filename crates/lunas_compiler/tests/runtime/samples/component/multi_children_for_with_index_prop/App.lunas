@@ -1,0 +1,5 @@
+@use Item from "./Item.lunas"
+html:
+    <ul><li :for="it of items" :key="it.id"><Item :label="it.label" :n="it.id"/></li></ul>
+script:
+    let items = [{id:10,label:"x"},{id:20,label:"y"}]

@@ -1,0 +1,7 @@
+html:
+    <p>${(a + b) * (z - d)}</p>
+script:
+    let a = 1
+    let b = 2
+    let z = 10
+    let d = 4

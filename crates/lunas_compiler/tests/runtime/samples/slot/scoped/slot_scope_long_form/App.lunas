@@ -1,0 +1,3 @@
+@use Box from "./Box.lunas"
+html:
+    <div><Box><template slot="default" slot-scope="p">v=${p.item}</template></Box></div>

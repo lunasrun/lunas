@@ -1,0 +1,5 @@
+@input msg:string = ""
+html:
+    <teleport to="#portal">
+        <p class="ported-toast-combo">${msg}</p>
+    </teleport>

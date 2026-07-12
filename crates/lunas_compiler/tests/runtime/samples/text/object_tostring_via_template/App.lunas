@@ -1,0 +1,4 @@
+html:
+    <p>${`${obj}`}</p>
+script:
+    let obj = { toString(){ return "custom" } }

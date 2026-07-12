@@ -1,0 +1,5 @@
+html:
+    <button @click="inc()">n=${n} double=${n * 2}</button>
+script:
+    let n = 0
+    function inc(){ n = n + 1 }

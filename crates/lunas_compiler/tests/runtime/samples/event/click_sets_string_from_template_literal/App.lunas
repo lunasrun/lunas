@@ -1,0 +1,6 @@
+html:
+    <button @click="bump()">${msg}</button>
+script:
+    let n = 0
+    let msg = "none"
+    function bump(){ msg = `clicked ${n}`; n = n + 1 }

@@ -1,0 +1,4 @@
+html:
+    <div><span :if="temp">shown</span></div>
+script:
+    let temp = -5

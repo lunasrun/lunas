@@ -1,0 +1,3 @@
+@use Box from "./Box.lunas"
+html:
+    <div><Box><template #default="p">${p.user.name}#${p.user.id}</template></Box></div>

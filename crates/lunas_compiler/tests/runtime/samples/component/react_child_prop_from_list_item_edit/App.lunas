@@ -1,0 +1,6 @@
+@use Item from "./Item.lunas"
+html:
+    <div><button @click="edit()">p</button><ul><li :for="it of items" :key="it.id"><Item :label="it.label"/></li></ul></div>
+script:
+    let items = [{id:1,label:"a"},{id:2,label:"b"}]
+    function edit(){ items = [{id:1,label:"A"},{id:2,label:"b"}] }

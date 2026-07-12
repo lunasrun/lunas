@@ -1,0 +1,4 @@
+html:
+    <div><input ::value="user.name"><span>${user.name}</span></div>
+script:
+    let user = { name: "initial" }

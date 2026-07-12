@@ -1,0 +1,5 @@
+html:
+    <div><button @click="setName('Bob')">rename</button><p>Hello ${name}</p></div>
+script:
+    let name = "Ann"
+    function setName(n){ name = n }

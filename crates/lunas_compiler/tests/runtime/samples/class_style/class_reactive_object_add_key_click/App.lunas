@@ -1,0 +1,5 @@
+html:
+    <div class="box" :class="flags" @click="addFlag()"></div>
+script:
+    let flags = {a: true}
+    function addFlag(){ flags = {...flags, b: true} }

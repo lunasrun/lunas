@@ -1,0 +1,5 @@
+html:
+    <section><button @click="bump()">c</button><span class="c">${local}</span></section>
+script:
+    let local = 0
+    function bump(){ local++ }

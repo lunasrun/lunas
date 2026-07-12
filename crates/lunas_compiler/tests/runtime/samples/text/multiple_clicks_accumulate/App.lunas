@@ -1,0 +1,5 @@
+html:
+    <button @click="inc()">${count}</button>
+script:
+    let count = 0
+    function inc(){ count = count + 1 }

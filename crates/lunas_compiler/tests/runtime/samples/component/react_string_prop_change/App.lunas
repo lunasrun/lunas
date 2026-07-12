@@ -1,0 +1,6 @@
+@use Child from "./Child.lunas"
+html:
+    <div><button @click="swap()">p</button><Child :name="who"/></div>
+script:
+    let who = "ada"
+    function swap(){ who = "grace" }

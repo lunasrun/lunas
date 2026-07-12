@@ -1,0 +1,10 @@
+html:
+    <div>
+        <button class="a" @click="pick('a')">a</button>
+        <button class="b" @click="pick('b')">b</button>
+        <button class="c" @click="pick('c')">c</button>
+        <span>${chosen}</span>
+    </div>
+script:
+    let chosen = "none"
+    function pick(x){ chosen = x }

@@ -1,0 +1,4 @@
+html:
+    <div><span :if="n !== '1'">different types</span></div>
+script:
+    let n = 1

@@ -1,0 +1,2 @@
+html:
+    <section><header><slot name="top-bar">fb</slot></header></section>

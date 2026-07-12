@@ -1,0 +1,4 @@
+html:
+    <section><slot :row="data"></slot></section>
+script:
+    let data = { label: "hi", id: 1 }

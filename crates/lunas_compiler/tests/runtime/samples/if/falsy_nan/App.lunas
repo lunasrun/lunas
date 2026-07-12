@@ -1,0 +1,4 @@
+html:
+    <div><span :if="ratio">shown</span></div>
+script:
+    let ratio = 0 / 0

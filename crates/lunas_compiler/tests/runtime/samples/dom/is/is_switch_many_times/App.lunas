@@ -1,0 +1,14 @@
+@use Odd from "./Odd.lunas"
+@use Even from "./Even.lunas"
+html:
+    <div>
+        <component :is="view"/>
+        <button @click="next()">next</button>
+    </div>
+script:
+    let n = 0
+    let view = Even
+    function next() {
+        n++
+        view = n % 2 === 0 ? Even : Odd
+    }

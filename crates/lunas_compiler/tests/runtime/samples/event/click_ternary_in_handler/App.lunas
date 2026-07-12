@@ -1,0 +1,5 @@
+html:
+    <button @click="step()">n=${n}</button>
+script:
+    let n = 0
+    function step(){ n = n < 3 ? n + 1 : 0 }

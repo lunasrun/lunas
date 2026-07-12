@@ -1,0 +1,4 @@
+html:
+    <span>${label}</span>
+script:
+    let label = "tick"

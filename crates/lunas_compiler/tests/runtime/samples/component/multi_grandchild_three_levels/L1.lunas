@@ -1,0 +1,4 @@
+@use L2 from "./L2.lunas"
+@input v:number = 0
+html:
+    <div class="l1"><L2 :v="v + 1"/></div>

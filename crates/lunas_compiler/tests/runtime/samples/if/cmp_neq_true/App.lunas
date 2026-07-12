@@ -1,0 +1,4 @@
+html:
+    <div><span :if="n != 5">not five</span></div>
+script:
+    let n = 3

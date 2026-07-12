@@ -1,0 +1,4 @@
+html:
+    <p>${JSON.stringify(obj)}</p>
+script:
+    let obj = { a: 1 }

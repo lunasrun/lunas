@@ -1,0 +1,12 @@
+html:
+    <div>
+        <div class="own-target" :ref="targetEl"></div>
+        <button @click="show()">show</button>
+        <teleport :to="targetEl" :if="ready">
+            <p class="ported-element-target">landed here</p>
+        </teleport>
+    </div>
+script:
+    let targetEl
+    let ready = false
+    function show() { ready = true }

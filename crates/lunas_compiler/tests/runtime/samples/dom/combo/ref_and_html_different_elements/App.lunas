@@ -1,0 +1,12 @@
+html:
+    <div>
+        <p :ref="source">reference text</p>
+        <article :html="copied"></article>
+        <button @click="copy()">copy</button>
+    </div>
+script:
+    let source
+    let copied = ""
+    function copy() {
+        copied = "<b>" + source.innerHTMLString() + "</b>"
+    }

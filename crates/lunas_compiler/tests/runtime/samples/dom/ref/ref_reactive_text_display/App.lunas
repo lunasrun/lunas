@@ -1,0 +1,12 @@
+html:
+    <div>
+        <p :ref="el">start</p>
+        <button @click="grab()">grab</button>
+        <span>${captured}</span>
+    </div>
+script:
+    let el
+    let captured = ""
+    function grab() {
+        captured = el.innerHTMLString()
+    }

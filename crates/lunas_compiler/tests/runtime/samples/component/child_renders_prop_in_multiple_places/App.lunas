@@ -1,0 +1,5 @@
+@use Child from "./Child.lunas"
+html:
+    <div><Child :name="who"/></div>
+script:
+    let who = "ada"

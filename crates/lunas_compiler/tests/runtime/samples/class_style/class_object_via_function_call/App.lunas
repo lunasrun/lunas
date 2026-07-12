@@ -1,0 +1,5 @@
+html:
+    <div :class="classes()"></div>
+script:
+    let on = true
+    function classes(){ return {active: on, off: !on} }

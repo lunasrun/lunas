@@ -1,0 +1,4 @@
+html:
+    <p>${flag}</p>
+script:
+    let flag = true

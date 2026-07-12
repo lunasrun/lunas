@@ -1,0 +1,17 @@
+@use Panel from "./Panel.lunas"
+@use Notice from "./Notice.lunas"
+
+html:
+    <div>
+        <component :is="view" :label="title"/>
+        <teleport to="#portal">
+            <p @click="grow()">${msg}</p>
+        </teleport>
+    </div>
+
+script:
+    let view = Panel
+    let title = "hi"
+    let msg = "in portal"
+    function swap() { view = Notice }
+    function grow() { msg = "grew" }

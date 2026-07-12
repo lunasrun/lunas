@@ -1,0 +1,4 @@
+html:
+    <article :html="markup"></article>
+script:
+    let markup = "<p>こんにちは 🌙</p>"

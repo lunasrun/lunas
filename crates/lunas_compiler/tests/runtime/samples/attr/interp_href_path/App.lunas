@@ -1,0 +1,4 @@
+html:
+    <a href="/users/${id}/profile">profile</a>
+script:
+    let id = 7

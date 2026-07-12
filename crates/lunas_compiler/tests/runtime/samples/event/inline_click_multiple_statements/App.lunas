@@ -1,0 +1,5 @@
+html:
+    <button @click="a++; b++">${a}-${b}</button>
+script:
+    let a = 0
+    let b = 10

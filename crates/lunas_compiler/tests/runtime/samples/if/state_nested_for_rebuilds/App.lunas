@@ -1,0 +1,9 @@
+html:
+    <div>
+        <button @click="toggle()">toggle</button>
+        <ul :if="on"><li :for="item of items" :key="item">${item}</li></ul>
+    </div>
+script:
+    let on = true
+    let items = ["x", "y"]
+    function toggle(){ on = !on }

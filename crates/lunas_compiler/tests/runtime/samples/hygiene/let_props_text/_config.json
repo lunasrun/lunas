@@ -1,0 +1,1 @@
+{ "description": "top-level `let props` collides with the injected props param `props`; the param is mangled so the user binding renders and stays reactive" }

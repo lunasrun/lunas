@@ -1,0 +1,4 @@
+html:
+    <div><span :if="on">HERE</span></div>
+script:
+    let on = false

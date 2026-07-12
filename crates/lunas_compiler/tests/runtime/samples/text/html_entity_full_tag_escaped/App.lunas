@@ -1,0 +1,4 @@
+html:
+    <p>${payload}</p>
+script:
+    let payload = "<script>alert(1)</script>"

@@ -1,0 +1,4 @@
+html:
+    <a href="/file.zip" :download="filename">get</a>
+script:
+    let filename = "archive.zip"

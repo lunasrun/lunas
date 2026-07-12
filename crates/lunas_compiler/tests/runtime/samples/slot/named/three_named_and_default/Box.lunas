@@ -1,0 +1,2 @@
+html:
+    <section><i><slot name="a"></slot></i><main><slot></slot></main><i><slot name="b"></slot></i><i><slot name="c"></slot></i></section>

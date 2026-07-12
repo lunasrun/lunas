@@ -1,0 +1,5 @@
+@use Child from "./Child.lunas"
+html:
+    <div><Child label="static"/><Child :label="dyn"/></div>
+script:
+    let dyn = "bound"

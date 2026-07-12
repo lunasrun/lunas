@@ -1,0 +1,8 @@
+html:
+    <div>
+        <input class="ctl" ::value="text">
+        <ul><li :for="n of nums" :key="n">${n}:${text}</li></ul>
+    </div>
+script:
+    let text = "x"
+    let nums = [1, 2]

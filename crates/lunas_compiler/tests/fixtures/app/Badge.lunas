@@ -1,0 +1,4 @@
+@input text:string = "?"
+
+html:
+    <span class="badge">[${text}]</span>

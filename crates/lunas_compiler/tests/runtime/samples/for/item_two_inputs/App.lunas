@@ -1,0 +1,4 @@
+html:
+    <ul><li :for="item of items" :key="item.id"><input class="a" :data-id="item.id"><input class="b" :data-id="item.id"></li></ul>
+script:
+    let items = [{id:1},{id:2}]

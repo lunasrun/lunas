@@ -1,0 +1,209 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "rewrite/**"]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    name: fmt · clippy · test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        # The Cargo workspace lives under crates/; rust-toolchain.toml at the
+        # repo root pins the toolchain for it.
+        working-directory: crates
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain (from rust-toolchain.toml) with components
+        run: |
+          rustup show active-toolchain || rustup toolchain install
+          rustup component add rustfmt clippy
+
+      # Node is needed so the sample-directory E2E runner
+      # (tests/runtime_samples.rs) actually executes here instead of skipping.
+      # setup-node puts `node` on PATH; the runner picks it up via its PATH
+      # fallback when the pinned local path and $LUNAS_NODE are absent.
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Cache cargo registry and target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            crates/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('crates/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Format check
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      # `cargo test --all` includes the sample runner; with node on PATH it runs
+      # for real (rather than skipping) alongside the rest of the suite.
+      - name: Test
+        run: cargo test --all
+
+      # Belt-and-suspenders: run the sample E2E suite explicitly so a regression
+      # in it is a named, obvious CI failure, and to fail loudly if it ever
+      # *skips* (node genuinely missing) rather than silently passing.
+      - name: Sample-directory E2E runner
+        run: |
+          out="$(cargo test -p lunas_compiler --test runtime_samples -- --nocapture 2>&1)"
+          echo "$out"
+          if echo "$out" | grep -q "skipping runtime_samples: no node found"; then
+            echo "::error::sample runner skipped — node was not detected in CI"
+            exit 1
+          fi
+
+  wasm:
+    name: wasm32 build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: crates
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain + wasm target
+        run: |
+          rustup show active-toolchain || rustup toolchain install
+          rustup target add wasm32-unknown-unknown
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            crates/target
+          key: ${{ runner.os }}-cargo-wasm-${{ hashFiles('crates/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-wasm-
+      # The whole front end must stay wasm-ready (browser compiler / LSP).
+      - name: Build for wasm32
+        run: cargo build --all --target wasm32-unknown-unknown
+
+  runtime:
+    name: runtime tests (packages/lunas)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/lunas
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Run test suite
+        run: node test/run-all.mjs
+
+      - name: Tree-shaking / no-side-effects check
+        run: node test/treeshake.check.mjs
+
+  tooling:
+    name: tooling tests (vite plugin · create-lunas)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install toolchain + wasm target (from rust-toolchain.toml)
+        working-directory: crates
+        run: |
+          rustup show active-toolchain || rustup toolchain install
+          rustup target add wasm32-unknown-unknown
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            crates/target
+          key: ${{ runner.os }}-cargo-wasm-${{ hashFiles('crates/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-wasm-
+
+      # Build the wasm compiler once so the plugin's opt-in integration test
+      # runs the real end-to-end path (mock-compiler unit tests run regardless).
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - name: Build lunas_wasm (nodejs target)
+        working-directory: crates/lunas_wasm
+        run: wasm-pack build --target nodejs
+
+      - name: release-pr script tests
+        run: node --test .github/scripts/release-pr.test.mjs
+
+      - name: vite-plugin-lunas tests
+        working-directory: packages/vite-plugin-lunas
+        run: node test/run-all.mjs
+
+      - name: create-lunas tests
+        working-directory: packages/create-lunas
+        run: node test/run-all.mjs
+
+  smoke:
+    name: e2e browser smoke (headless Chrome)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install toolchain (from rust-toolchain.toml)
+        working-directory: crates
+        run: rustup show active-toolchain || rustup toolchain install
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            crates/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('crates/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      # Ubuntu runners ship a headless-capable Chrome via this action; export its
+      # path so the smoke harness drives the real engine (it skips loudly if
+      # CHROME is unset and no Chrome is found on PATH).
+      - name: Install Chrome
+        uses: browser-actions/setup-chrome@v1
+        id: setup-chrome
+        with:
+          # Pin to Google Chrome stable rather than the action's default
+          # bleeding-edge Chromium: newer Chromium builds do not emit
+          # `--dump-dom` output under `--headless=new` + `--virtual-time-budget`,
+          # which the smoke harness relies on.
+          chrome-version: stable
+
+      # The browser smoke suite compiles fixtures, serves them with a tiny node
+      # server, and asserts the post-interaction DOM in real Chrome. `node` on
+      # PATH (setup-node) satisfies the harness's server; CHROME points it at the
+      # installed engine.
+      - name: End-to-end browser smoke tests
+        working-directory: crates
+        env:
+          CHROME: ${{ steps.setup-chrome.outputs.chrome-path }}
+          # Opt-in: browser_smoke skips unless this is set, so a plain
+          # `cargo test --all` (e.g. the check job, which may pick up an
+          # unpinned/flaky Chrome) never runs it — only this pinned-Chrome job does.
+          LUNAS_BROWSER_SMOKE: "1"
+        run: cargo test -p lunas_compiler --test browser_smoke -- --nocapture

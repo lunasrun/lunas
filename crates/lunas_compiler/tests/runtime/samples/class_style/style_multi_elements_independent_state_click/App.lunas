@@ -1,0 +1,10 @@
+html:
+    <div>
+        <div class="one" :style="{color: c1}" @click="cyc1()"></div>
+        <div class="two" :style="{color: c2}" @click="cyc2()"></div>
+    </div>
+script:
+    let c1 = "red"
+    let c2 = "blue"
+    function cyc1(){ c1 = "green" }
+    function cyc2(){ c2 = "yellow" }

@@ -1,0 +1,5 @@
+html:
+    <div><span :if="isGuest || isAdmin">visible</span></div>
+script:
+    let isGuest = false
+    let isAdmin = true

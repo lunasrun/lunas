@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>PENDING</title></head>
+<body>
+<div id="result">PENDING</div>
+<script type="module">
+// Hand-written "compiled output" of a counter component, exactly per the
+// output contract in crates/lunas_compiler/docs/output-design.md §3,
+// running against the real runtime.
+import {
+  component, box, deepBox, refs, on, bind, ifBlock, forBlock,
+} from "../src/index.mjs";
+
+// Static skeleton: comment-free, whitespace-free. Hoisted once per module.
+const HTML = `<button>+1</button><p></p><ul></ul>`;
+
+const Counter = component("div", { class: "counter" }, HTML, (c, props) => {
+  const count   = box(c, 0, props.start !== undefined ? props.start : 0); // index 0
+  const history = deepBox(c, 1, []);                                       // index 1
+
+  function inc() { count.v++; history.v.push(count.v); }
+
+  const [btn, p, ul] = refs(c.root, [[0], [1], [2]]);
+
+  on(btn, "click", inc);
+
+  bind(c, [0], () => { p.textContent = "count: " + count.v; });
+
+  // :if count > 0 — anchor before `ul`
+  const ifAnchor = (function () {
+    const a = document.createTextNode("");
+    ul.parentNode.insertBefore(a, ul);
+    return a;
+  })();
+  ifBlock(c, ifAnchor, [0], () => count.v > 0, () => {
+    const em = document.createElement("em");
+    em.textContent = "positive";
+    return em;
+  });
+
+  // :for n of history — anchor inside `ul`
+  const forAnchor = document.createTextNode("");
+  ul.appendChild(forAnchor);
+  forBlock(c, forAnchor, [1], () => Array.from(history.v), {
+    make: (n) => {
+      const li = document.createElement("li");
+      li.textContent = String(n);
+      return li;
+    },
+    keyOf: (n) => n,
+  });
+});
+
+const tick = () => new Promise((r) => setTimeout(r, 0));
+
+(async () => {
+  const out = document.getElementById("result");
+  try {
+    const root = Counter({ start: 0 });
+    document.body.appendChild(root); // attach once
+
+    const p = root.childNodes[1];
+    const initial = p.textContent;
+    const hasIf0 = root.querySelector("em") !== null;
+
+    root.childNodes[0].click(); // user clicks +1
+    await tick(); // let the microtask flush run
+
+    const after = p.textContent;
+    const hasIf1 = root.querySelector("em") !== null;
+    const lis = Array.from(root.querySelectorAll("li")).map((li) => li.textContent).join(",");
+
+    const pass =
+      initial === "count: 0" &&
+      after === "count: 1" &&
+      hasIf0 === false &&
+      hasIf1 === true &&
+      lis === "1";
+    const msg =
+      (pass ? "PASS" : "FAIL") +
+      " initial=[" + initial + "] after=[" + after + "]" +
+      " if0=" + hasIf0 + " if1=" + hasIf1 + " lis=[" + lis + "]";
+    out.textContent = msg;
+    document.title = pass ? "SMOKE-PASS" : "SMOKE-FAIL";
+  } catch (e) {
+    out.textContent = "FAIL exception: " + (e && e.stack ? e.stack : e);
+    document.title = "SMOKE-FAIL";
+  }
+})();
+</script>
+</body>
+</html>

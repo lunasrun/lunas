@@ -1,0 +1,2 @@
+html:
+    <section><slot>fallback text</slot></section>

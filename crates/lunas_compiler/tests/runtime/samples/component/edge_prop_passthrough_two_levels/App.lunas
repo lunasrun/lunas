@@ -1,0 +1,5 @@
+@use Mid from "./Mid.lunas"
+html:
+    <div><Mid :msg="text"/></div>
+script:
+    let text = "deep"

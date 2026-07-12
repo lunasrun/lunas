@@ -1,0 +1,6 @@
+html:
+    <p>${a}-${b}-${z}</p>
+script:
+    let a = 1
+    let b = 2
+    let z = 3

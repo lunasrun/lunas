@@ -1,0 +1,3 @@
+@input v:number = 0
+html:
+    <b>${v}</b>

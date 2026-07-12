@@ -1,0 +1,6 @@
+html:
+    <div class="box" :class="{active: on}" :style="{color: hue}" @click="go()"></div>
+script:
+    let on = false
+    let hue = "gray"
+    function go(){ on = true; hue = "red" }

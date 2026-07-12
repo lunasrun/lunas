@@ -1,0 +1,3 @@
+@use Pair from "./Pair.lunas"
+html:
+    <div><Pair/></div>

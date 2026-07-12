@@ -1,0 +1,5 @@
+@input label:string = "def"
+html:
+    <span>${label}-${mode}</span>
+script:
+    let mode = "auto"

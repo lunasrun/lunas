@@ -1,0 +1,5 @@
+html:
+    <input type="checkbox" :checked="on" @click="toggle()">
+script:
+    let on = false
+    function toggle(){ on = !on }

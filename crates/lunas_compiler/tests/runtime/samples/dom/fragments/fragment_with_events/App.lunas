@@ -1,0 +1,3 @@
+@use Toolbar from "./Toolbar.lunas"
+html:
+    <div><Toolbar/></div>

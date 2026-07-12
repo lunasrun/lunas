@@ -2,40 +2,46 @@ name: Label PRs
 
 on:
   pull_request:
-    types: [opened]
+    types: [opened, reopened]
+
+permissions:
+  pull-requests: write
 
 jobs:
   label:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v3
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: "14"
-
       - name: Determine label and apply
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH_NAME: ${{ github.event.pull_request.head.ref }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          BRANCH_NAME="${{ github.event.pull_request.head.ref }}"
-          if [[ "$BRANCH_NAME" == fix/* ]]; then
-            LABEL="fix"
-          elif [[ "$BRANCH_NAME" == feature/* ]]; then
-            LABEL="feature"
-          elif [[ "$BRANCH_NAME" == refactor/* ]]; then
-            LABEL="refactor"
-          elif [[ "$BRANCH_NAME" == version/* ]]; then
-            LABEL="version"
-          elif [[ "$BRANCH_NAME" == chore/* ]]; then
-            LABEL="chore"
-          else
-            LABEL=""
-          fi
+          case "$BRANCH_NAME" in
+            fix/*)
+              LABEL="fix"
+              ;;
+            feat/*|feature/*)
+              LABEL="feature"
+              ;;
+            refactor/*)
+              LABEL="refactor"
+              ;;
+            version/*)
+              LABEL="version"
+              ;;
+            chore/*)
+              LABEL="chore"
+              ;;
+            docs/*)
+              LABEL="documentation"
+              ;;
+            *)
+              LABEL=""
+              ;;
+          esac
 
           if [[ -n "$LABEL" ]]; then
-            gh pr edit ${{ github.event.pull_request.number }} --add-label "$LABEL"
+            gh pr edit "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --add-label "$LABEL"
           fi

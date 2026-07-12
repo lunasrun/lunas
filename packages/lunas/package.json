@@ -1,0 +1,103 @@
+{
+  "name": "lunas",
+  "version": "0.0.1-beta.11-alpha.0",
+  "description": "Dependency-free ES2015 runtime for Lunas-compiled components.",
+  "type": "module",
+  "sideEffects": false,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lunasrun/lunas.git",
+    "directory": "packages/lunas"
+  },
+  "homepage": "https://github.com/lunasrun/lunas/tree/main/packages/lunas#readme",
+  "bugs": {
+    "url": "https://github.com/lunasrun/lunas/issues"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "src",
+    "types",
+    "README.md",
+    "LICENSE"
+  ],
+  "main": "./src/index.mjs",
+  "types": "./types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./types/index.d.ts",
+      "import": "./src/index.mjs"
+    },
+    "./core": {
+      "types": "./types/core.d.ts",
+      "import": "./src/core.mjs"
+    },
+    "./boxes": {
+      "types": "./types/boxes.d.ts",
+      "import": "./src/boxes.mjs"
+    },
+    "./computed": {
+      "types": "./types/computed.d.ts",
+      "import": "./src/computed.mjs"
+    },
+    "./watch": {
+      "types": "./types/watch.d.ts",
+      "import": "./src/watch.mjs"
+    },
+    "./batch": {
+      "types": "./types/batch.d.ts",
+      "import": "./src/batch.mjs"
+    },
+    "./dom": {
+      "types": "./types/dom.d.ts",
+      "import": "./src/dom.mjs"
+    },
+    "./blocks": {
+      "types": "./types/blocks.d.ts",
+      "import": "./src/blocks.mjs"
+    },
+    "./for_diff": {
+      "types": "./types/for_diff.d.ts",
+      "import": "./src/for_diff.mjs"
+    },
+    "./store": {
+      "types": "./types/store.d.ts",
+      "import": "./src/store.mjs"
+    },
+    "./router": {
+      "types": "./types/router.d.ts",
+      "import": "./src/router.mjs"
+    },
+    "./async": {
+      "types": "./types/async.d.ts",
+      "import": "./src/async.mjs"
+    },
+    "./lifecycle": {
+      "types": "./types/lifecycle.d.ts",
+      "import": "./src/lifecycle.mjs"
+    },
+    "./emits": {
+      "types": "./types/emits.d.ts",
+      "import": "./src/emits.mjs"
+    },
+    "./provide": {
+      "types": "./types/provide.d.ts",
+      "import": "./src/provide.mjs"
+    },
+    "./transition": {
+      "types": "./types/transition.d.ts",
+      "import": "./src/transition.mjs"
+    },
+    "./keepalive": {
+      "types": "./types/keepalive.d.ts",
+      "import": "./src/keepalive.mjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "test": "node test/run-all.mjs",
+    "check:treeshake": "node test/treeshake.check.mjs"
+  }
+}

@@ -1,0 +1,4 @@
+html:
+    <ul><li :for="v of vals" :key="v">${v}</li></ul>
+script:
+    let vals = Object.values({a:"one", b:"two", c:"three"})

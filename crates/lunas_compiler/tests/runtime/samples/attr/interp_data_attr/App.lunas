@@ -1,0 +1,4 @@
+html:
+    <div data-item="item-${id}">row</div>
+script:
+    let id = 99

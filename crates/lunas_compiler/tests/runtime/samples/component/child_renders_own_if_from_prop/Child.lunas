@@ -1,0 +1,3 @@
+@input show:boolean = false
+html:
+    <section><span :if="show">visible</span></section>

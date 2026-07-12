@@ -1,0 +1,10 @@
+html:
+    <div>
+        <button class="drop" @click="drop()">drop</button>
+        <button class="add" @click="add()">add</button>
+        <ul><li :for="item of items" :key="item.id">${item.label}</li></ul>
+    </div>
+script:
+    let items = [{id:1,label:"a"},{id:2,label:"b"}]
+    function drop(){ items = items.filter(i => i.id !== 1) }
+    function add(){ items = [{id:1,label:"a2"}, ...items] }

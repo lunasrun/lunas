@@ -1,0 +1,4 @@
+html:
+    <div :data-count="n">x</div>
+script:
+    let n = 3.14

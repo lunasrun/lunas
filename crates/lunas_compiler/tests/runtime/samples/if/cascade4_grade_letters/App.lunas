@@ -1,0 +1,9 @@
+html:
+    <div>
+        <p :if="score >= 90">A</p>
+        <p :elseif="score >= 80">B</p>
+        <p :elseif="score >= 70">C</p>
+        <p :else>F</p>
+    </div>
+script:
+    let score = 72

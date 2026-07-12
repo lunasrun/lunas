@@ -1,0 +1,16 @@
+html:
+    <div>
+        <button @click="reorder()">reorder</button>
+        <ul>
+            <template :for="item of items" :key="item.id">
+                <li class="label">${item.label}</li>
+                <li class="detail" :if="item.expanded">${item.detail}</li>
+            </template>
+        </ul>
+    </div>
+script:
+    let items = [
+        {id:1,label:"a",detail:"detail-a",expanded:true},
+        {id:2,label:"b",detail:"detail-b",expanded:false}
+    ]
+    function reorder() { items = items.slice().reverse() }

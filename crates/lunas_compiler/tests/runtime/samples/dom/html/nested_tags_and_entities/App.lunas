@@ -1,0 +1,4 @@
+html:
+    <article :html="markup"></article>
+script:
+    let markup = "<div><span>a &amp; b</span></div>"

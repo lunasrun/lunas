@@ -1,0 +1,5 @@
+html:
+    <a :href="url" @click="swap()">link</a>
+script:
+    let url = "/a"
+    function swap(){ url = "/b" }

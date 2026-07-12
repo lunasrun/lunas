@@ -1,0 +1,10 @@
+html:
+    <div>
+        <p :if="day == 1">Monday</p>
+        <p :elseif="day == 2">Tuesday</p>
+        <p :elseif="day == 3">Wednesday</p>
+        <p :elseif="day == 4">Thursday</p>
+        <p :else>Other</p>
+    </div>
+script:
+    let day = 4

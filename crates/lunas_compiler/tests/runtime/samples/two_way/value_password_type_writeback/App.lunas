@@ -1,0 +1,4 @@
+html:
+    <div><input type="password" ::value="pw"><span>len=${pw.length}</span></div>
+script:
+    let pw = ""

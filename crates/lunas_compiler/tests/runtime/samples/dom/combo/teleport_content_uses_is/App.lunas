@@ -1,0 +1,12 @@
+@use Info from "./Info.lunas"
+@use Warning from "./Warning.lunas"
+html:
+    <div>
+        <button @click="swap()">swap</button>
+        <teleport to="#portal">
+            <component :is="kind"/>
+        </teleport>
+    </div>
+script:
+    let kind = Info
+    function swap() { kind = Warning }

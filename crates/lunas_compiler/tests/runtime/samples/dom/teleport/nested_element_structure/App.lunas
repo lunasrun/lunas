@@ -1,0 +1,10 @@
+html:
+    <div>
+        <p>host</p>
+        <teleport to="#portal">
+            <div class="ported-nested-structure">
+                <header>Title</header>
+                <section><p>body text</p></section>
+            </div>
+        </teleport>
+    </div>

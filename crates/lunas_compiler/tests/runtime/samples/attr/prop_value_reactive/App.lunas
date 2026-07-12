@@ -1,0 +1,5 @@
+html:
+    <div><input :value="text"><button @click="bump()">+</button></div>
+script:
+    let text = "v1"
+    function bump(){ text = "v2" }

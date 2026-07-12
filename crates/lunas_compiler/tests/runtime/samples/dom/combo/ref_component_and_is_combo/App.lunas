@@ -1,0 +1,13 @@
+@use Card from "./Card.lunas"
+html:
+    <div>
+        <Card :ref="cardHandle" :label="title"/>
+        <button @click="rename()">rename</button>
+    </div>
+script:
+    let title = "one"
+    let cardHandle
+    function rename() {
+        title = "two"
+        cardHandle.setProp("label", title)
+    }

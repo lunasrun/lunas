@@ -1,0 +1,4 @@
+html:
+    <p>${x} and ${x} again</p>
+script:
+    let x = "same"

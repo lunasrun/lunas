@@ -1,0 +1,4 @@
+html:
+    <p>${tag}</p>
+script:
+    let tag = "<b>"

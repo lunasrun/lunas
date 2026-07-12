@@ -1,0 +1,4 @@
+html:
+    <div><input type="email" ::value="email"><span>${email}</span></div>
+script:
+    let email = ""

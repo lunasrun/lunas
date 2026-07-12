@@ -1,0 +1,5 @@
+html:
+    <ul :html="joined"></ul>
+script:
+    let items = ["a", "b", "c"]
+    let joined = items.map(function (i) { return "<li>" + i + "</li>" }).join("")

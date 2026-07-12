@@ -1,0 +1,9 @@
+html:
+    <div>
+        <button class="go" @click="go()">go</button>
+        <ul :if="nums.length"><li :for="n of nums" :key="n">${n}</li></ul>
+        <p :else class="empty">none</p>
+    </div>
+script:
+    let nums = [1, 2]
+    function go(){ nums = [] }

@@ -1,0 +1,5 @@
+html:
+    <span title="Hello, ${name}! You have ${count} messages.">hover</span>
+script:
+    let name = "Ada"
+    let count = 3

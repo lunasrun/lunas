@@ -1,0 +1,5 @@
+html:
+    <div><p :hidden="isHidden">msg</p><button @click="toggle()">t</button></div>
+script:
+    let isHidden = false
+    function toggle(){ isHidden = !isHidden }

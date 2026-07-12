@@ -1,0 +1,3 @@
+{
+  "description": "class name with an embedded space -- documents raw passthrough behavior (may produce an odd but valid class token)"
+}

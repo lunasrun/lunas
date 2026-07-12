@@ -1,0 +1,5 @@
+html:
+    <div><button @click="t()">x</button><template :if="show"><span>a</span><span>b</span></template></div>
+script:
+    let show = true
+    function t(){ show = !show }

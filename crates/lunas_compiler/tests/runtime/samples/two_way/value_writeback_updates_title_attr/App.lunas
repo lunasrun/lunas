@@ -1,0 +1,4 @@
+html:
+    <div><input ::value="text" :title="text"></div>
+script:
+    let text = "start"

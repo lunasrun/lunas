@@ -1,0 +1,11 @@
+@use Child from "./Child.lunas"
+html:
+    <div>
+        <Child :ref="childHandle"/>
+        <button @click="remove()">remove</button>
+    </div>
+script:
+    let childHandle
+    function remove() {
+        childHandle.unmount()
+    }

@@ -1,0 +1,4 @@
+html:
+    <input :readonly="n">
+script:
+    let n = 1

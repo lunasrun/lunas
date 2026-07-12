@@ -1,0 +1,5 @@
+@input init:string = ""
+html:
+    <div><input ::value="text"><span>${text}</span></div>
+script:
+    let text = init

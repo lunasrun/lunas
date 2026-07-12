@@ -1,0 +1,8 @@
+html:
+    <div>
+        <p :if="pct <= 20">Low battery</p>
+        <p :elseif="pct <= 80">Charging fine</p>
+        <p :else>Full</p>
+    </div>
+script:
+    let pct = 100

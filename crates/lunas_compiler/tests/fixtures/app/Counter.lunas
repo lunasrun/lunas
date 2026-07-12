@@ -1,0 +1,16 @@
+@input start:number = 0
+
+html:
+    <div class="counter">
+        <button @click="dec()">-</button>
+        <span class="value">${value}</span>
+        <button @click="inc()">+</button>
+        <input ::value="note">
+        <p class="note">note: ${note}</p>
+    </div>
+
+script:
+    let value = start
+    let note = "x"
+    function inc() { value = value + 1 }
+    function dec() { value = value - 1 }

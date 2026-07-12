@@ -1,0 +1,5 @@
+@use Box from "./Box.lunas"
+html:
+    <div><Box><template #head>user: ${user}</template></Box></div>
+script:
+    let user = "root"

@@ -1,0 +1,5 @@
+html:
+    <button class="btn" :class="{ on: active }" @click="toggle()">t</button>
+script:
+    let active = false
+    function toggle(){ active = !active }

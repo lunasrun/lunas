@@ -1,0 +1,10 @@
+html:
+    <div>
+        <span>${count}</span>
+        <teleport to="#portal">
+            <button class="ported-event-handler" @click="inc()">+</button>
+        </teleport>
+    </div>
+script:
+    let count = 0
+    function inc() { count++ }

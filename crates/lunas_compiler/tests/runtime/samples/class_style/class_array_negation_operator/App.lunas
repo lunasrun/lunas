@@ -1,0 +1,4 @@
+html:
+    <div :class="['a', !hidden && 'visible']"></div>
+script:
+    let hidden = false

@@ -1,0 +1,4 @@
+html:
+    <div style="color: ${clr}">x</div>
+script:
+    let clr = "red"

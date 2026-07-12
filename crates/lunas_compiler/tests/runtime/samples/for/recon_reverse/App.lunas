@@ -1,0 +1,8 @@
+html:
+    <div>
+        <button class="go" @click="go()">go</button>
+        <ul><li :for="item of items" :key="item.id">${item.label}</li></ul>
+    </div>
+script:
+    let items = [{id:1,label:"a"},{id:2,label:"b"},{id:3,label:"c"}]
+    function go(){ items = [...items].reverse() }

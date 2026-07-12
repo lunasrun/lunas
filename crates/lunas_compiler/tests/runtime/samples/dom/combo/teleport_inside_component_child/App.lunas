@@ -1,0 +1,9 @@
+@use Toast from "./Toast.lunas"
+html:
+    <div>
+        <button @click="show()">show toast</button>
+        <Toast :msg="message"/>
+    </div>
+script:
+    let message = "saved!"
+    function show() { message = "saved again!" }

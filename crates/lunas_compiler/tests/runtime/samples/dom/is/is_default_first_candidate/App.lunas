@@ -1,0 +1,6 @@
+@use First from "./First.lunas"
+@use Second from "./Second.lunas"
+html:
+    <div><component :is="view"/></div>
+script:
+    let view = First

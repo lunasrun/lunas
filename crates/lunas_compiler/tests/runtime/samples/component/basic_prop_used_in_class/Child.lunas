@@ -1,0 +1,3 @@
+@input active:boolean = false
+html:
+    <span class="base" :class="{ active: active }">x</span>

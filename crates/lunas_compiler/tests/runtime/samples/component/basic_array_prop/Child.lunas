@@ -1,0 +1,3 @@
+@input items:array = []
+html:
+    <span>${items.length}:${items[0]}</span>

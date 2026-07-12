@@ -1,0 +1,1 @@
+{ "props": { "greeting": "yo" }, "description": "a passed prop overrides the @input default" }

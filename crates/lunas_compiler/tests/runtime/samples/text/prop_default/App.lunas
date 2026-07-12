@@ -1,0 +1,3 @@
+@input greeting:string = "hi"
+html:
+    <p>${greeting}, there</p>

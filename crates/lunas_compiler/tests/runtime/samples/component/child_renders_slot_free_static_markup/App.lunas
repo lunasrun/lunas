@@ -1,0 +1,5 @@
+@use Panel from "./Panel.lunas"
+html:
+    <div><Panel :title="t"/></div>
+script:
+    let t = "Settings"

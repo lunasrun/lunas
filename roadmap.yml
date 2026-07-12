@@ -1,0 +1,114 @@
+# Lunas development roadmap — single source of truth.
+# Edit this file, then run `./sync.sh` in the lunas-roadmap repo to publish it
+# to the interactive 2D visualization.
+#
+# Scope: THIS repo (the Lunas compiler + runtime). The goal is a *complete*
+# web front-end framework — feature parity with mainstream frameworks (Vue et
+# al.), not merely catching up to the previous Lunas. Out of scope and
+# intentionally NOT tracked here: the language server (separate repo) and the
+# roadmap visualization itself.
+version: 1
+project: Lunas
+subtitle: A complete web front-end framework — compiler + runtime
+updated: 2026-07-05
+statuses: [done, in_progress, todo, deferred]
+tree:
+  id: lunas
+  title: Lunas — web front-end framework
+  status: done
+  children:
+    - id: foundation
+      title: Compiler foundation
+      status: done
+      children:
+        - { id: span, title: "Spans & diagnostics", status: done }
+        - { id: html-parser, title: "HTML parser (html5lib-tested)", status: done }
+        - { id: parser, title: ".lunas parser + template IR", status: done }
+        - { id: script-analysis, title: "Script analysis + reactivity graph", status: done }
+        - { id: resolver, title: "Resolution layer (ResolvedComponent)", status: done }
+    - id: output-design
+      title: Output & runtime design (benchmark-locked)
+      status: done
+      children:
+        - { id: bench-construction, title: "innerHTML vs cloneNode (4 machines)", status: done }
+        - { id: bench-anchors, title: "Comment fast-path; runtime text anchors", status: done }
+        - { id: bench-refs, title: "Positional nav vs getElementById", status: done }
+        - { id: reactivity-design, title: "Adjacency dispatch; no BigInt; Proxy floor", status: done }
+    - id: codegen
+      title: Code generator (ResolvedComponent → JS)
+      status: done
+      children:
+        - { id: cg-scaffold, title: "Codegen module + JS emitter utils", status: done }
+        - { id: cg-static-html, title: "Static skeleton emission (escaped, minified)", status: done }
+        - { id: cg-refs, title: "Positional ref paths for dynamic nodes", status: done }
+        - { id: cg-anchors, title: "Runtime text-anchor creation", status: done }
+        - { id: cg-text, title: "Reactive text binds", status: done }
+        - { id: cg-attrs, title: "Attribute binds incl. static interpolation", status: done }
+        - { id: cg-events, title: "Event listeners", status: done }
+        - { id: cg-two-way, title: "Two-way bindings", status: done }
+        - { id: cg-if, title: "Conditional rendering (:if/:elseif/:else)", status: done }
+        - { id: cg-for, title: "List rendering (keyed :for)", status: done }
+        - { id: cg-components, title: "Child component mounting", status: done }
+        - { id: cg-inputs, title: "@input props handling", status: done }
+        - { id: cg-e2e, title: "End-to-end snapshot + browser smoke tests", status: done }
+    - id: runtime
+      title: Runtime (ES2015 + Proxy floor)
+      status: done
+      children:
+        - { id: rt-core, title: "Adjacency dispatch core (bind, markVar, flush)", status: done }
+        - { id: rt-boxes, title: "Reactive boxes (box / deepBox / shared)", status: done }
+        - { id: rt-dom, title: "DOM / refs / event helpers", status: done }
+        - { id: rt-blocks, title: "ifBlock / forBlock / mountChild", status: done }
+        - { id: rt-package, title: "npm package + tree-shaking", status: done }
+    - id: for-diff
+      title: "Keyed :for reconciliation"
+      status: done
+      children:
+        - { id: fd-design, title: "Algorithm design (LIS keyed diff)", status: done }
+        - { id: fd-proto, title: "Reference implementation + fuzz tests", status: done }
+    - id: reactivity
+      title: Reactivity system
+      status: done
+      children:
+        - { id: rx-state, title: "Reactive state (numbered vars)", status: done }
+        - { id: rx-deep, title: "Deep reactivity (nested objects/arrays)", status: done }
+        - { id: rx-computed, title: "Computed / derived values", status: done }
+        - { id: rx-watch, title: "Watchers / effects (watch, watchEffect)", status: done }
+        - { id: rx-batch, title: "Batched updates + nextTick", status: done }
+    - id: dom
+      title: Template & DOM features
+      status: done
+      children:
+        - { id: d-class-style, title: "Class & style bindings (object/array)", status: done }
+        - { id: d-refs, title: "Template refs (element & component)", status: done }
+        - { id: d-html, title: "Raw HTML insertion", status: done }
+        - { id: d-dynamic, title: "Dynamic components (:is)", status: done }
+        - { id: d-teleport, title: "Teleport / portal", status: done }
+        - { id: d-fragment, title: "Fragments / multi-root components", status: done }
+    - id: components
+      title: Component model
+      status: done
+      children:
+        - { id: c-props, title: "Props (@input)", status: done }
+        - { id: c-slots, title: "Slots (default / named / scoped)", status: done }
+        - { id: c-emits, title: "Events / emits (child → parent)", status: done }
+        - { id: c-lifecycle, title: "Lifecycle hooks (mount/update/destroy)", status: done }
+        - { id: c-provide, title: "Provide / inject (DI)", status: done }
+        - { id: c-async, title: "Async / lazy components", status: done }
+        - { id: c-transition, title: "Transitions & animations", status: done }
+        - { id: c-keepalive, title: "Keep-alive (component caching)", status: done }
+    - id: app
+      title: Application layer
+      status: done
+      children:
+        - { id: a-router, title: "Router runtime (matching, history, outlet, guards)", status: done }
+        - { id: a-ssr, title: "SSR + client hydration", status: deferred }
+        - { id: a-css, title: "Scoped CSS (lunas_css)", status: done }
+        - { id: a-suspense, title: "Suspense / async boundaries", status: done }
+        - { id: a-store, title: "Global state / stores", status: done }
+    - id: tooling
+      title: Tooling
+      status: done
+      children:
+        - { id: to-plugin, title: "Bundler plugin (Vite)", status: done }
+        - { id: to-cli, title: "Project scaffolding CLI", status: done }

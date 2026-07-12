@@ -1,0 +1,4 @@
+html:
+    <div :style="s"></div>
+script:
+    let s = ""

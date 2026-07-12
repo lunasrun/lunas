@@ -1,0 +1,5 @@
+html:
+    <div class="tgt" :style="[{color: hue}]" @click="swap()"></div>
+script:
+    let hue = "orange"
+    function swap(){ hue = "cyan" }

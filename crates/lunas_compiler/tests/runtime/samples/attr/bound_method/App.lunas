@@ -1,0 +1,4 @@
+html:
+    <form action="/submit" :method="m">form</form>
+script:
+    let m = "post"

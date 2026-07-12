@@ -1,0 +1,4 @@
+html:
+    <input type="file" :accept="types">
+script:
+    let types = "image/png,image/jpeg"

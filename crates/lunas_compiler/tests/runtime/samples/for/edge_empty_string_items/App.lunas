@@ -1,0 +1,4 @@
+html:
+    <ul><li :for="[i, s] of items.entries()" :key="i">[${s}]</li></ul>
+script:
+    let items = ["", "x", ""]

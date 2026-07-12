@@ -1,0 +1,4 @@
+html:
+    <p>before <span :html="markup"></span> after</p>
+script:
+    let markup = "<b>mid</b>"

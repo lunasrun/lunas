@@ -1,0 +1,4 @@
+html:
+    <select :multiple="isMulti"><option value="a">A</option></select>
+script:
+    let isMulti = true

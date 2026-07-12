@@ -1,0 +1,5 @@
+@use Card from "./Card.lunas"
+html:
+    <div><Card>hello ${name}</Card></div>
+script:
+    let name = "world"

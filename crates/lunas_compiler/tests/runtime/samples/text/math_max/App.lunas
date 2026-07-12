@@ -1,0 +1,5 @@
+html:
+    <p>${Math.max(a, b)}</p>
+script:
+    let a = 3
+    let b = 7

@@ -1,0 +1,9 @@
+html:
+    <ul>
+        <li :for="item of items" :key="item.id">
+            <span :if="item.active">${item.label} (on)</span>
+            <span :else>${item.label} (off)</span>
+        </li>
+    </ul>
+script:
+    let items = [{id:1,label:"a",active:true},{id:2,label:"b",active:false}]

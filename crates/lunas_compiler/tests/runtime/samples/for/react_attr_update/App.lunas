@@ -1,0 +1,8 @@
+html:
+    <div>
+        <button class="go" @click="go()">go</button>
+        <ul><li :for="item of items" :key="item.id" :data-v="item.v">${item.label}</li></ul>
+    </div>
+script:
+    let items = [{id:1,label:"a",v:"x"},{id:2,label:"b",v:"y"}]
+    function go(){ items = items.map(it => ({...it, v: it.v + it.v})) }

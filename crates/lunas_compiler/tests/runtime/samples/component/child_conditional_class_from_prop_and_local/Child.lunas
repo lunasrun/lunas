@@ -1,0 +1,6 @@
+@input featured:boolean = false
+html:
+    <button @click="toggle()" class="card" :class="{ featured: featured, open: open }">x</button>
+script:
+    let open = false
+    function toggle(){ open = !open }

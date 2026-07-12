@@ -1,0 +1,8 @@
+html:
+    <div>
+        <p :if="temp < 0">Freezing</p>
+        <p :elseif="temp < 25">Cool</p>
+        <p :else>Warm</p>
+    </div>
+script:
+    let temp = 30

@@ -1,0 +1,3 @@
+@input data:object = []
+html:
+    <div class="chart-view">chart:${data.length}</div>

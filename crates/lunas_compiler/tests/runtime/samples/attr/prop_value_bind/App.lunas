@@ -1,0 +1,4 @@
+html:
+    <input :value="name">
+script:
+    let name = "Ada"

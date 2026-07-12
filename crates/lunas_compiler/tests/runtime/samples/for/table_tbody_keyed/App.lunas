@@ -1,0 +1,8 @@
+html:
+    <table><tbody><tr :for="row of rows" :key="row.id"><td class="cell">${row.label}</td><td><button class="del" @click="removeRow(row.id)">x</button></td></tr></tbody></table>
+script:
+    let rows = [{id:1,label:"a"},{id:2,label:"b"},{id:3,label:"c"}]
+    function rename(id, label){ rows = rows.map(r => r.id === id ? {...r, label} : r) }
+    function add(){ rows = [...rows, {id:4,label:"d"}] }
+    function removeRow(id){ rows = rows.filter(r => r.id !== id) }
+    function reorder(){ rows = [rows[2], rows[0], rows[1]] }

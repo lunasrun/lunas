@@ -1,0 +1,8 @@
+html:
+    <div>
+        <input @blur="onBlur()">
+        <span>${blurred}</span>
+    </div>
+script:
+    let blurred = false
+    function onBlur(){ blurred = true }

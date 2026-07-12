@@ -1,0 +1,4 @@
+html:
+    <div><input ::value="name"><span>${name}</span></div>
+script:
+    let name = "a"

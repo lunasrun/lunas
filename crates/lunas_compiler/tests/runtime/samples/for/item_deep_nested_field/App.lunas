@@ -1,0 +1,4 @@
+html:
+    <ul><li :for="u of users" :key="u.id">${u.addr.city.name}</li></ul>
+script:
+    let users = [{id:1,addr:{city:{name:"NYC"}}},{id:2,addr:{city:{name:"LA"}}}]

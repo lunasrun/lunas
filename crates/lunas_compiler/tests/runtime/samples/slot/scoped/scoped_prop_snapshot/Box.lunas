@@ -1,0 +1,4 @@
+html:
+    <section><slot :v="seed"></slot></section>
+script:
+    let seed = 100

@@ -1,0 +1,8 @@
+html:
+    <div>
+        <input @input="bump()">
+        <span>${count}</span>
+    </div>
+script:
+    let count = 0
+    function bump(){ count = count + 1 }

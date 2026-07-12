@@ -1,0 +1,19 @@
+@use RedView from "./RedView.lunas"
+@use GreenView from "./GreenView.lunas"
+@use BlueView from "./BlueView.lunas"
+html:
+    <div>
+        <button @click="pick('red')">red</button>
+        <button @click="pick('green')">green</button>
+        <button @click="pick('blue')">blue</button>
+        <component :is="current"/>
+    </div>
+script:
+    let color = "red"
+    let current = RedView
+    function pick(c) {
+        color = c
+        if (c === "red") current = RedView
+        else if (c === "green") current = GreenView
+        else current = BlueView
+    }

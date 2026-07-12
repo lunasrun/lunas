@@ -1,0 +1,9 @@
+html:
+    <div>
+        <ul><li :for="x of items" :key="x"><button class="btn" @click="add(x)">${x}</button></li></ul>
+        <span>${total}</span>
+    </div>
+script:
+    let items = [1, 2, 3]
+    let total = 0
+    function add(x){ total = total + x }

@@ -1,0 +1,7 @@
+html:
+    <div>
+        <input ::value="x">
+        <p :if="x.length > 3">long enough</p>
+    </div>
+script:
+    let x = ""

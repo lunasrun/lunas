@@ -1,0 +1,13 @@
+html:
+    <div>
+        <article :html="first"></article>
+        <section :html="second"></section>
+        <button @click="swap()">swap</button>
+    </div>
+script:
+    let first = "<b>one</b>"
+    let second = "<i>two</i>"
+    function swap() {
+        first = "<i>two</i>"
+        second = "<b>one</b>"
+    }

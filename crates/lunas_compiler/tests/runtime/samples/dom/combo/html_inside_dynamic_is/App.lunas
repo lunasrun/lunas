@@ -1,0 +1,10 @@
+@use Renderer from "./Renderer.lunas"
+html:
+    <div>
+        <component :is="view" :markup="content"/>
+        <button @click="change()">change</button>
+    </div>
+script:
+    let view = Renderer
+    let content = "<b>bold</b>"
+    function change() { content = "<i>italic</i>" }

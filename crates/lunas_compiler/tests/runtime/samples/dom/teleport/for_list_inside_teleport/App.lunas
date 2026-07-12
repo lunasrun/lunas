@@ -1,0 +1,9 @@
+html:
+    <div>
+        <p>host</p>
+        <teleport to="#portal">
+            <ul class="ported-for-list"><li :for="item of items" :key="item">${item}</li></ul>
+        </teleport>
+    </div>
+script:
+    let items = ["x", "y", "z"]

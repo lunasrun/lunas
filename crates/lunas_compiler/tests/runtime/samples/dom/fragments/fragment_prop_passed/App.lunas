@@ -1,0 +1,13 @@
+@use Header from "./Header.lunas"
+html:
+    <div>
+        <Header :title="heading" :subtitle="sub"/>
+        <button @click="rename()">rename</button>
+    </div>
+script:
+    let heading = "Main"
+    let sub = "Sub"
+    function rename() {
+        heading = "Renamed"
+        sub = "Sub2"
+    }

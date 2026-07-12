@@ -1,0 +1,5 @@
+html:
+    <button @click="bump()">count=${obj.count}</button>
+script:
+    let obj = { count: 0 }
+    function bump(){ obj.count = obj.count + 1 }

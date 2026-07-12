@@ -1,0 +1,4 @@
+html:
+    <div :class="{hidden: !visible}"></div>
+script:
+    let visible = true

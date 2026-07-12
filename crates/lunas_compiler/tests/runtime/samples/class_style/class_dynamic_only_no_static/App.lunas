@@ -1,0 +1,3 @@
+html:
+    <div :class="'solo'"></div>
+script:

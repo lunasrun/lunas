@@ -1,0 +1,4 @@
+html:
+    <p>${greeting}</p>
+script:
+    let greeting = "こんにちは"

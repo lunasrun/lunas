@@ -1,0 +1,6 @@
+@use Box from "./Box.lunas"
+html:
+    <div><Box><button @click="inc()">c=${cnt}</button></Box></div>
+script:
+    let cnt = 0
+    function inc(){ cnt++ }

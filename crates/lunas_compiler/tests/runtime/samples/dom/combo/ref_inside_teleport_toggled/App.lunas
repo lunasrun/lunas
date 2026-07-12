@@ -1,0 +1,15 @@
+html:
+    <div>
+        <button class="toggle" @click="toggle()">toggle</button>
+        <button class="mark" @click="mark()">mark</button>
+        <teleport to="#portal">
+            <p class="ported-ref-toggled" :ref="el" :if="open">content</p>
+        </teleport>
+    </div>
+script:
+    let open = false
+    let el
+    function toggle() { open = !open }
+    function mark() {
+        if (el) el.setAttribute("data-marked", "yes")
+    }

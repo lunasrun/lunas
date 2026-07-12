@@ -1,0 +1,5 @@
+html:
+    <button @click="toggle()">${flag}</button>
+script:
+    let flag = false
+    function toggle(){ flag = !flag }

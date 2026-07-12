@@ -1,0 +1,8 @@
+html:
+    <div>
+        <input @input="onInput()">
+        <span>${last}</span>
+    </div>
+script:
+    let last = ""
+    function onInput(){ last = "typed" }

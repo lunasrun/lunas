@@ -1,0 +1,5 @@
+@use Child from "./Child.lunas"
+html:
+    <div><Child :mode="m"/></div>
+script:
+    let m = "two"

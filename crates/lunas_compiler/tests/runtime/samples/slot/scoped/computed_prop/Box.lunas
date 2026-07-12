@@ -1,0 +1,5 @@
+html:
+    <section><slot :total="a + b"></slot></section>
+script:
+    let a = 2
+    let b = 3

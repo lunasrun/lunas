@@ -1,0 +1,8 @@
+html:
+    <div>
+        <button class="go" @click="go()">go</button>
+        <ul><li :for="item of items" :key="item.id"><span :if="item.on" class="on">ON</span><span :else class="off">off</span></li></ul>
+    </div>
+script:
+    let items = [{id:1,on:true},{id:2,on:false}]
+    function go(){ items = items.map(it => ({...it, on: !it.on})) }

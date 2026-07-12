@@ -1,0 +1,3 @@
+@use Mixed from "./Mixed.lunas"
+html:
+    <div><Mixed/></div>

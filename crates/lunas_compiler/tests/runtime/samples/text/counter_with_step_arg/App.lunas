@@ -1,0 +1,5 @@
+html:
+    <div><button @click="add(5)">add5</button><p>${total}</p></div>
+script:
+    let total = 0
+    function add(step){ total += step }

@@ -1,0 +1,4 @@
+html:
+    <p>${value}</p>
+script:
+    let value = "just this"

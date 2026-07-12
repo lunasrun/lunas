@@ -1,0 +1,8 @@
+html:
+    <header>static header</header>
+    <p>${dynamic}</p>
+    <footer>static footer</footer>
+    <button @click="change()">change</button>
+script:
+    let dynamic = "start"
+    function change() { dynamic = "changed" }

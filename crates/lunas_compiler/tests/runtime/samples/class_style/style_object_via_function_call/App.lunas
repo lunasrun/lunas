@@ -1,0 +1,5 @@
+html:
+    <div :style="styles()"></div>
+script:
+    let hue = "navy"
+    function styles(){ return {color: hue} }

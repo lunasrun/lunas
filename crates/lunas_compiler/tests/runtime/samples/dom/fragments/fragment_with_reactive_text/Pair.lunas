@@ -1,0 +1,11 @@
+html:
+    <span class="left">${left}</span>
+    <span class="right">${right}</span>
+    <button @click="bump()">bump</button>
+script:
+    let left = 0
+    let right = 100
+    function bump() {
+        left++
+        right--
+    }

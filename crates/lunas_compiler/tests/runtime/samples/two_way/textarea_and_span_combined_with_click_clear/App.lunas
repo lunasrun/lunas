@@ -1,0 +1,9 @@
+html:
+    <div>
+        <textarea ::value="notes"></textarea>
+        <button @click="clear()">clear</button>
+        <p>${notes}</p>
+    </div>
+script:
+    let notes = "keep typing"
+    function clear(){ notes = "" }

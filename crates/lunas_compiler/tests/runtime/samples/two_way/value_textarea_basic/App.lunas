@@ -1,0 +1,4 @@
+html:
+    <div><textarea ::value="text"></textarea><span>${text}</span></div>
+script:
+    let text = "start"

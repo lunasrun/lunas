@@ -1,0 +1,5 @@
+html:
+    <div class="tag ${flavor}" :class="{hot: isHot}"></div>
+script:
+    let flavor = "sweet"
+    let isHot = true

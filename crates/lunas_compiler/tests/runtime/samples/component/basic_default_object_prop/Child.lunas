@@ -1,0 +1,3 @@
+@input user:object = { name: "def", age: 0 }
+html:
+    <span>${user.name}-${user.age}</span>

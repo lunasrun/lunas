@@ -1,0 +1,6 @@
+@input step:number = 1
+html:
+    <button @click="apply()">${label}</button>
+script:
+    let label = "start"
+    function apply(){ label = "step is " + step }

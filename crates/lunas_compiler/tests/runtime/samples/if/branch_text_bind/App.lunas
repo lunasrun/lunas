@@ -1,0 +1,8 @@
+html:
+    <div>
+        <p :if="show">Hello, ${name}!</p>
+        <p :else>Anonymous</p>
+    </div>
+script:
+    let show = true
+    let name = "Ada"

@@ -1,0 +1,12 @@
+html:
+    <div>
+        <button @click="left()">left</button>
+        <button @click="right()">right</button>
+        <p :if="pos == 0">Left</p>
+        <p :elseif="pos == 1">Middle</p>
+        <p :else>Right</p>
+    </div>
+script:
+    let pos = 1
+    function left(){ if (pos > 0) pos = pos - 1 }
+    function right(){ if (pos < 2) pos = pos + 1 }

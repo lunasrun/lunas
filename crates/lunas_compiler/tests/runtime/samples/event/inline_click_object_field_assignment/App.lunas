@@ -1,0 +1,4 @@
+html:
+    <button @click="obj.k = obj.k + 10">v: ${obj.k}</button>
+script:
+    let obj = { k: 1 }

@@ -1,0 +1,3 @@
+html:
+    <div :class="{'is-active': true, 'is-hidden': false}"></div>
+script:

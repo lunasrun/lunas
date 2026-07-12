@@ -1,0 +1,5 @@
+html:
+    <div><button @click="inc()">go</button><p class="p1">${n}</p><p class="p2">${n}</p></div>
+script:
+    let n = 0
+    function inc(){ n++ }

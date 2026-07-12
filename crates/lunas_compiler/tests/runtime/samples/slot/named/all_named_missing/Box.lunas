@@ -1,0 +1,2 @@
+html:
+    <section><header><slot name="head">h fb</slot></header><footer><slot name="foot">f fb</slot></footer></section>

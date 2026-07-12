@@ -1,0 +1,7 @@
+html:
+    <div>
+        <p :if="user.active">Active</p>
+        <p :else>Inactive</p>
+    </div>
+script:
+    let user = { active: false }

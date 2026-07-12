@@ -1,0 +1,4 @@
+html:
+    <div :class="{active}"></div>
+script:
+    let active = true

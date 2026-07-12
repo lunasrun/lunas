@@ -1,0 +1,8 @@
+html:
+    <div>
+        <button @click="add()">add</button>
+        <ul><li :for="x of items" :key="x">${x}</li></ul>
+    </div>
+script:
+    let items = [0]
+    function add(){ items.push(items.length) }

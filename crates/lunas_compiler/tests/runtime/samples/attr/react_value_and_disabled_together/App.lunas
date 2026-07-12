@@ -1,0 +1,6 @@
+html:
+    <input :value="val" :disabled="locked" @click="unlock()">
+script:
+    let val = "x"
+    let locked = true
+    function unlock(){ locked = false }

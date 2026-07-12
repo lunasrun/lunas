@@ -1,0 +1,4 @@
+@input label:string = ""
+
+html:
+    <section class="panel">${label}</section>

@@ -1,0 +1,7 @@
+@use Box from "./Box.lunas"
+@use Chip from "./Chip.lunas"
+html:
+    <div><Box><Chip :label="a"/><Chip :label="b"/></Box></div>
+script:
+    let a = "x"
+    let b = "y"

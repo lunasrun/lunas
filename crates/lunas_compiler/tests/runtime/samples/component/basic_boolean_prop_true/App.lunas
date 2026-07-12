@@ -1,0 +1,5 @@
+@use Child from "./Child.lunas"
+html:
+    <div><Child :on="flag"/></div>
+script:
+    let flag = true

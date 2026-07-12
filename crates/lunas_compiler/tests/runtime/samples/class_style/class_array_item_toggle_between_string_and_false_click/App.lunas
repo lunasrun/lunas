@@ -1,0 +1,5 @@
+html:
+    <div :class="['base', show && 'visible']" @click="toggle()"></div>
+script:
+    let show = true
+    function toggle(){ show = !show }

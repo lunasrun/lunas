@@ -1,0 +1,577 @@
+# Lunas compiled-output design & runtime contract
+
+This document specifies what the Lunas code generator emits (the compiled `.js`
+for a component) and the minimal runtime it targets. It is the design that
+follows from the investigation recorded in this project's discussion: every
+non-obvious decision here is backed by a cross-hardware micro-benchmark
+(Apple Silicon Mac + 3× GCP `Xeon@2.20GHz, 2 vCPU` Debian VMs, Chrome/Blink 149).
+
+The generator's **input** is a `ResolvedComponent` (see `lunas_compiler`): the
+numbered reactive variables, each dynamic template part with its dependency
+mask, and each handler with its write mask. This document is the **output** side.
+
+---
+
+## 1. Where the speed comes from (two levers)
+
+Lunas is fast at *initial render*, and the speed has two compounding sources:
+
+1. **Static DOM is built by the browser's native parser in bulk** via
+   `innerHTML`, with dynamic parts excluded and represented as lightweight
+   anchors. The static string is kept as large and contiguous as possible, so a
+   mostly-static component is essentially one parse.
+2. **Dependencies are resolved at compile time**, so runtime reactivity setup is
+   nearly free — just registering precomputed dependency bits. There is no
+   runtime dependency-tracking graph, no per-part effect closures, no VDOM.
+
+Updates are not "magically light"; the win is *construction offloaded to the
+native parser* + *near-zero reactivity setup*.
+
+---
+
+## 2. Construction strategy (benchmark-locked)
+
+| Decision | Why (measured) |
+|---|---|
+| **Static build = `innerHTML`**, not `cloneNode` | `clone+append` is **1.1–1.32× slower** than `innerHTML` on every machine tested; the gap widens slightly on slower CPUs. `cloneNode` skips parsing but needs a separate adopt step, and Blink's parse is faster than the copy. |
+| **No comments in the static HTML** | A comment node (`<!>` *or* `<!---->`) drops Blink out of its fast-path HTML parser: the whole `innerHTML` becomes **~4–6× slower**. Hardware-independent. |
+| **Anchors = runtime text nodes** (`createTextNode`+`insertBefore`), created after the parse | Keeps the static HTML comment-free (fast path) while still marking dynamic insertion points. This is what the original Lunas did, and it is correct. |
+| **Element refs = positional navigation** (`firstChild`/`nextSibling`/`childNodes[i]`), not `id`+`getElementById` | Positional nav is **~2× faster** (0.45–0.66×) across all machines, works on a *detached* tree, and needs no id bytes, hash lookups, or `removeAttribute` cleanup. |
+| **Static HTML is whitespace-free and comment-free** | Whitespace-free ⇒ stable `childNodes` positions for nav (and smaller output). Comment-free ⇒ fast path. |
+| **Build detached → wire → attach once** | Because positional nav needs no document attachment (unlike `getElementById`), all wiring happens off-DOM; the live tree is touched exactly once. |
+
+> Note: the fast-path-parser penalty is a Blink characteristic. Gecko/WebKit
+> were **not** measured; re-verify before relying on the comment penalty there.
+
+---
+
+## 3. Component output contract
+
+A component compiles to a factory function. Example — a counter with reactive
+text, an event handler, an `:if`, and a `:for` over a deeply-mutated array:
+
+```js
+import { component, box, deepBox, refs, on, bind, ifBlock, forBlock } from "lunas";
+
+// Static skeleton: comment-free, whitespace-free. Dynamic seams are NOT here;
+// they become runtime anchors. Hoisted once per module.
+const HTML = `<button>+1</button><p></p><ul></ul>`;
+
+export default component("div", { class: "counter" }, HTML, (c, props) => {
+  // Only mutated bindings are boxed. The compiler picks the box kind per var,
+  // and gives each a reactive index (0, 1, …):
+  const count   = box(c, 0, props.start ?? 0);  // index 0: reassigned only
+  const history = deepBox(c, 1, []);             // index 1: array .push() -> Proxy
+
+  function inc() { count.v++; history.v.push(count.v); }
+
+  // Positional nav to the dynamic elements (detached, no ids).
+  const [btn, p, ul] = refs(c.root, [[0], [1], [2]]);
+
+  on(btn, "click", inc);
+
+  // Reactive part: (dep indices it reads, updateFn). Runs on flush only when one
+  // of its deps changed.
+  bind(c, [0], () => { p.textContent = `count: ${count.v}`; });
+
+  // :if count > 0  — anchor inserted before `ul` at build time.
+  ifBlock(c, /*anchor before*/ ul, [0], () => count.v > 0, POSITIVE);
+
+  // :for n of history — anchor inside `ul`.
+  forBlock(c, ul, [1], () => history.v, ITEM);
+});
+```
+
+- **Root**: `document.createElement("div")` + attributes, then
+  `root.innerHTML = HTML`. Single-root is the fast common path. A multi-root
+  component omits the wrapper and builds a fragment (see §7).
+- **`HTML`** is hoisted at module scope so it is defined once and shared by all
+  instances (the string, not the DOM — each instance re-parses it, which the
+  benchmark shows is cheaper than cloning).
+
+---
+
+## 4. Reactivity model (compile-time dependency dispatch)
+
+This is the evolution of Lunas's existing model (Svelte-4 family), **not**
+auto-tracking signals.
+
+- Each reactive variable has an **index** (`ResolvedComponent.reactive_vars[i].index`).
+- Each dynamic part knows the **set of variable indices it reads**
+  (`dynamics[j].deps`), already expanded transitively through function calls at
+  compile time.
+- A write **enqueues that variable's dependent update functions** (deduplicated);
+  a microtask **flush** runs only the affected ones — not every dynamic part.
+- **No runtime dependency discovery.** The graph is fully known at compile time.
+
+### Per-variable box specialization (chosen by the compiler)
+
+| Var classification (from analysis) | Box | Cost |
+|---|---|---|
+| Reassigned only (`x = …`) | `box` — plain getter/setter that sets the bit | lightest, no Proxy |
+| Deeply mutated (`arr.push`, `obj.k = …`) | `deepBox` — Proxy that sets the bit on mutation | Proxy only where needed |
+| Shared across components (passed as prop and mutated) | `shared` — sets the dirty bit in *every* dependent component | cross-component without signals |
+
+This resolves the classic weaknesses of pure static wiring (deep mutation,
+cross-component flow) **at compile time**, avoiding a runtime hybrid.
+
+### Dispatch representation (no BigInt)
+
+The graph is stored as **adjacency** by default: each reactive variable holds the
+list of update functions that read it (the inverse of `dynamics[].deps`). A write
+enqueues those functions; `flush` runs the queue, deduplicated by a per-function
+flag. This makes `flush` cost **O(affected parts)** — unaffected dynamics are
+never touched — and, being plain arrays, it has **no width limit and no overflow
+case**. This aligns with Lunas's "many parallel dynamic blocks" target: an update
+touches neither unrelated static DOM nor unrelated dynamic parts.
+
+The compiler may specialize small components (≤ 31 reactive vars) to a single
+`number` **bitmask** (`dirty |= 1<<i`; run binds where `mask & dirty`) for the
+smallest constant factor. If a wide bitmask is ever preferred over adjacency, use
+a `Uint32Array` of 32-bit chunks — **never `BigInt`**.
+
+`BigInt` is rejected on two grounds: it is markedly slower than `number`
+(heap-allocated, non-primitive) **and** it is the least compatible option (ES2020
+/ Safari 14+, no efficient polyfill). Lunas's compatibility floor is set by
+`Proxy` (ES2015 / Safari 10+, used by `deepBox` for deep mutation) — the same
+floor as Vue 3 / Svelte 5 / Solid. Adjacency, `number`, and `Uint32Array` all
+stay at or below that floor; `BigInt` would raise it above the competition.
+
+`handlers[].writes` is used at compile time for validation / dead-code
+elimination; at runtime the box setter already enqueues dependents, so the write
+mask is not needed live.
+
+---
+
+## 5. Minimal runtime
+
+The entire reactive core, tree-shakeable:
+
+```js
+// --- reactive core: adjacency dispatch (default) ---
+export function bind(c, deps, fn) {         // deps: reactive indices this update reads
+  const s = { fn, q: false }; fn();         // initial run -> correct first paint, no flush
+  for (const i of deps) (c.deps[i] ??= []).push(s);
+  return s;
+}
+function markVar(c, i) {                     // reactive var i changed
+  const ds = c.deps[i];
+  if (ds) for (const s of ds) if (!s.q) { s.q = true; c.queue.push(s); }
+  if (!c.pending) { c.pending = true; queueMicrotask(() => flush(c)); }
+}
+function flush(c) {
+  c.pending = false; const q = c.queue; c.queue = [];
+  for (const s of q) { s.q = false; s.fn(); }   // only affected parts run
+}
+
+export function box(c, i, v) {               // reassign-only var at reactive index i
+  return { get v() { return v; }, set v(x) { if (x !== v) { v = x; markVar(c, i); } } };
+}
+export function deepBox(c, i, v) { /* Proxy wrapping arrays/objects; markVar(c,i) on mutation */ }
+export function prop(c, name, i, raw, def, deep) { /* adopt an @input prop as a reactive box at index
+                                                      i; seed from raw (getter or value) or def;
+                                                      register under c._props[name] for the parent's
+                                                      mountChild.setProp bridge (§6) */ }
+
+// --- derived values, watchers, batching (compile-time deps, no auto-tracking) ---
+export function computed(c, i, deps, fn) { /* lazy derived value at index i reading `deps`;
+                                              memoized, recomputes on next read after a dep
+                                              changes; reads inside a bind that declares i are tracked */ }
+export function watch(c, deps, cb, opts) { /* run cb after any of `deps` changes; { immediate }
+                                              also runs once now; returns stop() (scope-aware) */ }
+export function watchEffect(c, deps, fn) { /* run fn now and after any of `deps` changes; returns stop() */ }
+export function nextTick(c) { /* Promise resolved after the next flush (DOM updated) */ }
+export function batch(c, fn) { /* run fn, then flush synchronously; nested batches flush once, outermost */ }
+export function afterFlush(c, cb) { /* run cb after the next flush completes (primitive behind nextTick) */ }
+
+// --- DOM ---
+export function component(tag, attrs, HTML, setup) {
+  return (props) => {
+    const root = document.createElement(tag);
+    for (const k in attrs) root.setAttribute(k, attrs[k]);
+    root.innerHTML = HTML;                 // ★ bulk native parse (detached)
+    const c = { root, deps: [], queue: [], pending: false };
+    setup(c, props);                       // wire (still detached)
+    return root;                           // caller attaches once
+  };
+}
+export function fragment(attrs, HTML, setup) { /* multi-root component (§7): no wrapper —
+                                                 parse HTML into a throwaway host, wire
+                                                 against it (c.root = host), return the
+                                                 child-node group (an Array carrying
+                                                 __lunasCtx) as the mountable unit */ }
+export const refs = (root, paths) => paths.map(p => p.reduce((n, i) => n.childNodes[i], root));
+export const on = (el, ev, fn) => el.addEventListener(ev, fn);
+
+// --- class / style normalization (`:class` / `:style`) ---
+export function normClass(v) { /* string | { cls: bool } | array(nested) -> class string */ }
+export function setClass(el, staticClass, v) { /* merge staticClass with normClass(v) -> class attr */ }
+export function normStyle(v) { /* string | { camelProp: val } | array -> "prop: val;" (camel->kebab) */ }
+export function setStyle(el, staticStyle, v) { /* merge staticStyle with normStyle(v) -> style attr */ }
+
+// --- control flow (anchors are runtime text nodes) ---
+export function ifBlock(c, before, deps, cond, make) { /* insert/remove make() at a text anchor */ }
+export function forBlock(c, into, deps, items, opts) { /* keyed list at a text anchor.
+                                                          opts: compiled { html, wire } (bulk
+                                                          innerHTML), make { make } (per-item
+                                                          builder), or mount { mount } — the
+                                                          `:for`-over-a-component mode where
+                                                          opts.mount(d,key,i) → { node, patch }
+                                                          mounts one child per item. keyOf optional.
+                                                          opts.box (a deepBox) enables fine-grained
+                                                          item-field updates (§8) */ }
+export function mountChild(c, before, Child, props) { /* Child(props) inserted at a text anchor;
+                                                          returns { root, ctx, setProp(name,value),
+                                                          unmount() } — setProp drives a reactive
+                                                          prop box in the child (§6). Handles a
+                                                          multi-root (fragment) child: inserts and
+                                                          removes the whole node group. Slot content
+                                                          rides in via a reserved `props.$slots`
+                                                          object (see slotBlock/slotContent) */ }
+
+// --- slots: parent content projected into a child's <slot> outlets (c-slots) --
+// The parent passes a `$slots` object on the mountChild props: { default:
+// factory, name: factory, … }. Each factory has the shape
+// `(slotProps, onCleanup) => nodes` and is wired in the PARENT's scope (parent
+// reactivity drives it; onCleanup ties its teardown to the child's unmount).
+export function slotBlock(childCtx, anchor, factory, fallback, slotPropsOf) { /* at a child <slot>
+                                                          anchor: render the parent-provided `factory`
+                                                          content (wired in the parent), else the
+                                                          child's own `fallback` (() => nodes, wired
+                                                          in the child scope), else nothing.
+                                                          `slotPropsOf()` supplies scoped-slot props
+                                                          (<slot :item=…>) passed up to the factory.
+                                                          Null-safe (never-panic on sparse groups) */ }
+export function slotContent(parentCtx, build, slotProps, onCleanup) { /* the PARENT half of a slot
+                                                          factory: open a parent scope homed at the
+                                                          child's mount, run build(slotProps) to wire
+                                                          the content against the parent, register the
+                                                          scope's dropScope via onCleanup, return the
+                                                          nodes */ }
+export function dynamicBlock(c, before, deps, factoryOf, props) { /* `<component :is>` — remount the
+                                                          factoryOf() child at the anchor when it
+                                                          changes (unmount old, mountChild new);
+                                                          forwards props via setProp. Returns
+                                                          { handle, update(), setProp(), destroy() } */ }
+export function teleportBlock(c, before, targetOf, build) { /* `<teleport to>` — build() content is
+                                                          appended into targetOf() (a selector string
+                                                          -> querySelector, or an Element) instead of
+                                                          inline; destroy() removes it. Content binds
+                                                          collected in a scope for leak-free teardown */ }
+
+// --- module-level stores (state outside any component; §4's "shared" concept
+//     generalized to N components importing the same module, instead of one
+//     value passed down as a prop) ---
+export function createStore(initial) { /* named fields, each its own subs list + deep-mutation
+                                           proxy (reuses boxes.mjs's Proxy handler); returns
+                                           { get(key), set(key,v), subscribe(key,fn) } */ }
+export function useStore(c, i, store, key) { /* adopt field `key` at c's reactive index i;
+                                                 writes to `key` markVar(c,i), batched as usual;
+                                                 scope-aware: dropScope tears the adoption down */ }
+export function derivedStore(store, deps, fn) { /* computed's laziness policy re-hosted on store
+                                                    subscriptions; field-shaped output, so it can
+                                                    be placed under a createStore() key */ }
+
+// --- client-side router (the @useRouting/@useAutoRouting codegen target;
+//     conceptually a store whose one field "route" is the current route) ---
+export function createRouter(routes, options) { /* routes=[{path,component}]; matching ranks
+                                                    static > param > catch-all; { history?,
+                                                    beforeEach?(to,from)=>bool|Promise }; exposes
+                                                    push/replace/back, current {path,params,query,
+                                                    matched}, subscribe(fn), adopt(c,i) */ }
+export function memoryHistory(initial) { /* injectable in-memory History-API stand-in (tests/SSR);
+                                            historyAdapter(win) is the browser default */ }
+export function routerOutlet(c, before, router, opts) { /* mountChild the matched route's component
+                                                            at an anchor; swap on nav (re-mount only
+                                                            when the matched route def changes);
+                                                            params passed as props */ }
+export function routerLink(el, router, path, opts) { /* click -> preventDefault + router.push(path)
+                                                         (aux/modified clicks fall through); the
+                                                         codegen target for <a :href> route links */ }
+
+// Intended emitted shape for a routed component (future codegen):
+//   const appRouter = createRouter(routes);      // module scope, from the route table
+//   // inside setup(c, props):
+//   appRouter.adopt(c, i);                       // component reads router.current at index i
+//   const a = anchorBefore(placeholder);
+//   routerOutlet(c, a, appRouter);               // <router-outlet/>
+//   routerLink(linkEl, appRouter, "/users/1");   // <a :href="/users/1">
+
+// --- async / lazy components + suspense boundaries ---
+export function asyncComponent(loader, opts) { /* wrap `() => import("./Heavy.mjs")`
+                                                  into a child factory; resolves default
+                                                  export or bare factory, caches after
+                                                  first load (later mounts sync); opts
+                                                  { loading?, error?, delay=200, timeout? }
+                                                  — Vue-style: loading only after `delay`,
+                                                  error on reject/timeout */ }
+export function mountAsyncChild(c, before, AsyncChild, props) { /* mountChild contract; threads
+                                                                   c so the child registers with
+                                                                   the nearest suspense boundary;
+                                                                   unmount() cancels in-flight loads */ }
+export function suspenseBlock(c, anchor, content, fallback) { /* boundary at a text anchor: builds
+                                                                 content (async kids start loading),
+                                                                 shows fallback until every async dep
+                                                                 registered via c._suspense settles,
+                                                                 then reveals content (batched via
+                                                                 afterFlush — no flash on sync subtrees);
+                                                                 nested boundaries own their subtree */ }
+
+// --- lifecycle hooks (c-lifecycle) ------------------------------------------
+// component() returns a DETACHED root; the caller attaches it (§7). So onMount
+// cannot fire at construction — it is queued on the context and drained when the
+// root becomes live. mountChild links childCtx.parent = c and registers the child
+// under c._children so a single top-level attach() fires the whole subtree, and a
+// parent teardown recurses into children.
+export function onMount(c, fn) { /* run fn after the root attaches to a live tree; queued on
+                                    c._mountQ, drained by attach()/mountChild; fires once */ }
+export function onDestroy(c, fn) { /* run fn on teardown; every unmount path (mountChild.unmount,
+                                      block item teardown, keep-alive eviction) funnels through
+                                      runDestroy(c) → fires exactly once */ }
+export function onUpdate(c, fn) { /* run fn after each flush of c that ran updates (core flush
+                                     invokes c.onUpdate when the queue was non-empty) */ }
+export function onActivated(c, fn) { /* keep-alive: fires on (re)activation from the cache */ }
+export function onDeactivated(c, fn) { /* keep-alive: fires on deactivation (cached, not destroyed) */ }
+export function attach(root, host) { /* append a detached component root to a live host and fire the
+                                        subtree's onMount callbacks; the top-level mount entry (§7) */ }
+
+// --- emits: child → parent events (c-emits) ---------------------------------
+// A `@name` listener on a component tag compiles to an `on<Name>` prop on the
+// mountChild props object (the PARENT half, see §6). The CHILD raises events by
+// calling a bare `emit("name", payload)` in its script; the codegen detects that
+// free `emit` reference and injects, at the top of the child's setup:
+//   registerEmits(c, props);
+//   const emit = (name, payload) => $emit(c, name, payload);   // $emit = aliased runtime emit
+// so the child's `emit("name", payload)` routes through registerEmits'd props to
+// the parent's on<Name> handler. (The runtime emit is imported under an alias
+// because the bare `emit` name is reserved for that injected closure; a child
+// that declares its OWN top-level `emit` opts out — no plumbing is injected.)
+// emit does NOT mark the parent dirty — the handler decides (a box setter in the
+// handler marks the parent as usual). Names camel-case: `save-all` → `onSaveAll`.
+export function registerEmits(c, props, declared) { /* at the top of a child setup: stash props so
+                                                       emit can find on<Name> handlers; optional
+                                                       declared[] enables warn-only validation
+                                                       (no `.lunas` syntax for declared[] yet) */ }
+export function emit(c, name, payload) { /* invoke the parent's on<Name> handler if present; returns
+                                            whether one ran; no-op (false) when no listener/parent */ }
+export function eventPropName(name) { /* "save" → "onSave"; the codegen's @name→onName mapping */ }
+
+// --- provide / inject: DI down the tree (c-provide) --------------------------
+// Walks the childCtx.parent chain that mountChild links. Nearest ancestor wins
+// (shadowing); string or Symbol keys; inject returns a default when unprovided.
+export function provide(c, key, value) { /* register key→value on c._provides (a Map) */ }
+export function inject(c, key, def) { /* resolve from the nearest ancestor that provided key, else def */ }
+export function hasInjection(c, key) { /* whether any ancestor provides key (provided-undefined vs absent) */ }
+
+// --- transitions (c-transition) ---------------------------------------------
+// CSS-class enter/leave choreography composing with a block's insert/remove:
+//   enter: +n-enter-from +n-enter-active → (raf) −n-enter-from +n-enter-to →
+//          (transitionend/timeout) −n-enter-active −n-enter-to
+//   leave: symmetric; the node is removed only after the leave phase finishes.
+// Degrades to immediate insert/remove outside a browser (no requestAnimationFrame),
+// with the class sequence still applied synchronously.
+export function withTransition(opts) { /* { name, duration? } → { enter(nodes, insert),
+                                          leave(nodes, remove) } wrapping a block's insert/remove */ }
+export function runPhase(el, base, phase, opts, done) { /* one enter|leave class phase on one element */ }
+
+// --- keep-alive: instance caching (c-keepalive) -----------------------------
+// keepAlive({ max? }).show(c, anchor, key, factory, props) caches mountChild
+// instances by key: switching away DEACTIVATES (detach nodes, keep ctx + reactive
+// state) instead of destroying; switching back ACTIVATES (re-attach, no rebuild).
+// LRU `max`; overflow/destroy() is the only path that fires onDestroy. Activation
+// fires onActivated, deactivation onDeactivated.
+export function keepAlive(opts) { /* → { show(c,anchor,key,factory,props), has(key), size, destroy() } */ }
+```
+
+No signal-tracking stack, no VDOM, no per-node effect objects.
+
+---
+
+## 6. Syntax → output mapping
+
+| `.lunas` | Output |
+|---|---|
+| `${expr}` (deps ≠ ∅) | `bind(c, deps, () => textNode.data = …)` on a text node |
+| `${expr}` (deps = ∅) | assigned once at build, no `bind` |
+| `:name="e"` | `bind(c, deps, () => setAttr(el, "name", e))` (or `el.prop =` for known props) |
+| `::name="lv"` | above **+** `on(el, "input", () => lv = el.value)` (write-back) |
+| `@event="h()"` | `on(el, "event", h)` — box setters notify, so no explicit write mask needed |
+| `@event="n = n+1"` / `@event="n++"` / `@event="o.k = v"` (inline mutation) | `on(el, "event", () => { n.v = n.v+1 })` — the handler body is `.v`-rewritten (program-mode) so the inline assignment/update reaches the box setter and marks the var; the mutated binding is numbered reactive (its assignment target counts as a mutation). Multiple statements (`a++; b++`) and member/index writes (→ `deepBox`) are supported |
+| static `class="a ${x}"` | text nodes / attr set; interpolations become `bind`s |
+| `:if` / `:elseif` / `:else` | one `ifBlock` chain per cascade, anchored; branch built by its own `innerHTML` when shown. A branch body that is a **component tag** (`<Child :if=…/>`) mounts the child via `mountChild` inside the branch `make` (teardown rides the branch scope); a bare multi-child `<template :if>` unwraps into a multi-root branch (no literal `<template>`) |
+| `:for="n of items"` | `forBlock`; **initial render = one `innerHTML` of the concatenated items**, updates = keyed diff. A **component** body (`<Child :for=…/>`) uses forBlock *mount mode*: one `mountChild` per item (props from the item) instead of a static item skeleton; the item `make` returns `{ node, patch }` and the child teardown rides the item scope |
+| `<Child :p="e"/>` | `mountChild(c, anchor, Child, { p: () => e, static: "x" })` at an anchor; reactive props are getters, static props are values (see below) |
+| `<Child @save="h($event)"/>` (parent) | an `onSave: ($event) => h($event)` entry on the mountChild props object; the child raises it with `emit("save", payload)` (§5, c-emits). `@save-all` → `onSaveAll` (camel-cased). Handler runs in the parent; it does not auto-mark the parent dirty |
+| `emit("save", payload)` in a child `script` | the compiler detects the free `emit` call and injects, at the top of the child's `setup`, `registerEmits(c, props)` + `const emit = (name, payload) => $emit(c, name, payload)` (runtime `emit` imported as the `$emit` alias). The child's `emit("save", …)` then routes to the parent's `onSave` prop. A child that declares its own top-level `emit` opts out (no injection) |
+| `@input name:type = v` | `const name = prop(c, "name", i, props.name, v)` at the top of `setup` — every prop is a reactive box (see below) |
+| `:class="e"` | `setClass(el, "<static class>", e)` — `e` is `string \| { cls: bool } \| array` (nested), normalized and merged with the static `class` attr (`normClass`) |
+| `:style="e"` | `setStyle(el, "<static style>", e)` — `e` is `string \| { camelCaseProp: v }` (arrays merge), camelCase → kebab, merged with the static `style` attr (`normStyle`) |
+| `:html="e"` | `el.innerHTML = e` (initial + reactive). **XSS caveat:** the value is inserted verbatim — never bind untrusted input. Children on the same element are overwritten (a warning is emitted) |
+| `:ref="name"` | `name.v = el` at wire time — exposes the element/child to the script via the reactive box `name` (declare `let name;` in script; the ref assignment makes it reactive so the resolver numbers it). Component refs expose the mount handle |
+| `<component :is="e" :p="…" @ev="h($event)" :ref="r"/>` | `dynamicBlock(c, anchor, deps, () => e, { p: () => …, onEv: ($event) => { h($event) } })` — remounts the child factory `e` at the anchor when `:is` changes; props flow via `setProp`; `@ev` listeners wire as `on<Ev>` handler props (same as a static component tag); `:ref="r"` assigns the (stable) dynamicBlock handle to the box `r`. Any `@use` factory is importable by name (all `@use` imports are emitted when a `<component>` is present) |
+| `<teleport to="sel">…</teleport>` | `teleportBlock(c, anchor, () => "sel", () => {…build children…})` — children render into `document.querySelector(sel)` (or an element via `:to="e"`) instead of inline; nodes removed on teardown |
+| `<slot>fallback</slot>` (child) | `slotBlock(c, anchor, props.$slots && props.$slots["default"], () => {…fallback fragment…})` — renders the parent's default-slot content, else its own fallback |
+| `<slot name="x"/>` (child) | `slotBlock(c, anchor, props.$slots && props.$slots["x"], fallbackOrNull)` — a named slot keyed by `x` |
+| `<slot :item="e"/>` (child, scoped) | above **+** a trailing `() => ({ item: (e) })` scoped-props getter; the value flows up to the parent's slot content |
+| `<Child>…</Child>` (parent, bare children) | a `default` entry on the mountChild `$slots` object: `default: (slotProps, onCleanup) => slotContent(c, (slotProps) => {…wire content in the PARENT…}, slotProps, onCleanup)` |
+| `<template #x>…</template>` / `<template slot="x">…</template>` (parent) | an `x` entry on `$slots` (named slot). Bare `<template>` inlines its children into the `default` group |
+| `<template #x="p">…</template>` (parent, scoped) | the inner build binds the scoped-slot props to `p`: `slotContent(c, (p) => {…read p.…}, slotProps, onCleanup)`. `slot="x" slot-scope="p"` is the long form. A bare `<template slot-scope="p">` / `<template #="p">` (no `slot=`/`#name`) scopes the **default** slot |
+
+> **Scoped-slot reactivity (restricted form).** The child's scoped props
+> (`<slot :item="e"/>`) are captured once, at slot build time, via
+> `slotPropsOf()` — they are a *snapshot object*, not a live reactive channel.
+> Parent slot content reads them through the bound name (`p.item`) and renders
+> correctly on first paint; parent state that the content also reads stays fully
+> reactive (parent-scope binds). What is **not** yet wired is the child later
+> *mutating* a scoped value and having the parent content re-render — that needs
+> a per-scoped-prop reactive bridge (analogous to `mountChild.setProp`, but
+> child→parent). Deferred; slot props whose shape/values are fixed at build (the
+> common case) work today. Making them live is additive on top of this contract.
+| multi-root template (>1 top-level node) | `export default fragment({}, HTML, setup)` instead of `component(...)` — no wrapper element; the factory returns the child-node group carrying `__lunasCtx`, mountable/movable/unmountable as a unit (§7) |
+
+### Child components & props (concretized)
+
+`@input` props are **reactive**: a parent can change a prop after init, so a
+child's template reads of a prop must re-run. The generator numbers each prop as
+a reactive variable (after the script's reactive vars) and adopts it with the
+`prop` helper:
+
+```js
+const name = prop(c, "name", i, props.name, defaultExpr /*, deep */);
+```
+
+`prop` seeds the box from `props.name` (calling it if the parent passed a getter,
+else using the value), or from `defaultExpr` when the prop is omitted. It
+registers the box under its name in `c._props` so a parent can drive it. The
+optional `deep` flag selects a `deepBox` when the child deeply mutates the prop
+locally.
+
+The **parent** mounts a child and drives its reactive props:
+
+```js
+const a0 = anchorBefore(hostNode.childNodes[k]);
+const ch0 = mountChild(c, a0, Child, { p: () => e, static: "x" });
+bind(c, [deps of e], () => ch0.setProp("p", e));   // one per reactive prop
+```
+
+- **Reactive props** (`:p="e"`, or a static value with an interpolation) are
+  passed as **getters** in the initial object (so the child seeds correctly at
+  construction) *and* driven by a parent-side `bind` that calls
+  `ch0.setProp("p", e)` on the expression's compile-time deps. The bind's initial
+  run re-seeds the same value (the box no-ops on an equal write). Inside a `:for`
+  item the driving bind is item-coupled (`bind(c, [], …)`), so `runScope`
+  refreshes it when the item's data changes.
+- **Static props** (`static="x"`, valueless `flag` → `true`) are plain values in
+  the initial object; no driving bind is emitted.
+- `mountChild` returns `{ root, ctx, setProp(name, value), unmount() }`.
+  `setProp` writes `child._props[name].v`, which marks the **child** dirty and
+  flushes the child. The two contexts are independent: a child event marks only
+  the child, a parent prop push marks only the child — parent and child never
+  cross-contaminate reactive state.
+
+Child modules are imported from the `@use` table: `import Child from "path"`
+with the path written verbatim (extension handling is the module resolver's
+job — the compiler does not rewrite it). Only components actually used in the
+template are imported; a colliding tag name (e.g. a component literally named
+`bind`) is imported under a `$`-suffixed alias.
+
+---
+
+## 7. Build / mount lifecycle
+
+1. `document.createElement(rootTag)` + set static attributes.
+2. `root.innerHTML = HTML` — one native parse of the comment-free, whitespace-free
+   static skeleton (all statics, no dynamic content).
+3. **Positional nav** to grab refs to dynamic elements and control-flow insertion
+   points (`refs(root, paths)`), all off-DOM.
+4. **Create anchors** for `:if` / `:for` / child components as text nodes and
+   `insertBefore` them at their positions.
+5. Wire: `on(...)`, `bind(...)`, `ifBlock/forBlock/mountChild(...)`. `bind`
+   performs the initial assignment, so the first paint is correct with no flush.
+6. Return `root`; the caller attaches it to the live DOM **once**.
+
+**Multi-root component**: skip the wrapper element — parse the interior into a
+throwaway container (a `<template>`; see the table-context note below), take its
+child nodes as the roots, and track the set (or a start/end anchor pair) so the
+block can be removed/moved as a unit (§8).
+
+**Fragment parsing goes through a `<template>` (table-context safety).** Every
+detached fragment parse the runtime does — a `:for` item / bulk-item skeleton, an
+`:if`/`ifChain` branch (`fromHTML`), and a multi-root `fragment(...)` — parses the
+HTML as the content of a `<template>` element (`t.innerHTML = html; …t.content`),
+not the `innerHTML` of a `<div>`. A `<template>`'s content fragment is a valid
+insertion context for **any** element, whereas a `<div>` is not a valid table or
+select insertion context: assigning `"<tr>…</tr>"` (or `<td>`/`<tbody>`/`<option>`
+/`<col>`/…) as a `<div>`'s `innerHTML` makes the HTML parser **DROP** the
+table/select tags, leaving an empty container whose `childNodes[0]` is `undefined`
+— which crashed a keyed `:for`/`:if`/fragment whose item is a `<tr>` (etc.). The
+shared `parseFragment(html, doc)` helper (dom.mjs) implements this, falling back to
+a `<div>` only when `<template>`/`.content` is unavailable. The component **root**
+build is unaffected (its static skeleton is the `innerHTML` of the `div` wrapper /
+the component's own root tag, both valid contexts for table markup).
+
+---
+
+## 8. Anchors & control-flow details
+
+- **`:if`**: a text anchor marks the slot. When the condition becomes true, the
+  branch is built (its own `innerHTML`) and inserted before the anchor; when
+  false, its nodes are removed. The anchor is permanent, so the slot position is
+  always known.
+- **`:for`**: initial render builds **all items as one `innerHTML` string** (the
+  fast path), then wires each item. Updates use a keyed diff (insert / remove /
+  move individual items); items are **not** re-`innerHTML`ed wholesale.
+- **Fine-grained item-field updates**: when the iterable is exactly one
+  `deepBox` variable (`item of rows`), the compiler additionally emits
+  `box: rows` in the `forBlock` opts. `forBlock` then opts that box into element
+  tracking (`box.observeElems()`), which lets the box distinguish a **structural**
+  change (reassign / `push` / `splice` / `length` / `rows[i] = obj`) from a pure
+  **element-field** write (`rows[i].label = x`, at any depth under an element).
+  A structural change runs the full keyed reconcile as before; a field-only
+  flush **patches just the touched items** — no `extractKeys` / LIS / whole-list
+  patch — so an item-property change is O(changes), not O(N). Both cases still
+  `markVar`, so every other dependent (computeds, `${rows.length}`, …) stays
+  correct. Derived iterables (`rows.filter(…)`, a computed) get no `box:` and
+  keep the coarse reconcile-on-change path. The reconciler iterates the box's
+  **raw** array so the hot path never reads through element proxies.
+- **Multi-root blocks** (a branch/item with several top-level nodes): track the
+  node list, or delimit with a start/end anchor pair, so removal/move affects the
+  whole group. Single-root blocks use the cheap one-node path (compiler picks).
+- **Updates never call `innerHTML`.** Re-parsing would destroy state, listeners,
+  focus, and selection. Updates are targeted node mutations + anchored insert/remove.
+
+---
+
+## 9. SSR readiness (deferred, but designed-for)
+
+The static HTML string is exactly what a server would emit. Because anchors are
+created at runtime (not embedded), **hydration reuses the CSR wiring path**: skip
+`innerHTML` (the server DOM already exists), then run the same positional-nav +
+anchor-creation + `bind` steps against the server-rendered subtree. Comment-free
+HTML keeps server output small and avoids the parse penalty on the client's
+initial document parse too. SSR is a later codegen mode; nothing here blocks it.
+
+---
+
+## 10. Compiler pipeline
+
+```
+.lunas → lunas_parser → lunas_script → lunas_compiler (ResolvedComponent) → codegen → this output
+                                                            │
+      reactive_vars (bits) · dynamics (dep masks) · handlers (write masks)
+```
+
+The generator consumes a `ResolvedComponent` and emits the shape above. It does
+**not** re-analyze; all dependency resolution is already done.
+
+---
+
+## 11. Open / deferred
+
+- Keyed-diff algorithm for `:for` updates (initial render is settled; reconcile
+  strategy is not).
+- SSR / hydration codegen mode.
+- Cross-engine verification of the comment fast-path penalty (Blink measured;
+  Gecko/WebKit not).
+- Compile-time flattening of purely-static child components into the parent's
+  static string (optional optimization).

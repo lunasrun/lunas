@@ -1,0 +1,3 @@
+@input mode:string = "one"
+html:
+    <div><p :if="mode == 'one'">ONE</p><p :elseif="mode == 'two'">TWO</p><p :else>OTHER</p></div>

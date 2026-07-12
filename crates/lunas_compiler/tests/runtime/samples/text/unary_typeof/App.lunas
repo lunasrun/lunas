@@ -1,0 +1,4 @@
+html:
+    <p>${typeof n}</p>
+script:
+    let n = 5

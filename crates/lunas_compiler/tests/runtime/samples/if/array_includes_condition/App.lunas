@@ -1,0 +1,4 @@
+html:
+    <div><span :if="tags.includes('vip')">vip badge</span></div>
+script:
+    let tags = ["new", "vip"]

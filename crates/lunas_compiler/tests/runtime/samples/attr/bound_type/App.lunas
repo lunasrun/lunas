@@ -1,0 +1,4 @@
+html:
+    <input :type="inputType">
+script:
+    let inputType = "password"

@@ -1,0 +1,9 @@
+@use Head from "./Head.lunas"
+@use Body from "./Body.lunas"
+@use Foot from "./Foot.lunas"
+html:
+    <div><Head :title="t"/><Body :text="b"/><Foot :note="f"/></div>
+script:
+    let t = "T"
+    let b = "B"
+    let f = "F"

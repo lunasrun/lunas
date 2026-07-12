@@ -1,0 +1,5 @@
+html:
+    <button @click="dec()">n=${n}</button>
+script:
+    let n = 0
+    function dec(){ n = n - 1 }

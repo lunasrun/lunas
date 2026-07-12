@@ -1,0 +1,5 @@
+html:
+    <button @click="inc()"><span>n=${n}</span></button>
+script:
+    let n = 0
+    function inc(){ n = n + 1 }

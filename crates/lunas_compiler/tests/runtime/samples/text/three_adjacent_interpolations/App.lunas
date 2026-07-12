@@ -1,0 +1,6 @@
+html:
+    <p>${a}${b}${z}</p>
+script:
+    let a = "x"
+    let b = "y"
+    let z = "z"

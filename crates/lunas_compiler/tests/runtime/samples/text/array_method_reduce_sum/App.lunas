@@ -1,0 +1,4 @@
+html:
+    <p>${items.reduce((acc, x) => acc + x, 0)}</p>
+script:
+    let items = [1, 2, 3, 4]

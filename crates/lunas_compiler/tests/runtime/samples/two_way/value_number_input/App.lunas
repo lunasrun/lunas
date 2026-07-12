@@ -1,0 +1,4 @@
+html:
+    <div><input type="number" ::value="n"><span>${n}</span></div>
+script:
+    let n = "0"

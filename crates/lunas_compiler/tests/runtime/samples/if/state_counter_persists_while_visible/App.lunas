@@ -1,0 +1,9 @@
+html:
+    <div>
+        <button @click="bump()">bump</button>
+        <p :if="n > 0">count is ${n}</p>
+        <p :else>zero</p>
+    </div>
+script:
+    let n = 0
+    function bump(){ n = n + 1 }

@@ -1,0 +1,13 @@
+html:
+    <div>
+        <button @click="reveal()">reveal</button>
+        <div :if="shown">
+            <button @click="bump()">bump</button>
+            <span>count: ${n}</span>
+        </div>
+    </div>
+script:
+    let shown = false
+    let n = 0
+    function reveal(){ shown = true }
+    function bump(){ n = n + 1 }

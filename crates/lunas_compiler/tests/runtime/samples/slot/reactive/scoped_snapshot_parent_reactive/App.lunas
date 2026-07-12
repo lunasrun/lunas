@@ -1,0 +1,6 @@
+@use Box from "./Box.lunas"
+html:
+    <div><button @click="inc()">i</button><Box><template #default="p">${p.fixed}/${n}</template></Box></div>
+script:
+    let n = 1
+    function inc(){ n++ }

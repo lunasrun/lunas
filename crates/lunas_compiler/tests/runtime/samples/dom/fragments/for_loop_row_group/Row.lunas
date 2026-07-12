@@ -1,0 +1,4 @@
+@input label:string = ""
+html:
+    <tr class="main"><td>${label}</td></tr>
+    <tr class="spacer"><td>-</td></tr>

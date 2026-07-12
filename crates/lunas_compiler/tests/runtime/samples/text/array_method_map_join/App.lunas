@@ -1,0 +1,4 @@
+html:
+    <p>${items.map(x => x * 2).join(",")}</p>
+script:
+    let items = [1, 2, 3]

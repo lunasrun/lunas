@@ -1,0 +1,5 @@
+@input name:string = ""
+@input count:number = 0
+@input on:boolean = false
+html:
+    <span>${name}:${count}:${on ? "on" : "off"}</span>

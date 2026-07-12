@@ -1,0 +1,3 @@
+@use Outer from "./Outer.lunas"
+html:
+    <div><Outer/></div>

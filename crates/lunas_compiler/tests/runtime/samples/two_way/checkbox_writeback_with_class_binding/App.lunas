@@ -1,0 +1,4 @@
+html:
+    <div><input class="chk" type="checkbox" ::checked="active" :class="{ checked: active }"></div>
+script:
+    let active = false

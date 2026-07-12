@@ -1,0 +1,4 @@
+html:
+    <p>${name.slice(0, 3)}</p>
+script:
+    let name = "hello"

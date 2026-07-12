@@ -1,0 +1,4 @@
+@input kind:string = "plain"
+@input count:number = 0
+html:
+    <span>${kind}#${count}</span>

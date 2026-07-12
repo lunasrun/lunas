@@ -1,0 +1,9 @@
+export default async ({ click, expect }) => {
+  expect("p").text("-2");
+  await click("button");
+  expect("p").text("-1");
+  await click("button");
+  expect("p").text("0");
+  await click("button");
+  expect("p").text("1");
+};

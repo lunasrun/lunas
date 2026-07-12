@@ -1,0 +1,4 @@
+@use Box from "./Box.lunas"
+@use Counter from "./Counter.lunas"
+html:
+    <div><Box><Counter/></Box></div>

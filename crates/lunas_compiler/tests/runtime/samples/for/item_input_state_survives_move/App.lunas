@@ -1,0 +1,8 @@
+html:
+    <div>
+        <button class="rev" @click="rev()">rev</button>
+        <ul><li :for="item of items" :key="item.id"><input class="f" :data-id="item.id"></li></ul>
+    </div>
+script:
+    let items = [{id:1},{id:2},{id:3}]
+    function rev(){ items = [...items].reverse() }

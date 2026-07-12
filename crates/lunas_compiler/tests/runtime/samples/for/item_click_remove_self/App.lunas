@@ -1,0 +1,5 @@
+html:
+    <ul><li :for="item of items" :key="item.id"><span>${item.label}</span><button class="del" @click="del(item.id)">x</button></li></ul>
+script:
+    let items = [{id:1,label:"a"},{id:2,label:"b"},{id:3,label:"c"}]
+    function del(id){ items = items.filter(it => it.id !== id) }

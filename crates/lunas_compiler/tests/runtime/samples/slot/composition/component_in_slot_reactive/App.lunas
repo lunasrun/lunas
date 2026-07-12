@@ -1,0 +1,7 @@
+@use Box from "./Box.lunas"
+@use Chip from "./Chip.lunas"
+html:
+    <div><button @click="inc()">i</button><Box><Chip :n="v"/></Box></div>
+script:
+    let v = 1
+    function inc(){ v++ }

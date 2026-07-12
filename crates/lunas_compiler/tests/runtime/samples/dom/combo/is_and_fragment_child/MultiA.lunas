@@ -1,0 +1,3 @@
+html:
+    <h3 class="a-head">A head</h3>
+    <p class="a-body">A body</p>

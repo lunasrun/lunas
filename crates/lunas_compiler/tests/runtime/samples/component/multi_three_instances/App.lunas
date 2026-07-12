@@ -1,0 +1,3 @@
+@use Child from "./Child.lunas"
+html:
+    <div><Child :n="1"/><Child :n="2"/><Child :n="3"/></div>

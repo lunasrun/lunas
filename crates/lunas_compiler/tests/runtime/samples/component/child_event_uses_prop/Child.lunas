@@ -1,0 +1,6 @@
+@input step:number = 1
+html:
+    <button @click="add()">${clicks * step}</button>
+script:
+    let clicks = 0
+    function add(){ clicks++ }

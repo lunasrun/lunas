@@ -1,0 +1,5 @@
+html:
+    <div><button @click="inc()">inc</button><p>${value.toFixed(2)}</p></div>
+script:
+    let value = 1
+    function inc(){ value += 0.1 }

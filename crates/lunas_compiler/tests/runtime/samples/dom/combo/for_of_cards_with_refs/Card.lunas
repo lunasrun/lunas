@@ -1,0 +1,8 @@
+@input label:string = ""
+html:
+    <span :ref="self" class="card-label" @click="mark()">${label}</span>
+script:
+    let self
+    function mark() {
+        self.setAttribute("data-clicked", "yes")
+    }

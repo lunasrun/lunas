@@ -1,0 +1,12 @@
+[package]
+name = "lunas_css"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Component-scoped CSS transform for the Lunas compiler"
+repository = "https://github.com/lunasrun/lunas"
+
+[dependencies]
+lunas_span = { path = "../lunas_span" }
+
+[dev-dependencies]

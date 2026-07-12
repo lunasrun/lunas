@@ -1,0 +1,4 @@
+html:
+    <div><input ::value="n"><span>[${n}]</span></div>
+script:
+    let n = "5"

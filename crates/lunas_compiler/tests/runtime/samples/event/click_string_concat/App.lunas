@@ -1,0 +1,5 @@
+html:
+    <button @click="add('b')">s=${s}</button>
+script:
+    let s = "a"
+    function add(c){ s = s + c }

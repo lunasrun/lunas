@@ -1,0 +1,3 @@
+html:
+    <div style="color: blue" :style="{fontSize: '2em'}"></div>
+script:

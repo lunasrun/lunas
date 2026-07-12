@@ -1,0 +1,4 @@
+html:
+    <div><input class="a" ::value="shared"><input class="b" ::value="shared"></div>
+script:
+    let shared = "start"

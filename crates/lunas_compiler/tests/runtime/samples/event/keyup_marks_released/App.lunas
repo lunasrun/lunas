@@ -1,0 +1,8 @@
+html:
+    <div>
+        <input @keyup="release()">
+        <span>${released}</span>
+    </div>
+script:
+    let released = false
+    function release(){ released = true }

@@ -1,0 +1,5 @@
+html:
+    <input type="number" :min="lo" :max="hi">
+script:
+    let lo = 0
+    let hi = 100

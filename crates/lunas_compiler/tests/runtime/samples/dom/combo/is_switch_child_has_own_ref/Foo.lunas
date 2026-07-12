@@ -1,0 +1,8 @@
+html:
+    <p :ref="self" class="foo">foo</p>
+    <button class="mark" @click="mark()">mark</button>
+script:
+    let self
+    function mark() {
+        self.setAttribute("data-marked", "yes")
+    }

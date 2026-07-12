@@ -1,0 +1,10 @@
+html:
+    <div>
+        <button :ref="btn">go</button>
+        <button @click="disableOther()">disable</button>
+    </div>
+script:
+    let btn
+    function disableOther() {
+        btn.disabled = true
+    }
