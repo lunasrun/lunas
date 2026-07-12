@@ -184,8 +184,11 @@ export function forBlock(c, anchor, deps, items, opts) {
   const compiled = opts.html != null && opts.wire;
 
   // Build one item in compiled mode: parse its own skeleton copy, wire it.
+  // `opts.tableCtx` is emitted by the compiler only when the item's root is a
+  // table/select-context element (needs `<template>`); otherwise the cheaper
+  // `<div>` parse is used (the common case; keeps `append` fast).
   const buildOne = (d, i) => {
-    const scr = parseFragment(opts.html, anchor.ownerDocument);
+    const scr = parseFragment(opts.html, anchor.ownerDocument, opts.tableCtx === true);
     const root = scr.childNodes[0];
     const p = opts.wire(root, d, i);
     if (p) patches.set(root, p);
@@ -262,7 +265,7 @@ export function forBlock(c, anchor, deps, items, opts) {
     }
     let html = "";
     for (let i = 0; i < n; i++) html += opts.html;
-    const scr = parseFragment(html, anchor.ownerDocument);
+    const scr = parseFragment(html, anchor.ownerDocument, opts.tableCtx === true);
     // Snapshot roots before moving anything (childNodes is live).
     const nodes = new Array(n);
     for (let i = 0; i < n; i++) nodes[i] = scr.childNodes[i];

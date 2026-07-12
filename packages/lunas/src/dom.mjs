@@ -119,8 +119,14 @@ function cachedTemplate(doc) {
   return t;
 }
 
-export function parseFragment(html, doc) {
-  if (typeof doc.createElement === "function") {
+export function parseFragment(html, doc, useTemplate = true) {
+  // `useTemplate` defaults to `true` (the safe path that never drops table /
+  // select content). The compiler passes `false` ONLY for a `:for` item whose
+  // ROOT element tag it has verified — with its real HTML parser — is NOT a
+  // table/select-context element, so the cheaper `<div>` parse is provably safe
+  // and avoids the per-item `<template>.content` cost that regressed `append`.
+  // Callers that omit the flag (`:if` branches, fragments) keep `<template>`.
+  if (useTemplate && typeof doc.createElement === "function") {
     const t = cachedTemplate(doc);
     // `.content` exists only on a real (or shim-supported) <template>.
     if (t && t.content) {

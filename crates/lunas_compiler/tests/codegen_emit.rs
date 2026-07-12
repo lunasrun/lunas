@@ -1480,3 +1480,46 @@ fn deeply_nested_interpolation_and_attrs_never_panic() {
         let _ = js;
     }
 }
+
+// --- table-context parse flag (perf/append-parsectx) -------------------------
+// A `:for` whose item root is a table/select element must emit `tableCtx: true`
+// so the runtime parses it via `<template>` (a `<div>` parse would DROP the row);
+// an ordinary item must NOT emit the flag, so the runtime takes the cheaper
+// `<div>` parse. The compiler decides from the real parsed tag, not a string sniff.
+
+#[test]
+fn for_table_row_item_emits_tablectx() {
+    let js = emit(
+        "html:\n    <table><tbody><tr :for=\"row of rows\" :key=\"row.id\"><td>${row.label}</td></tr></tbody></table>\nscript:\n    let rows = []\n",
+    );
+    assert!(
+        js.contains("tableCtx: true"),
+        "table-row :for must emit tableCtx: true:\n{js}"
+    );
+}
+
+#[test]
+fn for_option_item_omits_tablectx() {
+    // A bare `<option>` is NOT dropped by a `<div>` parse, so it takes the fast
+    // div path (no tableCtx flag) — unlike genuine table-section/cell elements.
+    let js = emit(
+        "html:\n    <select><option :for=\"o of opts\" :key=\"o.id\">${o.label}</option></select>\nscript:\n    let opts = []\n",
+    );
+    assert!(
+        !js.contains("tableCtx"),
+        "<option> :for must NOT emit tableCtx (div parse keeps <option>):\n{js}"
+    );
+}
+
+#[test]
+fn for_ordinary_item_omits_tablectx() {
+    let js = emit(
+        "html:\n    <ul><li :for=\"row of rows\" :key=\"row.id\">${row.label}</li></ul>\nscript:\n    let rows = []\n",
+    );
+    assert!(
+        !js.contains("tableCtx"),
+        "ordinary <li> :for must NOT emit tableCtx (uses cheap <div> parse):\n{js}"
+    );
+    // And it still emits a forBlock with html (sanity: the fast path is active).
+    assert!(js.contains("forBlock"), "expected forBlock:\n{js}");
+}

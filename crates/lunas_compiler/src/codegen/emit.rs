@@ -2063,6 +2063,12 @@ impl<'a> Emitter<'a> {
         let mut item_el = body_el.expect("element body when not a component").clone();
         let key_expr = take_key_attr(&mut item_el);
 
+        // Whether the item's ROOT element needs a table/select parse context.
+        // Decided from the compiler's real parsed tag (never a string sniff), so
+        // the runtime can safely use the cheaper `<div>` parse for ordinary items
+        // and only pay the `<template>` cost for genuine table/select content.
+        let table_ctx = is_table_context_tag(&item_el.name);
+
         // The item's own skeleton (single-root: the item element).
         let tpl = Template {
             nodes: vec![TemplateNode::Element(item_el)],
@@ -2089,6 +2095,12 @@ impl<'a> Emitter<'a> {
         b.push_str("html: ");
         b.push_str(&html_name);
         b.push_str(",\n");
+        if table_ctx {
+            // Only emitted for table/select-context items; ordinary items omit
+            // it and the runtime uses the cheaper `<div>` parse.
+            push_indent(b, frag.indent + 1);
+            b.push_str("tableCtx: true,\n");
+        }
         if let Some(box_name) = &fine_box {
             push_indent(b, frag.indent + 1);
             b.push_str("box: ");
@@ -2842,6 +2854,27 @@ fn static_attr_literal(attrs: &[TemplateAttr], name: &str) -> String {
 
 /// Removes a `:key="expr"` bound attribute from a `:for` item root and returns
 /// the expression. The key configures the reconciler; it is not DOM state.
+/// True when `tag` is an element the HTML tree builder only accepts inside a
+/// table context, so parsing it as the `innerHTML` of a `<div>` would DROP it
+/// (a `<div>` is not a valid table insertion context). Such `:for` items must be
+/// parsed via a `<template>` at runtime; everything else takes the cheaper
+/// `<div>` path. The decision uses the element's real parsed tag name
+/// (case-insensitive) — never a runtime string heuristic — so a false negative
+/// (which would reintroduce the table-drop crash) is impossible.
+///
+/// The set is EXACTLY the HTML5 table section / row / cell / column elements —
+/// the tags a `<div>` insertion context discards. It deliberately excludes
+/// `<option>`/`<optgroup>`, which a `<div>` parse KEEPS (a bare `<option>`
+/// outside `<select>` is not dropped), so those items correctly use the fast
+/// `<div>` path. This set matches the drop behaviour asserted by the runtime's
+/// differential test in `packages/lunas/test/dom.table-context.test.mjs`.
+fn is_table_context_tag(tag: &str) -> bool {
+    matches!(
+        tag.to_ascii_lowercase().as_str(),
+        "tr" | "td" | "th" | "thead" | "tbody" | "tfoot" | "caption" | "colgroup" | "col"
+    )
+}
+
 fn take_key_attr(el: &mut TemplateElement) -> Option<String> {
     let idx = el.attrs.iter().position(
         |a| matches!(a, TemplateAttr::Bound { name, .. } if name.eq_ignore_ascii_case("key")),
@@ -3522,6 +3555,37 @@ fn push_template_literal_chunk(b: &mut String, s: &str) {
             '\\' => b.push_str("\\\\"),
             '$' if chars.peek() == Some(&'{') => b.push_str("\\$"),
             c => b.push(c),
+        }
+    }
+}
+
+#[cfg(test)]
+mod table_ctx_tests {
+    use super::is_table_context_tag;
+
+    #[test]
+    fn table_and_select_context_tags_need_template() {
+        // Exactly the HTML5 table elements a `<div>` insertion context DROPS.
+        for t in [
+            "tr", "td", "th", "thead", "tbody", "tfoot", "caption", "colgroup", "col",
+        ] {
+            assert!(is_table_context_tag(t), "`{t}` must need <template>");
+            assert!(
+                is_table_context_tag(&t.to_uppercase()),
+                "`{t}` match is case-insensitive"
+            );
+        }
+    }
+
+    #[test]
+    fn ordinary_tags_use_div() {
+        // Note `option`/`optgroup`: a `<div>` KEEPS a bare `<option>`, so they
+        // take the fast div path (not dropped → no <template> needed).
+        for t in [
+            "div", "span", "li", "ul", "ol", "p", "a", "button", "section", "table", "select",
+            "option", "optgroup", "tbodyx", "",
+        ] {
+            assert!(!is_table_context_tag(t), "`{t}` must NOT need <template>");
         }
     }
 }
