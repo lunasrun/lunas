@@ -129,4 +129,46 @@ await test("parseFragment: repeated calls each return only their own nodes", () 
   assert.strictEqual(b.childNodes[0].childNodes[0].childNodes[0].data, "b");
 });
 
+// --- differential oracle: div-drop set === compiler's tableCtx set -----------
+// The compiler (is_table_context_tag) emits `tableCtx: true` for EXACTLY these
+// tags. Here we prove that set matches real drop behaviour: each such tag is
+// DROPPED by a `<div>` parse and SURVIVES a `<template>` parse, so choosing the
+// div path for any OTHER tag can never drop content (no false negative → no
+// table-crash regression). Kept in sync with the Rust unit test in emit.rs.
+const COMPILER_TABLE_CTX = [
+  "tr", "td", "th", "thead", "tbody", "tfoot", "caption", "colgroup", "col",
+];
+
+await test("differential: <div> parse drops exactly the compiler's tableCtx tags", () => {
+  for (const tag of COMPILER_TABLE_CTX) {
+    const html = `<${tag}></${tag}>`;
+    // useTemplate=false → the <div> path the runtime uses for non-flagged items.
+    const viaDiv = parseFragment(html, document, false);
+    const viaTpl = parseFragment(html, document, true);
+    assert.strictEqual(
+      viaDiv.childNodes.length,
+      0,
+      `<${tag}> must be DROPPED by a <div> parse (needs template)`,
+    );
+    assert.strictEqual(
+      viaTpl.childNodes.length,
+      1,
+      `<${tag}> must SURVIVE a <template> parse`,
+    );
+  }
+});
+
+await test("differential: ordinary tags (incl. <option>) survive the <div> path", () => {
+  // Anything NOT in the compiler set takes the cheap <div> path — prove it is
+  // kept there (so the fast path is always safe for non-flagged items).
+  for (const tag of ["div", "span", "li", "p", "button", "option", "optgroup"]) {
+    const html = `<${tag}></${tag}>`;
+    assert.strictEqual(
+      parseFragment(html, document, false).childNodes.length,
+      1,
+      `<${tag}> must survive the <div> path`,
+    );
+  }
+});
+
 console.log("dom.table-context.test.mjs: all " + passed + " tests passed");
