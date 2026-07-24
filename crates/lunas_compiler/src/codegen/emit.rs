@@ -1033,10 +1033,13 @@ impl<'a> Emitter<'a> {
                     // The handler body is `.v`-rewritten like an element handler;
                     // `$event` is the payload parameter. Names camel-case:
                     // `save-all` → `onSaveAll`.
+                    let deep_targets =
+                        deep_var_names(&self.deep_hint, &self.component.reactive_vars);
                     let body = rewrite_handler(
                         &handler.text,
                         &self.component.reactive_vars,
                         frag.shadowed,
+                        &deep_targets,
                     );
                     let key = event_prop_name(event);
                     members.push(format!("{}: ($event) => {{ {body}; }}", prop_key(&key)));
@@ -2450,7 +2453,13 @@ impl<'a> Emitter<'a> {
         // assignments (`n = n + 1`, `count++`, `a++; b++`, `obj.k = v`) compile
         // to the `.v` box-setter path so the write marks the var and the DOM
         // updates. Function-call handlers (`inc()`) are unaffected.
-        let body = rewrite_handler(handler, &self.component.reactive_vars, frag.shadowed);
+        let deep_targets = deep_var_names(&self.deep_hint, &self.component.reactive_vars);
+        let body = rewrite_handler(
+            handler,
+            &self.component.reactive_vars,
+            frag.shadowed,
+            &deep_targets,
+        );
         push_indent(b, frag.indent);
         b.push_str(self.helper("on"));
         b.push('(');
@@ -2473,8 +2482,19 @@ impl<'a> Emitter<'a> {
         let set = attr_set_statement(node, attr, &value);
         self.emit_update(b, frag, &deps, reads_any(lvalue, frag.shadowed), &set);
 
-        // Write side: element state flows back into the lvalue.
+        // Write side: element state flows back into the lvalue. Build the write
+        // as an assignment statement and route it through the handler rewrite so
+        // a deep lvalue (`obj.field`, `items[i].done`) gets both its `.v` and the
+        // proxy-free deep-mutation invalidation injected — a plain-var lvalue
+        // (`count`) just becomes `count.v = …`, whose setter marks on its own.
         let (event, read) = two_way_read(node, attr);
+        let deep_targets = deep_var_names(&self.deep_hint, &self.component.reactive_vars);
+        let write = rewrite_handler(
+            &format!("{lvalue} = {read}"),
+            &self.component.reactive_vars,
+            frag.shadowed,
+            &deep_targets,
+        );
         self.use_helper("on");
         push_indent(b, frag.indent);
         b.push_str(self.helper("on"));
@@ -2483,9 +2503,7 @@ impl<'a> Emitter<'a> {
         b.push_str(", ");
         push_js_string(b, event);
         b.push_str(", () => { ");
-        b.push_str(&value);
-        b.push_str(" = ");
-        b.push_str(&read);
+        b.push_str(&write);
         b.push_str("; });\n");
     }
 
@@ -3244,6 +3262,21 @@ fn rewrite_script(
         decl_ranges.push(d.stmt_range);
     }
 
+    // (1b) Proxy-free deep reactivity: after each deep mutation of a deepBox var,
+    // inject an explicit invalidation. `arr.push(x)` -> `(arr.touch(), arr.push(x))`
+    // and `rows[i].label = x` -> `(rows.touchElem(rows.v[i]), rows[i].label = x)`.
+    // The `.v` that step (2) appends to the reactive references INSIDE the wrapped
+    // expression still lands (the injected wrapper is zero-width text around it).
+    // These edits are pushed BEFORE step (2) so that, at a shared end offset (a
+    // mutation whose last token is itself a reactive read), the `.v` is applied
+    // to the LEFT of the closing `)` — see apply_edits' stable ordering.
+    let deep_targets = deep_var_names(hint, vars);
+    let reactive_names: std::collections::HashSet<&str> =
+        vars.iter().map(|v| v.name.as_str()).collect();
+    for site in touch_sites(script, &deep_targets, &reactive_names, &decl_ranges) {
+        edits.push(site);
+    }
+
     // (2) Every reactive reference becomes `name.v`. Skip references inside a
     // rewritten declaration statement — its init was already rewritten in (1).
     for r in &refs {
@@ -3312,12 +3345,14 @@ fn apply_edits(src: &str, mut edits: Vec<(u32, u32, String)>) -> String {
 /// Rewrites a standalone JS expression so reactive references become `name.v`.
 /// Uses scope-aware [`free_identifiers_with_spans`] so shadowed locals (e.g. an
 /// arrow parameter of the same name) are left alone. `shadowed` names (loop
-/// bindings of enclosing `:for` items) are excluded from rewriting.
+/// bindings of enclosing `:for` items) are excluded from rewriting. A bind
+/// expression is READ-only, so no deep-mutation invalidation is injected.
 fn rewrite_expr(expr: &str, vars: &[ReactiveVar], shadowed: &[String]) -> String {
     rewrite_with(
         expr,
         vars,
         shadowed,
+        &[],
         lunas_script::free_identifiers_with_spans,
     )
 }
@@ -3329,23 +3364,33 @@ fn rewrite_expr(expr: &str, vars: &[ReactiveVar], shadowed: &[String]) -> String
 /// `.v` rewrite is silently skipped (assignments would not reach the box setter
 /// and the DOM would never update). A handler that only *calls* a function is
 /// left untouched by the identifier rewrite except for its reactive arguments,
-/// which is exactly right.
-fn rewrite_handler(handler: &str, vars: &[ReactiveVar], shadowed: &[String]) -> String {
+/// which is exactly right. `deep_targets` are the deepBox vars a deep mutation
+/// in the handler must invalidate via an injected `touch()`/`touchElem()`.
+fn rewrite_handler(
+    handler: &str,
+    vars: &[ReactiveVar],
+    shadowed: &[String],
+    deep_targets: &[String],
+) -> String {
     rewrite_with(
         handler,
         vars,
         shadowed,
+        deep_targets,
         lunas_script::free_identifiers_with_spans_program,
     )
 }
 
 /// Shared body of the `.v`-rewrite: appends `.v` after every free occurrence of
 /// a (non-shadowed) reactive binding, using the supplied span analyzer to locate
-/// occurrences. On a parse error the source is returned unchanged (never-panic).
+/// occurrences. When `deep_targets` is non-empty, each deep mutation of one of
+/// those vars is ALSO wrapped with an injected invalidation (proxy-free deep
+/// reactivity). On a parse error the source is returned unchanged (never-panic).
 fn rewrite_with(
     src: &str,
     vars: &[ReactiveVar],
     shadowed: &[String],
+    deep_targets: &[String],
     spans_of: impl Fn(
         &str,
     )
@@ -3367,12 +3412,74 @@ fn rewrite_with(
         Err(_) => return src.trim().to_string(),
     };
     let mut edits: Vec<(u32, u32, String)> = Vec::new();
+    // Deep-mutation touch injections FIRST, so a `.v` sharing a mutation's end
+    // offset lands to the left of the closing `)` (apply_edits' stable ordering).
+    let deep_active: Vec<String> = deep_targets
+        .iter()
+        .filter(|n| reactive.contains(n.as_str()))
+        .cloned()
+        .collect();
+    for site in touch_sites(src, &deep_active, &reactive, &[]) {
+        edits.push(site);
+    }
     for (name, range) in spans {
         if reactive.contains(name.as_str()) {
             edits.push((range.end().raw(), range.end().raw(), ".v".to_string()));
         }
     }
     apply_edits(src, edits).trim().to_string()
+}
+
+/// Names of the reactive vars the component deeply mutates (so they are boxed
+/// with `deepBox` and need injected `touch()` invalidations).
+fn deep_var_names(hint: &str, vars: &[ReactiveVar]) -> Vec<String> {
+    vars.iter()
+        .filter(|v| is_deeply_mutated(hint, &v.name))
+        .map(|v| v.name.clone())
+        .collect()
+}
+
+/// Computes the invalidation-wrapper edits for every deep-mutation site of a
+/// `deep_targets` var in `code`: `(root.touch(), <expr>)` for a structural
+/// mutation, `(root.touchElem(root.v[idx]), <expr>)` for an element-field write.
+/// `reactive` is used to `.v`-qualify a reactive index identifier; sites falling
+/// inside a rewritten declaration statement (`skip`) are dropped to avoid
+/// overlapping that statement's replacement edit.
+fn touch_sites(
+    code: &str,
+    deep_targets: &[String],
+    reactive: &std::collections::HashSet<&str>,
+    skip: &[TextRange],
+) -> Vec<(u32, u32, String)> {
+    if deep_targets.is_empty() {
+        return Vec::new();
+    }
+    let sites = lunas_script::deep_mutation_sites(code, deep_targets).unwrap_or_default();
+    let mut edits: Vec<(u32, u32, String)> = Vec::new();
+    for s in sites {
+        let lo = s.expr.start().raw();
+        let hi = s.expr.end().raw();
+        if skip.iter().any(|dr| {
+            dr.end().raw() > dr.start().raw() && lo >= dr.start().raw() && hi <= dr.end().raw()
+        }) {
+            continue;
+        }
+        let prefix = match &s.elem_index {
+            Some(idx) => {
+                let raw = idx.slice(code).unwrap_or("0");
+                let idx_text = if reactive.contains(raw) {
+                    format!("{raw}.v")
+                } else {
+                    raw.to_string()
+                };
+                format!("({}.touchElem({}.v[{}]), ", s.root, s.root, idx_text)
+            }
+            None => format!("({}.touch(), ", s.root),
+        };
+        edits.push((lo, lo, prefix));
+        edits.push((hi, hi, ")".to_string()));
+    }
+    edits
 }
 
 // --- attribute set special cases -----------------------------------------

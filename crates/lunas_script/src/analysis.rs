@@ -522,6 +522,80 @@ fn collect_pat_names(pat: &Pat, out: &mut std::collections::HashSet<String>) {
 /// assert_eq!(assigned_identifiers("count = count + 1; obj.x = 2; n++").unwrap(),
 ///            ["count", "obj", "n"]);
 /// ```
+/// A single deep-mutation site of one of the `targets` variables: the byte
+/// range of the whole mutation expression (so a caller can wrap it), the root
+/// variable name mutated, and — when the mutation is an element-field write on a
+/// direct array element (`X[idx].field = …`) — the byte range of the index
+/// expression `idx` (so the caller can attribute the change to `X[idx]` for
+/// fine-grained `:for` patching). `elem_index` is `None` for a STRUCTURAL
+/// mutation (`X.push(…)`, `X[i] = y`, `X.k = v`, `delete X.k`, `X.length = n`,
+/// Map/Set `set`/`add`/`delete`/`clear`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeepMutationSite {
+    /// Byte range of the whole mutation expression within `code`.
+    pub expr: lunas_span::TextRange,
+    /// Root variable being deep-mutated.
+    pub root: String,
+    /// For an element-field write, the byte range of the `[idx]` index expr.
+    pub elem_index: Option<lunas_span::TextRange>,
+}
+
+/// Finds every deep-mutation site of a variable in `targets`. This is what
+/// proxy-free deep reactivity needs: after each returned mutation the compiler
+/// injects `root.touch()` (structural) or `root.touchElem(root.v[idx])`
+/// (element-field), so a deep mutation still marks the variable dirty without a
+/// runtime Proxy. Parses `code` as a program (works for both a whole `script:`
+/// block and an inline `@event` handler). Never panics; a parse error yields an
+/// empty list (the caller falls back to no injection).
+///
+/// Element-field is detected only for the unambiguous, side-effect-free shape
+/// `X[idx].…` where `idx` is a bare identifier or number literal (so
+/// re-evaluating `X.v[idx]` in the injected call is safe); every other deep
+/// mutation is reported as structural (always correct, just coarser).
+///
+/// ```
+/// use lunas_script::deep_mutation_sites;
+///
+/// let sites = deep_mutation_sites("rows[i].label = x; rows.push(y)",
+///                                 &["rows".to_string()]).unwrap();
+/// assert_eq!(sites.len(), 2);
+/// assert!(sites[0].elem_index.is_some()); // rows[i].label = x  -> touchElem
+/// assert!(sites[1].elem_index.is_none());  // rows.push(y)       -> touch
+/// ```
+pub fn deep_mutation_sites(
+    code: &str,
+    targets: &[String],
+) -> Result<Vec<DeepMutationSite>, ScriptParseError> {
+    let (module, fm) = parse_source_with_fm(code.to_string())?;
+    let mut c = MutationSiteCollector {
+        targets: targets.iter().map(|s| s.as_str().to_string()).collect(),
+        sites: Vec::new(),
+    };
+    module.visit_with(&mut c);
+    let base = fm.start_pos.0;
+    let code_len = code.len() as u32;
+    let conv = |lo: u32, hi: u32| -> Option<lunas_span::TextRange> {
+        let lo = lo.checked_sub(base)?;
+        let hi = hi.checked_sub(base)?;
+        (hi <= code_len && lo <= hi).then(|| lunas_span::TextRange::at(lo, hi))
+    };
+    Ok(c.sites
+        .into_iter()
+        .filter_map(|s| {
+            let expr = conv(s.expr_lo, s.expr_hi)?;
+            let elem_index = match s.idx {
+                Some((lo, hi)) => Some(conv(lo, hi)?),
+                None => None,
+            };
+            Some(DeepMutationSite {
+                expr,
+                root: s.root,
+                elem_index,
+            })
+        })
+        .collect())
+}
+
 pub fn assigned_identifiers(code: &str) -> Result<Vec<String>, ScriptParseError> {
     let module = parse_program(code)?;
     let mut collector = AssignCollector { names: Vec::new() };
@@ -724,6 +798,125 @@ impl Visit for AssignCollector {
         // assignments / mutations.
         n.visit_children_with(self);
     }
+}
+
+// --- deep-mutation site collection (proxy-free reactivity) -------------------
+
+struct RawMutationSite {
+    expr_lo: u32,
+    expr_hi: u32,
+    root: String,
+    idx: Option<(u32, u32)>,
+}
+
+struct MutationSiteCollector {
+    targets: std::collections::HashSet<String>,
+    sites: Vec<RawMutationSite>,
+}
+
+impl MutationSiteCollector {
+    /// Record a member-target deep mutation (`X.f = …`, `X[i] = …`,
+    /// `X[i].f = …`, `X.f++`, `delete X.f`). `expr` is the whole mutation
+    /// expression's span (what the caller wraps).
+    fn record_member(&mut self, m: &swc_ecma_ast::MemberExpr, expr: swc_common::Span) {
+        let Some(root) = root_ident(&m.obj) else {
+            return;
+        };
+        let name = root.sym.to_string();
+        if !self.targets.contains(&name) {
+            return;
+        }
+        self.sites.push(RawMutationSite {
+            expr_lo: expr.lo.0,
+            expr_hi: expr.hi.0,
+            root: name,
+            idx: element_index_span(m),
+        });
+    }
+}
+
+impl Visit for MutationSiteCollector {
+    fn visit_assign_expr(&mut self, n: &AssignExpr) {
+        // Only member/index targets are deep mutations. A plain `X = …` reassign
+        // is not deep — the box's own `.v` setter marks it, so we skip it here.
+        if let AssignTarget::Simple(SimpleAssignTarget::Member(m)) = &n.left {
+            self.record_member(m, n.span);
+        }
+        n.visit_children_with(self);
+    }
+
+    fn visit_update_expr(&mut self, n: &UpdateExpr) {
+        if let Expr::Member(m) = &*n.arg {
+            self.record_member(m, n.span);
+        }
+        n.visit_children_with(self);
+    }
+
+    fn visit_unary_expr(&mut self, n: &swc_ecma_ast::UnaryExpr) {
+        if matches!(n.op, swc_ecma_ast::UnaryOp::Delete) {
+            if let Expr::Member(m) = &*n.arg {
+                self.record_member(m, n.span);
+            }
+        }
+        n.visit_children_with(self);
+    }
+
+    fn visit_call_expr(&mut self, n: &CallExpr) {
+        if let Callee::Expr(callee) = &n.callee {
+            if let Expr::Member(m) = &**callee {
+                if let MemberProp::Ident(method) = &m.prop {
+                    if is_mutating_method(&method.sym) {
+                        if let Some(id) = root_ident(&m.obj) {
+                            let name = id.sym.to_string();
+                            if self.targets.contains(&name) {
+                                self.sites.push(RawMutationSite {
+                                    expr_lo: n.span.lo.0,
+                                    expr_hi: n.span.hi.0,
+                                    root: name,
+                                    idx: None, // a mutating method is structural
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        n.visit_children_with(self);
+    }
+}
+
+/// For an LHS member expression, returns the index-expression span when the
+/// shape is `root[idx].…` (a field write on a direct array element) with `idx`
+/// a bare identifier or number literal; otherwise `None` (structural).
+fn element_index_span(m: &swc_ecma_ast::MemberExpr) -> Option<(u32, u32)> {
+    use swc_common::Spanned;
+    // Flatten the member chain from the root outward.
+    let mut chain: Vec<&swc_ecma_ast::MemberExpr> = Vec::new();
+    fn flatten<'a>(m: &'a swc_ecma_ast::MemberExpr, out: &mut Vec<&'a swc_ecma_ast::MemberExpr>) {
+        if let Expr::Member(inner) = &*m.obj {
+            flatten(inner, out);
+        }
+        out.push(m);
+    }
+    flatten(m, &mut chain);
+    // Element-field iff the FIRST access off the root is a computed index and at
+    // least one further member access sits above it (`root[idx].field`), so the
+    // mutated value is a field of the element `root[idx]`, not the root itself.
+    if chain.len() < 2 {
+        return None;
+    }
+    if let MemberProp::Computed(c) = &chain[0].prop {
+        // Only simple, side-effect-free indices: re-evaluating `root.v[idx]` in
+        // the injected `touchElem` must be safe.
+        if matches!(
+            &*c.expr,
+            Expr::Ident(_) | Expr::Lit(swc_ecma_ast::Lit::Num(_))
+        ) {
+            let sp = c.expr.span();
+            return Some((sp.lo.0, sp.hi.0));
+        }
+    }
+    None
 }
 
 /// Array / collection methods that mutate the receiver in place. A call to one
