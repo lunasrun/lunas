@@ -34,12 +34,16 @@ type Unsubscribe = () => void
 
 Creates a module-level store from a plain object of named initial values. Each key
 becomes an independent **field** (its own subscriber list). Object/array field
-values get deep-mutation support (lazily `Proxy`-wrapped, the same handler as
-[`deepBox`](./reactivity.md#deepbox)). A value that is already field-shaped — e.g.
-the result of [`derivedStore`](#derivedstore) — is kept as-is instead of being
-wrapped, so derived values can be declared inline in the initial object.
+values get deep-mutation support with no `Proxy`, the same model as
+[`deepBox`](./reactivity.md#deepbox): `get(key)` returns the raw value and a deep
+mutation is made reactive by `store.touch(key)`, which the compiler injects after
+the mutating statement. A value that is already field-shaped — e.g. the result of
+[`derivedStore`](#derivedstore) — is kept as-is, so derived values can be declared
+inline in the initial object.
 
-- `get(key)` — current value (through the deep-mutation proxy for objects/arrays).
+- `get(key)` — current (raw) value.
+- `touch(key)` — signal a deep mutation of `key`'s value (`store.get(key).push(x)`,
+  `store.get(key).field = y`, …); notifies adopters and subscribers.
 - `set(key, v)` — write, notifying every component that adopted `key` (batched per
   the normal microtask flush) and every `subscribe` listener (synchronously).
   Same-value writes are no-ops. Throws if `key` holds a derived (read-only) value.

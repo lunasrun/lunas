@@ -70,7 +70,7 @@ shares Vue 3's template ergonomics (`:attr`, `@event`, `:if`/`:for`, slots,
 | DOM construction | bulk `innerHTML` of a static skeleton | incremental DOM ops | virtual DOM |
 | Runtime tracking | none (deps known at compile time) | signal graph | proxy graph |
 | Reactive authoring | mutate a top-level `let` | `$state` / runes | `ref` / `reactive` |
-| Compatibility floor | ES2015 + `Proxy` | modern | modern |
+| Compatibility floor | ES2015 (no Proxy) | modern | modern |
 
 What makes a variable reactive in Lunas is simply **mutating a top-level `let`**
 in your script. You write ordinary JavaScript; the compiler wires the

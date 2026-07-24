@@ -100,12 +100,14 @@ await test("forBlock html/wire: push appends, reorder moves same nodes, patch re
   const [n1, n2] = [parent.childNodes[0], parent.childNodes[1]];
 
   list.v.push({ id: 3, txt: "c" });
+  list.touch();
   await tick();
   assert.strictEqual(parent.childNodes.length, 4);
   assert.strictEqual(parent.childNodes[0], n1, "no rebuild on append");
   assert.strictEqual(parent.childNodes[2].outerHTML, "<li>c</li>");
 
   list.v.reverse();
+  list.touch();
   await tick();
   assert.strictEqual(parent.childNodes[0].outerHTML, "<li>c</li>");
   assert.strictEqual(parent.childNodes[1], n2, "same node object moved");
@@ -113,6 +115,7 @@ await test("forBlock html/wire: push appends, reorder moves same nodes, patch re
 
   // patch: same key, new data — node reused, text refreshed via runScope
   list.v[2] = { id: 1, txt: "A!" };
+  list.touch();
   await tick();
   assert.strictEqual(parent.childNodes[2], n1, "patched in place");
   assert.strictEqual(parent.childNodes[2].outerHTML, "<li>A!</li>");

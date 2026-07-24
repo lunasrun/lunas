@@ -9,25 +9,37 @@ export interface Box<T> {
 }
 
 /**
+ * A deeply-mutated reactive cell. `.v` returns the RAW value (no Proxy); a deep
+ * mutation is made reactive by an explicit invalidation the compiler injects
+ * after the mutating statement.
+ */
+export interface DeepBox<T> {
+  v: T;
+  /** Signal a structural deep mutation (`arr.push`, `arr[i]=x`, `obj.k=v`, …). */
+  touch(): T;
+  /** Signal an element-field mutation of a direct array element `el`. */
+  touchElem<E>(el: E): E;
+}
+
+/**
  * box(c, i, v) — reassign-only variable at reactive index i.
  * Lightest path: plain getter/setter, no Proxy. Same-value writes are no-ops.
  */
 export function box<T>(c: Context, i: number, v: T): Box<T>;
 
 /**
- * deepBox(c, i, v) — deeply-mutated variable (arr.push, obj.k = …).
- * Reads through `.v` return a Proxy that marks the variable dirty on any
- * nested set/delete. Nested objects are wrapped lazily on property access;
- * wrappers are cached per underlying object so identity is stable.
+ * deepBox(c, i, v) — deeply-mutated variable (arr.push, obj.k = …, nested field
+ * writes, Map/Set mutations).
  *
- * Map/Set (and WeakMap/WeakSet) are collection-aware: accessors and methods
- * run against the real collection so native internal slots accept the
- * receiver, and mutating operations (Map `set`/`delete`/`clear`, Set
- * `add`/`delete`/`clear`) mark the variable dirty. Values stored inside a
- * collection are NOT deeply wrapped — reassign an entry to make a nested
- * change reactive. WeakMap/WeakSet do not throw but are not deeply reactive.
+ * Proxy-free (Svelte-family model): `.v` returns the RAW value, so reads are as
+ * cheap as a plain `box`. A deep mutation is made reactive by an explicit
+ * invalidation the compiler injects right after the mutating statement:
+ * `box.touch()` for a structural change (`push`/`splice`/`arr[i]=x`/`obj.k=v`/
+ * `delete`/`length=`/Map-Set `set`/`add`/`delete`/`clear`) and
+ * `box.touchElem(el)` for an element-field write (`arr[i].label = x`). Both mark
+ * the variable dirty; `markVar` defers the flush to a microtask.
  */
-export function deepBox<T>(c: Context, i: number, v: T): Box<T>;
+export function deepBox<T>(c: Context, i: number, v: T): DeepBox<T>;
 
 /**
  * prop(c, name, i, raw, def, deep) — adopt an `@input` prop as a reactive

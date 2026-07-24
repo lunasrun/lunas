@@ -8,7 +8,7 @@ the exact contract, see the design docs linked at the bottom.
 Lunas has two halves:
 
 - a **compiler** written in Rust (a Cargo workspace under `crates/`), and
-- a **tiny, dependency-free JavaScript runtime** (`packages/lunas`, ES2015 + `Proxy`,
+- a **tiny, dependency-free JavaScript runtime** (`packages/lunas`, ES2015,
   no build step, no `BigInt`).
 
 The compiler does all the analysis; the runtime does almost no thinking at
@@ -145,7 +145,9 @@ Adjacency is plain arrays, so it has **no width limit and no overflow case**. Th
 compiler may specialize small components (≤ 31 reactive vars) to a single `number`
 bitmask for the smallest constant factor. `BigInt` is rejected outright: it is
 slower than `number` **and** raises the compatibility floor above the competition.
-The floor is `Proxy` (ES2015 / Safari 10+) — the same as Vue 3 / Svelte 5 / Solid.
+The reactive core is plain ES2015 getters/setters — no `Proxy` anywhere — so the
+floor is *below* Vue 3 / Svelte 5 / Solid, which all require `Proxy` for their
+reactivity.
 
 ### 6. Per-variable box specialization
 
@@ -155,7 +157,7 @@ lightest reactive cell:
 | Classification | Box | Cost |
 | --- | --- | --- |
 | Reassigned only (`x = …`) | [`box`](./api/reactivity.md#box) — plain getter/setter | lightest, no Proxy |
-| Deeply mutated (`arr.push`, `obj.k = …`) | [`deepBox`](./api/reactivity.md#deepbox) — `Proxy` sets the bit on mutation | Proxy only where needed |
+| Deeply mutated (`arr.push`, `obj.k = …`) | [`deepBox`](./api/reactivity.md#deepbox) — raw value; the compiler injects a `touch()`/`touchElem()` call after the mutation to set the bit | no Proxy; a deep mutation costs one bit-set |
 | Shared across components (prop passed down + mutated) | [`shared`](./api/reactivity.md#shared) — marks every dependent component | cross-component, no signals |
 
 Module-level state generalizes `shared` into a [store](./api/store.md): created
@@ -195,7 +197,7 @@ highlights (design doc §2 and §4):
 | Anchors = runtime text nodes | Keeps the static HTML comment-free (fast path) while still marking dynamic insertion points. |
 | Element refs = positional navigation | ~2× faster than `getElementById`, works on a detached tree, no id bytes or cleanup. |
 | Whitespace-free static HTML | Stable `childNodes` positions for nav, plus smaller output. |
-| Adjacency dispatch, `number`/`Uint32Array`, never `BigInt` | O(affected) flush, no width limit; keeps the compatibility floor at `Proxy` (ES2015). |
+| Adjacency dispatch, `number`/`Uint32Array`, never `BigInt` | O(affected) flush, no width limit; the reactive core stays plain ES2015 — no `Proxy`. |
 
 > The fast-path-parser penalty is a Blink characteristic; Gecko/WebKit were not
 > measured, so re-verify the comment penalty there before relying on it.

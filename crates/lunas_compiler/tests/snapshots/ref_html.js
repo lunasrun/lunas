@@ -6,7 +6,7 @@ export default component("div", {}, HTML, (c, props) => {
   const field = deepBox(c, 0, undefined)
   const markup = box(c, 1, "<b>bold</b>")
   function fill() {
-      field.v.value = "typed"
+      (field.touch(), field.v.value = "typed")
       markup.v = "<i>italic</i>"
   }
   const [e0, e1, e2] = refs(c.root, [[0, 0], [0, 1], [0, 2]]);

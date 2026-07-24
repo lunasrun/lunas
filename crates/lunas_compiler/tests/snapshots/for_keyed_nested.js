@@ -11,9 +11,9 @@ export default component("div", {}, HTML, (c, props) => {
       { id: 2, name: "b", open: false, tags: ["z"] }
   ])
   function add() {
-      groups.v.push({ id: groups.v.length + 1, name: "n", open: false, tags: ["t"] })
+      (groups.touch(), groups.v.push({ id: groups.v.length + 1, name: "n", open: false, tags: ["t"] }))
   }
-  function toggleFirst() { groups.v[0].open = !groups.v[0].open }
+  function toggleFirst() { (groups.touchElem(groups.v[0]), groups.v[0].open = !groups.v[0].open) }
   const [e0, e1] = refs(c.root, [[0, 0], [0, 1]]);
   const [g0] = refs(c.root, [[0, 2]]);
   const a0 = anchorAppend(g0);

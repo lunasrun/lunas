@@ -23,7 +23,7 @@ export default component("div", {}, HTML, (c, props) => {
   ])
   function show(p) { page.v = p }
   function addTag() {
-      tags.v.push({ id: tags.v.length + 1, label: "extra" })
+      (tags.touch(), tags.v.push({ id: tags.v.length + 1, label: "extra" }))
   }
   const [e0, e1, e2] = refs(c.root, [[0, 1, 0], [0, 1, 1], [0, 1, 2]]);
   const [g0, g1, g2, g3, g4] = refs(c.root, [[0, 0], [0, 2], [0, 2], [0, 2], [0]]);

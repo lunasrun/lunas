@@ -1,7 +1,8 @@
 // boxes.collections.test.mjs — deepBox reactivity for native Map/Set (and
-// no-throw handling of WeakMap/WeakSet). Covers the MED-severity fix where the
-// generic deepBox Proxy handler threw "incompatible receiver" on Map/Set
-// accessors, and makes membership mutations (set/add/delete/clear) reactive.
+// no-throw handling of WeakMap/WeakSet). deepBox is proxy-free: `.v` returns the
+// raw collection, so accessors/methods run natively (no incompatible-receiver
+// hazard), and a membership mutation (set/add/delete/clear) is made reactive by
+// the compiler-injected `.touch()` that follows it — asserted here explicitly.
 // Run: node packages/lunas/test/boxes.collections.test.mjs
 
 import assert from "node:assert";
@@ -53,8 +54,9 @@ await test("Map: set() is reactive — a bind reading .size re-runs", async () =
   bind(c, [0], () => sizes.push(d.v.size));
   assert.deepStrictEqual(sizes, [0], "initial bind run");
   d.v.set("a", 1);
+  d.touch();
   await tick();
-  assert.deepStrictEqual(sizes, [0, 1], "set marks the var dirty");
+  assert.deepStrictEqual(sizes, [0, 1], "set + touch marks the var dirty");
 });
 
 await test("Map: set() to an existing key still notifies (value may have changed)", async () => {
@@ -63,6 +65,7 @@ await test("Map: set() to an existing key still notifies (value may have changed
   const values = [];
   bind(c, [0], () => values.push(d.v.get("a")));
   d.v.set("a", 2);
+  d.touch();
   await tick();
   assert.deepStrictEqual(values, [1, 2], "re-set of a key re-runs the bind");
 });
@@ -73,6 +76,7 @@ await test("Map: delete() is reactive", async () => {
   const sizes = [];
   bind(c, [0], () => sizes.push(d.v.size));
   const removed = d.v.delete("a");
+  d.touch();
   assert.strictEqual(removed, true, "delete returns the native boolean");
   await tick();
   assert.deepStrictEqual(sizes, [1, 0]);
@@ -84,6 +88,7 @@ await test("Map: clear() is reactive", async () => {
   const sizes = [];
   bind(c, [0], () => sizes.push(d.v.size));
   d.v.clear();
+  d.touch();
   await tick();
   assert.deepStrictEqual(sizes, [2, 0]);
 });
@@ -92,7 +97,7 @@ await test("Map: chained set() returns the Map (native contract preserved)", () 
   const c = createContext(null);
   const d = deepBox(c, 0, new Map());
   const ret = d.v.set("a", 1);
-  // Native Map.set returns the map itself; our wrapper returns the raw target.
+  // `.v` is the raw Map, so native Map.set returns the map itself.
   assert.strictEqual(ret.get("a"), 1);
   assert.strictEqual(ret.size, 1);
 });
@@ -121,6 +126,7 @@ await test("Set: add() is reactive", async () => {
   const sizes = [];
   bind(c, [0], () => sizes.push(d.v.size));
   d.v.add(1);
+  d.touch();
   await tick();
   assert.deepStrictEqual(sizes, [0, 1]);
 });
@@ -131,9 +137,11 @@ await test("Set: delete() and clear() are reactive", async () => {
   const sizes = [];
   bind(c, [0], () => sizes.push(d.v.size));
   d.v.delete(1);
+  d.touch();
   await tick();
   assert.deepStrictEqual(sizes, [2, 1]);
   d.v.clear();
+  d.touch();
   await tick();
   assert.deepStrictEqual(sizes, [2, 1, 0]);
 });
@@ -156,8 +164,9 @@ await test("Map nested in a deepBox'd object: reads work and mutations mark dirt
   bind(c, [0], () => sizes.push(d.v.tags.size));
   assert.deepStrictEqual(sizes, [1], "nested Map .size reads without throwing");
   d.v.tags.set("y", 2);
+  d.touch();
   await tick();
-  assert.deepStrictEqual(sizes, [1, 2], "nested Map mutation marks the outer var");
+  assert.deepStrictEqual(sizes, [1, 2], "nested Map mutation + touch marks the outer var");
 });
 
 await test("Set nested in a deepBox'd object: mutations mark dirty", async () => {
@@ -166,14 +175,17 @@ await test("Set nested in a deepBox'd object: mutations mark dirty", async () =>
   const sizes = [];
   bind(c, [0], () => sizes.push(d.v.ids.size));
   d.v.ids.add(2);
+  d.touch();
   await tick();
   assert.deepStrictEqual(sizes, [1, 2]);
 });
 
-await test("nested Map wrapper identity is stable across property reads", () => {
+await test("nested Map identity is stable across property reads (raw)", () => {
   const c = createContext(null);
-  const d = deepBox(c, 0, { m: new Map() });
-  assert.strictEqual(d.v.m, d.v.m, "same underlying Map -> same proxy");
+  const m = new Map();
+  const d = deepBox(c, 0, { m });
+  assert.strictEqual(d.v.m, d.v.m, "same underlying Map");
+  assert.strictEqual(d.v.m, m, "the raw Map itself, not a proxy");
 });
 
 // ---------------------------------------------------------------------------
@@ -216,6 +228,7 @@ await test("WeakMap mutation still notifies (collection-level, best-effort)", as
   const seen = [];
   bind(c, [0], () => seen.push(d.v.has(key)));
   d.v.set(key, 1);
+  d.touch();
   await tick();
   assert.deepStrictEqual(seen, [false, true]);
 });
@@ -230,6 +243,7 @@ await test("regression: object property set through deepBox still marks dirty", 
   const seen = [];
   bind(c, [0], () => seen.push(d.v.a));
   d.v.a = 2;
+  d.touch();
   await tick();
   assert.deepStrictEqual(seen, [1, 2]);
 });
@@ -240,14 +254,16 @@ await test("regression: array push/splice through deepBox still marks dirty", as
   const lens = [];
   bind(c, [0], () => lens.push(d.v.length));
   d.v.push(3);
+  d.touch();
   await tick();
   assert.deepStrictEqual(lens, [2, 3]);
   d.v.splice(0, 1);
+  d.touch();
   await tick();
   assert.deepStrictEqual(lens, [2, 3, 2]);
 });
 
-await test("regression: nested object wrapper identity stays stable", () => {
+await test("regression: nested object identity stays stable (raw)", () => {
   const c = createContext(null);
   const d = deepBox(c, 0, { user: { name: "a" } });
   assert.strictEqual(d.v.user, d.v.user);

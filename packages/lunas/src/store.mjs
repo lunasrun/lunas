@@ -9,10 +9,11 @@
 // subscribable; a write to one field only marks dirty the components that
 // adopted *that* field.
 //
-// ES2015 + Proxy (the runtime's compatibility floor). No BigInt.
+// ES2015+. No Proxy, no BigInt: deep field mutation is made reactive by an
+// explicit compiler-injected `store.touch(key)` after each mutating statement,
+// the same model as boxes.mjs's deepBox.
 
 import { markVar } from "./core.mjs";
-import { makeWrap } from "./boxes.mjs";
 
 // isField(x) — true for anything shaped like a storeField/derivedStore
 // output (attach/detach/subscribe). Lets createStore accept a derivedStore
@@ -29,9 +30,10 @@ function isField(x) {
 
 // storeField(v) — one named slot of a store. Shaped like boxes.mjs's
 // `shared`: `.v` get/set, `attach(c, i)` / `detach(c)` for component adoption,
-// PLUS deep-mutation support (object/array values are lazily Proxy-wrapped,
-// same cached-wrapper strategy as deepBox) and a `subscribe(fn)` for plain-JS
-// consumers that are not component contexts at all (router, devtools, tests).
+// PLUS deep-mutation support (proxy-free: `.v` returns the raw value and a
+// mutation is made reactive by an explicit `touch()` the compiler injects) and
+// a `subscribe(fn)` for plain-JS consumers that are not component contexts at
+// all (router, devtools, tests).
 //
 // Returns [field, notify]: `notify(value?)` is kept internal to this module
 // (used directly by derivedStore to signal its own subscribers without a
@@ -47,19 +49,24 @@ function storeField(v) {
     for (const s of subs) markVar(s.c, s.i);
     for (const fn of listeners) fn(value.length ? value[0] : v);
   };
-  const wrap = makeWrap(notify);
-  let px = wrap(v);
 
   const field = {
     get v() {
-      return px;
+      return v;
     },
     set v(x) {
       if (x !== v) {
         v = x;
-        px = wrap(x);
         notify();
       }
+    },
+    // touch() — a deep mutation happened on this field's current value
+    // (`store.get(k).push(x)`, `store.get(k).f = y`, …). Marks every adopter
+    // and notifies plain-JS subscribers, same as a write. Returns the raw
+    // value so a compiler-injected `(field.touch(), expr)` prefix is transparent.
+    touch() {
+      notify();
+      return v;
     },
     // attach(c, i) — adopt this field at component context `c`'s reactive
     // index `i`: from now on, writes to this field mark index `i` dirty in
@@ -117,6 +124,14 @@ export function createStore(initial) {
     // holds a derived (read-only) value.
     set(key, v) {
       field(key).v = v;
+    },
+    // touch(key) — signal a deep mutation of `key`'s current value (the
+    // compiler injects this after `store.get(key)....` mutating statements,
+    // mirroring deepBox.touch()). Notifies adopters and subscribers. Returns
+    // the field's raw value so `(store.touch(key), expr)` stays transparent.
+    touch(key) {
+      const f = field(key);
+      return f.touch ? f.touch() : f.v;
     },
     // subscribe(key, fn) — outside-component subscription for plain-JS
     // consumers (router, devtools, tests). `fn(value)` runs synchronously on

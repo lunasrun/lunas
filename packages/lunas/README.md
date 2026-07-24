@@ -2,7 +2,7 @@
 
 Dependency-free ES2015 runtime for [Lunas](https://github.com/lunasrun/lunas)-compiled
 components. Plain ESM, no build step, no dependencies. Compatibility floor:
-ES2015 + `Proxy` (no `BigInt`).
+ES2015 (no `Proxy`, no `BigInt`).
 
 This package is the runtime target that the Lunas compiler emits calls into —
 `bind`/`markVar`/`flush` for the reactive core, `box`/`deepBox`/`shared` for
@@ -67,7 +67,7 @@ main repo for the calling contract.
 | `endScope(c)` | `lunas/core` | Close the currently-open scope. |
 | `dropScope(c, scope)` | `lunas/core` | Unregister every bind collected in `scope` (recursively) and tear it down. |
 | `box(c, i, v)` | `lunas/boxes` | Reassign-only reactive cell (plain getter/setter, no Proxy). |
-| `deepBox(c, i, v)` | `lunas/boxes` | Deeply-mutated reactive cell (Proxy-wrapped nested reads/writes). |
+| `deepBox(c, i, v)` | `lunas/boxes` | Deeply-mutated reactive cell (raw value; the compiler injects `touch()`/`touchElem()` after a deep mutation to invalidate it — no Proxy). |
 | `shared(v)` | `lunas/boxes` | A value shared/mutated across multiple components. |
 | `computed(c, i, deps, fn)` | `lunas/computed` | Lazily-evaluated, memoized derived value. |
 | `watch(c, deps, cb, opts?)` | `lunas/watch` | Run `cb` when any of `deps` changes (optionally `immediate`). |

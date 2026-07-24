@@ -33,7 +33,7 @@ tree:
         - { id: bench-construction, title: "innerHTML vs cloneNode (4 machines)", status: done }
         - { id: bench-anchors, title: "Comment fast-path; runtime text anchors", status: done }
         - { id: bench-refs, title: "Positional nav vs getElementById", status: done }
-        - { id: reactivity-design, title: "Adjacency dispatch; no BigInt; Proxy floor", status: done }
+        - { id: reactivity-design, title: "Adjacency dispatch; no BigInt; proxy-free deep mutation", status: done }
     - id: codegen
       title: Code generator (ResolvedComponent → JS)
       status: done
@@ -52,7 +52,7 @@ tree:
         - { id: cg-inputs, title: "@input props handling", status: done }
         - { id: cg-e2e, title: "End-to-end snapshot + browser smoke tests", status: done }
     - id: runtime
-      title: Runtime (ES2015 + Proxy floor)
+      title: Runtime (ES2015, proxy-free)
       status: done
       children:
         - { id: rt-core, title: "Adjacency dispatch core (bind, markVar, flush)", status: done }

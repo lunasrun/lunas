@@ -80,14 +80,21 @@ function deepBox<T>(c: Context, i: number, v: T): Box<T>
 ### Description
 
 Creates a **deeply-mutated** reactive cell at reactive index `i`. Reads through
-`.v` return a `Proxy` that marks index `i` dirty on any nested `set` or `delete`
-— including array mutators (`push`, `splice`, …) which run with the proxy as
-`this`. Nested objects are wrapped lazily on property access; wrappers are cached
-per underlying object (via a `WeakMap`) so proxy identity is stable across reads.
-Replacing the whole value (`box.v = next`) also marks dirty and re-wraps.
+`.v` return the **raw** value — no `Proxy` — so reads are as cheap as a plain
+[`box`](#box). A deep mutation is made reactive by an explicit invalidation the
+compiler injects right after the mutating statement:
+
+- `box.touch()` — a structural mutation (`push`/`splice`/`arr[i] = x`/`obj.k = v`/
+  `delete`/`length =`/`Map`·`Set` `set`/`add`/`delete`/`clear`).
+- `box.touchElem(el)` — an element-field write on a direct array element
+  (`rows[i].label = x`); `el` is the mutated element, recorded so a `:for` can
+  patch just that item.
+
+Replacing the whole value (`box.v = next`) marks dirty through the setter, so no
+injected call is needed there. `markVar` defers the flush to a microtask.
 
 The compiler chooses `deepBox` for variables it observes being deeply mutated
-(`arr.push(...)`, `obj.k = …`).
+(`arr.push(...)`, `obj.k = …`) and emits the matching `touch()`/`touchElem()`.
 
 ### Parameters
 
@@ -99,20 +106,25 @@ The compiler chooses `deepBox` for variables it observes being deeply mutated
 
 ### Returns
 
-`Box<T>` — a cell whose `.v` getter yields the deep proxy.
+`Box<T>` — a cell whose `.v` getter yields the raw value, plus `touch()` and
+`touchElem(el)` invalidation methods.
 
 ### Example
 
 ```js
 const todos = deepBox(c, 1, []);
-todos.v.push({ text: "buy milk" }); // marks index 1 dirty
-todos.v[0].text = "buy oat milk";   // nested set — also marks dirty
+(todos.touch(), todos.v.push({ text: "buy milk" }));   // structural -> touch()
+(todos.touchElem(todos.v[0]), todos.v[0].text = "oat"); // element-field -> touchElem
 ```
+
+(The parenthesized `touch`/`touchElem` calls are what the compiler injects; you
+write the plain mutation in a `.lunas` component.)
 
 ### Notes
 
-- Only the reactive floor `Proxy` (ES2015) is used; no `BigInt`.
-- The Proxy handler is shared with module-level stores (see [store API](./store.md)).
+- No `Proxy` and no `BigInt`: the reactive core is plain ES2015.
+- Module-level stores use the same model — deep mutation via `store.touch(key)`
+  (see [store API](./store.md)).
 
 ---
 
