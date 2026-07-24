@@ -61,9 +61,9 @@ export default component("div", { class: "counter" }, HTML, (c, props) => {
   // Only mutated bindings are boxed. The compiler picks the box kind per var,
   // and gives each a reactive index (0, 1, …):
   const count   = box(c, 0, props.start ?? 0);  // index 0: reassigned only
-  const history = deepBox(c, 1, []);             // index 1: array .push() -> Proxy
+  const history = deepBox(c, 1, []);             // index 1: array .push() -> touch()
 
-  function inc() { count.v++; history.v.push(count.v); }
+  function inc() { count.v++; (history.touch(), history.v.push(count.v)); }
 
   // Positional nav to the dynamic elements (detached, no ids).
   const [btn, p, ul] = refs(c.root, [[0], [1], [2]]);
@@ -108,12 +108,42 @@ auto-tracking signals.
 
 | Var classification (from analysis) | Box | Cost |
 |---|---|---|
-| Reassigned only (`x = …`) | `box` — plain getter/setter that sets the bit | lightest, no Proxy |
-| Deeply mutated (`arr.push`, `obj.k = …`) | `deepBox` — Proxy that sets the bit on mutation | Proxy only where needed |
+| Reassigned only (`x = …`) | `box` — plain getter/setter that sets the bit | lightest |
+| Deeply mutated (`arr.push`, `obj.k = …`) | `deepBox` — raw value + compiler-injected `touch()`/`touchElem()` invalidation | no Proxy; a deep mutation costs one bit-set, same as a reassign |
 | Shared across components (passed as prop and mutated) | `shared` — sets the dirty bit in *every* dependent component | cross-component without signals |
 
 This resolves the classic weaknesses of pure static wiring (deep mutation,
 cross-component flow) **at compile time**, avoiding a runtime hybrid.
+
+#### Deep mutation is compiler-instrumented, not Proxy-intercepted
+
+`deepBox.v` returns the **raw** value — reads are as cheap as a plain `box`, and
+the reconciler hot path reads it directly. A deep mutation is made reactive by an
+explicit invalidation the compiler emits right after the mutating statement (the
+Svelte-family model), never a runtime Proxy:
+
+```
+arr.push(x)        ->  (arr.touch(), arr.v.push(x))
+obj.k = v          ->  (obj.touch(), obj.v.k = v)
+rows[i].label = x  ->  (rows.touchElem(rows.v[i]), rows.v[i].label = x)
+```
+
+`touch()` marks the variable dirty (structural change); `touchElem(el)` marks it
+and records the mutated array element so a `:for` can patch just that item
+(fine-grained item updates) without a Proxy attributing the write. `markVar`
+defers the flush to a microtask, so it is irrelevant that the injected call runs
+before the mutation completes within the statement. The compiler finds mutation
+sites over the real AST (`lunas_script::deep_mutation_sites`); element-field
+attribution is used only for the side-effect-free `X[idx].field` shape, and a
+plain structural `touch()` is the always-correct fallback for everything else.
+
+Why not a Proxy: a Proxy makes every nested get/set a trap dispatch plus (for
+`:for` element attribution) WeakMap bookkeeping, which measured **~10× the cost
+of a raw write** on the deep-mutation hot path (`js-framework-benchmark`'s
+"partial update" / "swap" rows) — precisely where a Proxy-based Lunas gave up its
+structural lead to Svelte, which compiles mutations to direct writes. Removing it
+roughly **halves** the wall-clock of those operations while keeping identical
+semantics.
 
 ### Dispatch representation (no BigInt)
 
@@ -132,10 +162,12 @@ a `Uint32Array` of 32-bit chunks — **never `BigInt`**.
 
 `BigInt` is rejected on two grounds: it is markedly slower than `number`
 (heap-allocated, non-primitive) **and** it is the least compatible option (ES2020
-/ Safari 14+, no efficient polyfill). Lunas's compatibility floor is set by
-`Proxy` (ES2015 / Safari 10+, used by `deepBox` for deep mutation) — the same
-floor as Vue 3 / Svelte 5 / Solid. Adjacency, `number`, and `Uint32Array` all
-stay at or below that floor; `BigInt` would raise it above the competition.
+/ Safari 14+, no efficient polyfill). With deep mutation now compiler-instrumented
+(above), the runtime uses **no `Proxy`** either, so the reactive core is plain
+ES2015 (`getter`/`setter`, arrays, `Map`/`Set`) — its floor is below Vue 3 /
+Svelte 5 / Solid, which all rely on `Proxy`. Adjacency, `number`, and
+`Uint32Array` all stay at or below that floor; `BigInt` would raise it above the
+competition.
 
 `handlers[].writes` is used at compile time for validation / dead-code
 elimination; at runtime the box setter already enqueues dependents, so the write
@@ -167,7 +199,7 @@ function flush(c) {
 export function box(c, i, v) {               // reassign-only var at reactive index i
   return { get v() { return v; }, set v(x) { if (x !== v) { v = x; markVar(c, i); } } };
 }
-export function deepBox(c, i, v) { /* Proxy wrapping arrays/objects; markVar(c,i) on mutation */ }
+export function deepBox(c, i, v) { /* raw value; touch()/touchElem(el) -> markVar(c,i), compiler-injected */ }
 export function prop(c, name, i, raw, def, deep) { /* adopt an @input prop as a reactive box at index
                                                       i; seed from raw (getter or value) or def;
                                                       register under c._props[name] for the parent's
@@ -262,9 +294,9 @@ export function teleportBlock(c, before, targetOf, build) { /* `<teleport to>` �
 // --- module-level stores (state outside any component; §4's "shared" concept
 //     generalized to N components importing the same module, instead of one
 //     value passed down as a prop) ---
-export function createStore(initial) { /* named fields, each its own subs list + deep-mutation
-                                           proxy (reuses boxes.mjs's Proxy handler); returns
-                                           { get(key), set(key,v), subscribe(key,fn) } */ }
+export function createStore(initial) { /* named fields, each its own subs list; deep mutation via
+                                           compiler-injected store.touch(key) (no Proxy); returns
+                                           { get(key), set(key,v), touch(key), subscribe(key,fn) } */ }
 export function useStore(c, i, store, key) { /* adopt field `key` at c's reactive index i;
                                                  writes to `key` markVar(c,i), batched as usual;
                                                  scope-aware: dropScope tears the adoption down */ }
