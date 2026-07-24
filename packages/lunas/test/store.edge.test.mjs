@@ -189,6 +189,7 @@ test("derivedStore field passed into createStore is not double-wrapped (isField 
   // plain field wrapping the derived object.
   assert.strictEqual(app.get("total"), 3);
   cart.get("items").push({ price: 7 });
+  cart.touch("items"); // deep mutation of the upstream field -> derived recomputes
   assert.strictEqual(app.get("total"), 10, "derived passthrough recomputes live");
 });
 
@@ -221,6 +222,7 @@ test("dropScope detaches a component from a derivedStore-backed field too", asyn
 
   dropScope(c, scope);
   cart.get("items").push(3);
+  cart.touch("items"); // deep mutation of the upstream field -> derived recomputes
   await tick();
   assert.strictEqual(seen, 2, "detached component does not observe the derived update");
   assert.strictEqual(app.get("count"), 3, "the derived value itself still updates");
@@ -228,19 +230,28 @@ test("dropScope detaches a component from a derivedStore-backed field too", asyn
 
 // -- deep mutation isolation between fields -----------------------------------
 
-test("deep mutation on one array field does not notify a sibling field's subscribers", () => {
+test("deep mutation + touch() on one array field does not notify a sibling field's subscribers", () => {
   const store = createStore({ list: [1], other: "x" });
+  const seenList = [];
   const seenOther = [];
+  store.subscribe("list", (v) => seenList.push(v));
   store.subscribe("other", (v) => seenOther.push(v));
+  // New contract: the deep mutation is inert on its own; touch(key) is what
+  // notifies, and it only notifies the field that was touched.
   store.get("list").push(2);
+  store.touch("list");
+  assert.deepStrictEqual(seenList, [[1, 2]], "the touched field's own subscribers fire");
   assert.deepStrictEqual(seenOther, [], "unrelated field's subscribers silent");
 });
 
-test("replacing a store field's whole value with a new object gets its own fresh proxy identity", () => {
+test("replacing a store field's whole value returns a new raw object (stable raw identity)", () => {
   const store = createStore({ obj: { a: 1 } });
   const first = store.get("obj");
+  // get() now returns the RAW value, so identity is stable across reads (no
+  // per-read proxy wrapping) rather than a fresh proxy each time.
+  assert.strictEqual(store.get("obj"), first, "repeated reads return the same raw object");
   store.set("obj", { a: 2 });
   const second = store.get("obj");
-  assert.notStrictEqual(first, second);
+  assert.notStrictEqual(first, second, "a whole-value write swaps in a different raw object");
   assert.strictEqual(second.a, 2);
 });

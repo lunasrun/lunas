@@ -1,15 +1,13 @@
 // boxes.mjs — per-variable reactive boxes, specialized by the compiler.
 // See output-design.md §4 "Per-variable box specialization".
 //
-// ES2015 + Proxy (the runtime's compatibility floor). No BigInt.
+// ES2015+. No Proxy, no BigInt. Deep mutation is made reactive by explicit
+// compiler-injected invalidation (`box.touch()` / `box.touchElem(el)`) emitted
+// right after each mutating statement — the Svelte-family model — instead of a
+// runtime Proxy intercepting every nested get/set. Reads return the RAW value,
+// so the hot path pays nothing.
 
 import { markVar } from "./core.mjs";
-
-// Marker to unwrap a fine-grained `:for` element proxy back to its raw target:
-// reading `proxy[RAW]` returns the underlying object. Kept for callers that hold
-// an element proxy and need stable raw identity (the forBlock itself iterates
-// the box's raw array directly and does not need it on the hot path).
-export const RAW = Symbol("lunas.raw");
 
 // box(c, i, v) — reassign-only variable at reactive index i.
 // Lightest path: plain getter/setter, no Proxy. Same-value writes are no-ops.
@@ -27,44 +25,58 @@ export function box(c, i, v) {
   };
 }
 
-// deepBox(c, i, v) — deeply-mutated variable (arr.push, obj.k = …).
-// Reads through .v return a Proxy that marks the variable dirty on any
-// nested set/delete. Nested objects are wrapped lazily on property access;
-// wrappers are cached per underlying object so identity is stable.
-// Mutating array methods (push/splice/…) work through the set trap because
-// they run with the proxy as `this`.
-// Map/Set (and WeakMap/WeakSet) values are collection-aware: reads and methods
-// run against the real collection (native internal slots reject a foreign
-// receiver), and mutating ops (Map set/delete/clear, Set add/delete/clear)
-// mark the variable dirty. Values stored inside a collection are not deeply
-// wrapped — reassign an entry to make a change reactive.
+// deepBox(c, i, v) — deeply-mutated variable (arr.push, obj.k = …, nested
+// field writes, Map/Set mutations).
 //
-// Fine-grained `:for` tracking (opt-in): a deepBox used as a `:for` source can
-// have a `forBlock` attach itself via `box.observeElems()`. Once observed, the
-// box records — between flushes — whether the mutation was STRUCTURAL (a write
-// on the array itself: `arr[i] = x`, `arr.length = n`, `push`/`splice`/…, or a
-// whole-value reassign `box.v = x`) or a pure ELEMENT-FIELD write (a nested
-// mutation of an object that is a direct element of the array, e.g.
-// `arr[i].label = x`). Both still `markVar` so every dependent flushes; the
-// forBlock consults `box._struct` / `box._elems` to patch just the touched
-// items instead of running a full reconcile when nothing structural changed.
+// Proxy-free (Svelte-family model): `.v` returns the RAW value, so reads are as
+// cheap as a plain `box`. Deep mutation is made reactive by an explicit
+// invalidation call the compiler injects immediately after each mutating
+// statement:
+//   - `box.touch()`       — a STRUCTURAL deep mutation (`arr.push(x)`,
+//                           `arr[i] = y`, `arr.length = n`, `obj.k = v`,
+//                           `delete obj.k`, Map/Set `set/add/delete/clear`, or a
+//                           whole-value reassign — the setter marks that one).
+//   - `box.touchElem(el)` — an ELEMENT-FIELD mutation of a direct array element
+//                           (`arr[i].label = x`): `el` is the mutated element.
+// Both call `markVar`, so every dependent flushes. `markVar` defers the flush to
+// a microtask, so it does not matter that the touch runs before the mutation
+// completes within the same synchronous statement.
+//
+// Fine-grained `:for` tracking (opt-in): a deepBox used as a `:for` source has
+// a `forBlock` attach via `box.observeElems()`. Once observed, the box records —
+// between flushes — whether a STRUCTURAL change occurred (`touch()` / reassign)
+// or only ELEMENT-FIELD writes (`touchElem(el)`), so the forBlock can patch just
+// the touched items instead of a full reconcile. This is the same `_struct` /
+// `_elems` contract the Proxy version exposed; only the source of the signal
+// changed (explicit calls, not trap interception).
 export function deepBox(c, i, v) {
   const notify = () => markVar(c, i);
-  // Fine-grained state (null until a forBlock opts in via observeElems()).
   const self = {
     get v() {
-      return px;
+      return v;
     },
     set v(x) {
       if (x !== v) {
         v = x;
-        if (self._track) {
-          self._struct = true; // whole-value reassign is structural
-          wrap.markRoot(x);
-        }
-        px = wrap(x);
+        if (self._track) self._struct = true; // whole-value reassign is structural
         notify();
       }
+    },
+    // touch() — a structural deep mutation happened on the current value.
+    // Returns the raw value so a compiler-injected `(box.touch(), expr)` prefix
+    // never disturbs the surrounding expression's own value.
+    touch() {
+      if (self._track) self._struct = true;
+      notify();
+      return v;
+    },
+    // touchElem(el) — a field of the direct array element `el` was mutated.
+    // Records `el` for fine-grained patching (when observed) and marks dirty.
+    // Returns `el` so it composes in a comma-prefixed injection.
+    touchElem(el) {
+      if (self._elems) self._elems.add(el);
+      notify();
+      return el;
     },
     // --- fine-grained :for support (all no-cost until observeElems runs) ---
     _track: false, // observing element-field vs structural changes
@@ -73,12 +85,7 @@ export function deepBox(c, i, v) {
     observeElems() {
       if (!this._track) {
         this._track = true;
-        fineHooks.active = true;
         this._elems = new Set();
-        // Register the current root array so its own mutations are structural,
-        // then re-wrap so reads populate owner attribution.
-        wrap.markRoot(v);
-        px = wrap(v);
       }
       return this;
     },
@@ -86,183 +93,12 @@ export function deepBox(c, i, v) {
       this._struct = false;
       if (this._elems) this._elems.clear();
     },
-    // The underlying RAW current value (the unwrapped array). forBlock iterates
-    // this for keying/patching so the hot reconcile path never reads through the
-    // element proxies; field-write detection still runs when USER code mutates
-    // via `.v` (the proxy).
+    // The RAW current value. forBlock iterates this for keying/patching.
     _raw() {
       return v;
     },
   };
-  const fineHooks = {
-    active: false,
-    onStruct() {
-      self._struct = true;
-      notify();
-    },
-    onElem(rawEl) {
-      if (self._elems) self._elems.add(rawEl);
-      notify();
-    },
-  };
-  const wrap = makeWrap(notify, fineHooks);
-  let px = wrap(v);
   return self;
-}
-
-// makeWrap(notify) — build a lazy, cached deep-Proxy wrapper that calls
-// `notify` on any nested set/delete. Exported so other modules that need the
-// same "deeply-mutated value" semantics (e.g. store.mjs's per-field deep
-// mutation support) don't have to reimplement the Proxy handler.
-//
-// Collections (Map/Set) get a dedicated get-trap path: their accessors and
-// methods have internal slots ([[MapData]]/[[SetData]]) that reject a foreign
-// receiver, so we must run them against the REAL target rather than the proxy.
-// Mutating collection methods (Map set/delete/clear, Set add/delete/clear) are
-// wrapped to perform the op then `notify()`, so bindings that read the
-// collection (`.size`, `.get`, iteration, `.has`, …) re-run. Reads never mark.
-//
-// Values stored inside a Map/Set are NOT deeply wrapped: only collection-level
-// membership mutations are reactive. Mutating an object retrieved from a
-// collection (`map.get(k).field = …`) does not mark the box — reassign the
-// entry (`map.set(k, next)`) to trigger reactivity. Keeping values raw avoids
-// proxy-identity hazards with `has`/`get`/key lookups and keeps semantics
-// honest and simple.
-export function makeWrap(notify, fine) {
-  const cache = new WeakMap(); // raw object -> proxy
-  // Fine-grained :for tracking (optional, `fine` present). When active, the
-  // ROOT array proxy's own mutations route to fine.onStruct() (structural), and
-  // a nested field write attributes to the direct array element it lives under,
-  // via fine.onElem(rawElement). Owner attribution uses a single WeakMap
-  // (raw subtree object -> owning array element), populated on read, so the
-  // hot get/set traps stay MONOMORPHIC (one shared handler, no per-element
-  // handler allocation) — matching the non-fine cost as closely as possible.
-  // `fine` is a live hooks object with a mutable `active` flag (false until a
-  // forBlock calls observeElems). While inactive the traps behave exactly like
-  // the non-fine path — one boolean read of overhead — so deepBoxes not used as
-  // a fine `:for` source pay essentially nothing.
-  const owners = fine ? new WeakMap() : null; // raw obj -> raw owning element
-  const roots = fine ? new WeakSet() : null; // the diffed root array(s)
-
-  const handler = {
-    get(t, k, r) {
-      // `proxy[RAW]` unwraps to the raw target in every mode. This is also what
-      // keeps `wrap` idempotent: a value that is already one of our proxies is
-      // detected via its RAW marker and returned as-is instead of being wrapped
-      // again. Without this, code that reads elements out through the proxy and
-      // stores them back (e.g. a `:for` swap doing `r = arr.slice(); arr = r`)
-      // would grow a fresh proxy layer on every update — an O(depth) read cost
-      // that compounds into super-linear churn.
-      if (k === RAW) return t;
-      if (fine && fine.active) {
-        const val = Reflect.get(t, k, r);
-        if (val === null || typeof val !== "object") return val;
-        if (roots.has(t)) {
-          if (typeof k !== "symbol") owners.set(val, val); // direct element owns itself
-        } else {
-          const o = owners.get(t);
-          if (o !== undefined && !owners.has(val)) owners.set(val, o);
-        }
-        return wrap(val);
-      }
-      const val = Reflect.get(t, k, r);
-      return val !== null && typeof val === "object" ? wrap(val) : val;
-    },
-    set(t, k, x, r) {
-      const had = k in t;
-      const old = t[k];
-      const ok = Reflect.set(t, k, x, r);
-      if (ok && (!had || old !== x)) {
-        if (fine && fine.active) {
-          if (roots.has(t)) fine.onStruct();
-          else {
-            const o = owners.get(t);
-            if (o !== undefined) fine.onElem(o);
-            else notify();
-          }
-        } else notify();
-      }
-      return ok;
-    },
-    deleteProperty(t, k) {
-      const had = k in t;
-      const ok = Reflect.deleteProperty(t, k);
-      if (ok && had) {
-        if (fine && fine.active) {
-          if (roots.has(t)) fine.onStruct();
-          else {
-            const o = owners.get(t);
-            if (o !== undefined) fine.onElem(o);
-            else notify();
-          }
-        } else notify();
-      }
-      return ok;
-    },
-  };
-  // Collection handler: bind everything to the real target so native internal
-  // slots accept the receiver; wrap mutators to notify after the op.
-  const collectionHandler = {
-    get(t, k) {
-      if (k === RAW) return t; // keep wrap idempotent for collection proxies too
-      const val = Reflect.get(t, k, t);
-      if (typeof val !== "function") return val;
-      if (MUTATORS.has(k) && MUTATORS.get(k)(t)) {
-        return function (...args) {
-          const ret = val.apply(t, args);
-          notify();
-          return ret;
-        };
-      }
-      // Non-mutating method (get/has/forEach/keys/values/entries/…): bind so
-      // the native internal-slot check sees the real collection as receiver.
-      return val.bind(t);
-    },
-  };
-  const wrap = (val) => {
-    if (val === null || typeof val !== "object") return val;
-    // Idempotence: if `val` is already one of OUR proxies, `val[RAW]` returns
-    // its raw target (the get trap intercepts RAW). Re-wrapping would stack a
-    // new proxy layer every time, so wrap the underlying raw object instead —
-    // it's already cached under that key, so this collapses back to the
-    // canonical single-layer proxy for the object.
-    const raw = val[RAW];
-    if (raw !== undefined) val = raw;
-    let px = cache.get(val);
-    if (!px) {
-      px = new Proxy(val, isCollection(val) ? collectionHandler : handler);
-      cache.set(val, px);
-    }
-    return px;
-  };
-  // markRoot(rawArray) — register the diffed root array so its own mutations are
-  // structural. Called by the box for the current `.v` value (fine mode only).
-  wrap.markRoot = (val) => {
-    if (roots && val !== null && typeof val === "object") roots.add(val);
-  };
-  return wrap;
-}
-
-// Mutating collection method names -> predicate that reports whether the method
-// is truly mutating on THIS target. `delete` and `clear` are shared names
-// across Map/Set (both mutate); `set` mutates on Map but is a WeakSet non-op /
-// absent elsewhere, and `add` mutates on Set/WeakSet. The predicate guards
-// against, e.g., a `set` key on an unrelated wrapped object slipping through —
-// though collectionHandler only ever wraps real Map/Set/WeakMap/WeakSet.
-const MUTATORS = new Map([
-  ["set", (t) => t instanceof Map || t instanceof WeakMap],
-  ["add", (t) => t instanceof Set || t instanceof WeakSet],
-  ["delete", () => true],
-  ["clear", () => true],
-]);
-
-function isCollection(v) {
-  return (
-    v instanceof Map ||
-    v instanceof Set ||
-    v instanceof WeakMap ||
-    v instanceof WeakSet
-  );
 }
 
 // prop(c, i, raw, def) — adopt an `@input` prop as a reactive variable at

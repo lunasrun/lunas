@@ -47,6 +47,7 @@ await test("deepBox: push triggers", async () => {
   });
   assert.strictEqual(len, 2);
   d.v.push(3);
+  d.touch(); // compiler-injected invalidation after a structural mutation
   await tick();
   assert.strictEqual(len, 3);
   assert.deepStrictEqual(Array.from(d.v), [1, 2, 3]);
@@ -60,11 +61,12 @@ await test("deepBox: splice triggers", async () => {
     snapshot = Array.from(d.v);
   });
   d.v.splice(1, 2);
+  d.touch();
   await tick();
   assert.deepStrictEqual(snapshot, [1, 4]);
 });
 
-await test("deepBox: nested object set triggers", async () => {
+await test("deepBox: nested object set triggers (via injected touch)", async () => {
   const c = createContext(null);
   const d = deepBox(c, 0, { user: { name: "a" }, tags: ["x"] });
   let name = null;
@@ -72,7 +74,8 @@ await test("deepBox: nested object set triggers", async () => {
     name = d.v.user.name;
   });
   assert.strictEqual(name, "a");
-  d.v.user.name = "b"; // nested set through lazy proxy
+  d.v.user.name = "b"; // nested field write on the raw value
+  d.touch(); // compiler injects this after the mutation
   await tick();
   assert.strictEqual(name, "b");
   let tagCount = 0;
@@ -80,6 +83,7 @@ await test("deepBox: nested object set triggers", async () => {
     tagCount = d.v.tags.length;
   });
   d.v.tags.push("y"); // nested array mutation
+  d.touch();
   await tick();
   assert.strictEqual(tagCount, 2);
 });
@@ -92,17 +96,20 @@ await test("deepBox: delete triggers; whole-value replace triggers", async () =>
     keys = Object.keys(d.v).join(",");
   });
   delete d.v.b;
+  d.touch();
   await tick();
   assert.strictEqual(keys, "a");
-  d.v = { z: 9 };
+  d.v = { z: 9 }; // whole-value reassign: the setter marks, no touch needed
   await tick();
   assert.strictEqual(keys, "z");
 });
 
-await test("deepBox: proxy identity is stable across reads", () => {
+await test("deepBox: nested value identity is the raw object, stable across reads", () => {
   const c = createContext(null);
-  const d = deepBox(c, 0, { user: {} });
-  assert.strictEqual(d.v.user, d.v.user, "cached nested wrapper");
+  const inner = {};
+  const d = deepBox(c, 0, { user: inner });
+  assert.strictEqual(d.v.user, d.v.user, "raw value, no per-read wrapper");
+  assert.strictEqual(d.v.user, inner, "reads return the raw object, not a proxy");
 });
 
 await test("shared: two components both flushed", async () => {

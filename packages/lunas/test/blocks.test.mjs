@@ -354,6 +354,7 @@ await test("forBlock initial render + reorder reuses nodes via reconciler", asyn
   const before = parent.childNodes.slice(0, 3);
 
   list.v.reverse();
+  list.touch();
   await tick();
   assert.strictEqual(shape(parent), "c b a |");
   assert.strictEqual(makes, 3, "reorder created no new nodes");

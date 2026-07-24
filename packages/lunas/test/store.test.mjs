@@ -114,7 +114,7 @@ await test("batching: multiple writes to the same field -> one flush", async () 
   assert.strictEqual(store.get("n"), 3);
 });
 
-await test("deep mutation on a store array triggers dependents", async () => {
+await test("deep mutation on a store array + touch() notifies dependents", async () => {
   const store = createStore({ items: [1, 2] });
   const c = createContext(null);
   useStore(c, 0, store, "items");
@@ -123,13 +123,16 @@ await test("deep mutation on a store array triggers dependents", async () => {
     len = store.get("items").length;
   });
   assert.strictEqual(len, 2);
+  // New contract: get() returns the raw array (no auto-notify proxy); the
+  // compiler injects store.touch(key) right after the mutating statement.
   store.get("items").push(3);
+  store.touch("items");
   await tick();
   assert.strictEqual(len, 3);
   assert.deepStrictEqual(Array.from(store.get("items")), [1, 2, 3]);
 });
 
-await test("deep mutation on a nested store object triggers dependents", async () => {
+await test("deep mutation on a nested store object + touch() notifies dependents", async () => {
   const store = createStore({ user: { name: "a", tags: ["x"] } });
   const c = createContext(null);
   useStore(c, 0, store, "user");
@@ -137,7 +140,9 @@ await test("deep mutation on a nested store object triggers dependents", async (
   bind(c, [0], () => {
     name = store.get("user").name;
   });
+  // New contract: a nested field write is followed by store.touch(key).
   store.get("user").name = "b";
+  store.touch("user");
   await tick();
   assert.strictEqual(name, "b");
 
@@ -146,6 +151,7 @@ await test("deep mutation on a nested store object triggers dependents", async (
     tagCount = store.get("user").tags.length;
   });
   store.get("user").tags.push("y");
+  store.touch("user");
   await tick();
   assert.strictEqual(tagCount, 2);
 });
@@ -243,6 +249,7 @@ await test("derivedStore: adopted by a component like a plain field", async () =
   assert.strictEqual(seen, 3);
 
   cart.get("items").push({ price: 5 });
+  cart.touch("items"); // deep mutation of the upstream field -> derived recomputes
   await tick();
   assert.strictEqual(seen, 8);
 });
